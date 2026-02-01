@@ -22,23 +22,21 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     Offset cursorPosition = await screenRetriever.getCursorScreenPoint();
     
     // Default size for the clipboard history window
-    const Size windowSize = Size(350, 500);
+    const Size windowSize = Size(350, 450);
     
-    // Adjust position so it doesn't go off screen
-    // For simplicity, we just put it near the cursor
-    await windowManager.setBounds(Rect.fromLTWH(
-      cursorPosition.dx,
-      cursorPosition.dy,
-      windowSize.width,
-      windowSize.height,
-    ));
+    await windowManager.setHasShadow(true);
+    await windowManager.setSize(windowSize);
+    await windowManager.setPosition(Offset(cursorPosition.dx, cursorPosition.dy));
 
-    if (Platform.isMacOS) {
-      await windowManager.setVisualEffect(WindowVisualEffect(
-        effect: WindowVisualEffectState.active,
-      ));
-    }
+    await windowManager.show();
+    await windowManager.focus();
+  }
 
+  Future<void> showSettings() async {
+    const Size settingsSize = Size(500, 600);
+    await windowManager.setSize(settingsSize);
+    await windowManager.setMinimumSize(settingsSize);
+    await windowManager.center();
     await windowManager.show();
     await windowManager.focus();
   }

@@ -11,16 +11,40 @@ class ClipboardEntries extends Table {
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
 }
 
-@DriftDatabase(tables: [ClipboardEntries])
+class AppSettings extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get historyLimit => integer().withDefault(const Constant(200))();
+  BoolColumn get launchAtStartup => boolean().withDefault(const Constant(false))();
+  TextColumn get hotkeyJson => text().nullable()();
+}
+
+@DriftDatabase(tables: [ClipboardEntries, AppSettings])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (m) async {
+        await m.createAll();
+      },
+      onUpgrade: (m, from, to) async {
+        if (from < 2) {
+          await m.createTable(appSettings);
+        }
+      },
+    );
+  }
 
   static QueryExecutor _openConnection() {
     return driftDatabase(
       name: 'clipboard_db',
+      native: const DriftNativeOptions(
+        shareAcrossIsolates: true,
+      ),
     );
   }
 }
