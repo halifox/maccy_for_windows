@@ -20,7 +20,7 @@ class AppHotKeyManager extends _$AppHotKeyManager {
     await hotKeyManager.register(
       hotKey,
       keyDownHandler: (hotKey) {
-        ref.read(appWindowManagerProvider.notifier).showAtCursor();
+        ref.read(appWindowManagerProvider.notifier).toggle();
       },
     );
   }

@@ -14,7 +14,10 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
   }
 
   Future<void> init() async {
-    await trayManager.setIcon('assets/icon.png');
+    await trayManager.setIcon(
+      Platform.isMacOS ? 'assets/icon.png' : 'assets/icon.png', // 可以根据平台选择不同文件
+      isTemplate: true, // 关键：设置为模板图标，macOS 会自动处理反色
+    );
     List<MenuItem> items = [
       MenuItem(
         key: 'show_history',
@@ -35,8 +38,8 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
 
   @override
   void onTrayIconMouseDown() {
-    // 左键单击逻辑
-    ref.read(appWindowManagerProvider.notifier).showAtCursor();
+    // 左键单击：切换显示或隐藏
+    ref.read(appWindowManagerProvider.notifier).toggle();
   }
 
   @override

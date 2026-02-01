@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'package:clipboard/core/managers/clipboard_manager_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -8,6 +7,9 @@ import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:go_router/go_router.dart';
 import '../../../core/database/database_provider.dart';
 import '../../../core/managers/window_manager_provider.dart';
+import '../../settings/providers/settings_provider.dart';
+import '../../settings/providers/pins_provider.dart';
+import '../../../core/managers/clipboard_manager_provider.dart';
 
 class HistoryPage extends HookConsumerWidget {
   const HistoryPage({super.key});
@@ -15,10 +17,14 @@ class HistoryPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.watch(appDatabaseProvider);
+    final settingsAsync = ref.watch(settingsProvider);
+    final pinsAsync = ref.watch(pinsProvider);
+    
     final searchController = useTextEditingController();
     final selectedIndex = useState(0);
     final focusNode = useFocusNode();
 
+    // Data streams
     final historyStream = useMemoized(() {
       return (db.select(db.clipboardEntries)
             ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
@@ -27,45 +33,54 @@ class HistoryPage extends HookConsumerWidget {
     }, [db]);
 
     final history = useStream(historyStream);
-    final items = history.data ?? [];
+    final historyItems = history.data ?? [];
+    final pinnedItems = pinsAsync.value ?? [];
 
-    final filteredItems = useMemoized(() {
-      if (searchController.text.isEmpty) return items;
-      return items
-          .where((item) => item.content.toLowerCase().contains(searchController.text.toLowerCase()))
-          .toList();
-    }, [items, searchController.text]);
+    // Filtered combined items
+    final filteredHistory = useMemoized(() {
+      if (searchController.text.isEmpty) return historyItems;
+      return historyItems.where((item) => item.content.toLowerCase().contains(searchController.text.toLowerCase())).toList();
+    }, [historyItems, searchController.text]);
+
+    final filteredPins = useMemoized(() {
+      if (searchController.text.isEmpty) return pinnedItems;
+      return pinnedItems.where((item) => item.title.toLowerCase().contains(searchController.text.toLowerCase()) || item.content.toLowerCase().contains(searchController.text.toLowerCase())).toList();
+    }, [pinnedItems, searchController.text]);
+
+    // Total interactive items
+    final totalItems = filteredPins.length + filteredHistory.length;
 
     Future<void> selectItem(int index) async {
-      if (index >= 0 && index < filteredItems.length) {
-        final item = filteredItems[index];
-        await Clipboard.setData(ClipboardData(text: item.content));
-        // 先隐藏窗口
-        await ref.read(appWindowManagerProvider.notifier).hide();
-        // 再触发模拟粘贴
-        await ref.read(appClipboardManagerProvider.notifier).simulatePaste();
+      String content = "";
+      if (index < filteredPins.length) {
+        content = filteredPins[index].content;
+      } else if (index < totalItems) {
+        content = filteredHistory[index - filteredPins.length].content;
+      } else {
+        return; // Menu item handled elsewhere
       }
-    }
 
-    void handleClear() async {
-      await db.delete(db.clipboardEntries).go();
-      selectedIndex.value = 0;
+      await Clipboard.setData(ClipboardData(text: content));
+      await ref.read(appWindowManagerProvider.notifier).hide();
+      await ref.read(appClipboardManagerProvider.notifier).simulatePaste();
     }
 
     void handleKeyEvent(KeyEvent event) {
       if (event is KeyDownEvent) {
+        final settings = settingsAsync.value;
+        int menuCount = (settings?.showFooterMenu ?? true) ? 4 : 0;
+
         if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-          selectedIndex.value = (selectedIndex.value + 1).clamp(0, filteredItems.length + 3);
+          selectedIndex.value = (selectedIndex.value + 1).clamp(0, totalItems + menuCount - 1);
         } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-          selectedIndex.value = (selectedIndex.value - 1).clamp(0, filteredItems.length + 3);
+          selectedIndex.value = (selectedIndex.value - 1).clamp(0, totalItems + menuCount - 1);
         } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-          if (selectedIndex.value < filteredItems.length) {
+          if (selectedIndex.value < totalItems) {
             selectItem(selectedIndex.value);
           } else {
-            final menuIdx = selectedIndex.value - filteredItems.length;
-            if (menuIdx == 0) handleClear();
+            final menuIdx = selectedIndex.value - totalItems;
+            if (menuIdx == 0) db.delete(db.clipboardEntries).go();
             if (menuIdx == 1) {
-              context.push('/settings');
               ref.read(appWindowManagerProvider.notifier).showSettings();
             }
             if (menuIdx == 3) exit(0);
@@ -81,13 +96,13 @@ class HistoryPage extends HookConsumerWidget {
       }
     }
 
+    if (settingsAsync.value == null) return const SizedBox.shrink();
+    final settings = settingsAsync.value!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     final bgColor = isDark ? const Color(0xFF2C2C2C).withOpacity(0.98) : const Color(0xFFEBEBEB).withOpacity(0.98);
     final labelColor = isDark ? Colors.white24 : const Color(0xFF9A9A9A);
-    final searchBg = isDark ? Colors.white10 : const Color(0xFFD1D1D1);
     final highlightColor = isDark ? const Color(0xFF0058D0) : const Color(0xFF0063E1);
-    final lineDividerColor = isDark ? Colors.white10 : const Color(0xFFD0D0D0);
-    final textColor = isDark ? Colors.white.withOpacity(0.9) : Colors.black.withOpacity(0.8);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -103,134 +118,112 @@ class HistoryPage extends HookConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Pixel-perfect Search Header
-              Container(
-                height: 38,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+              // Header
+              _buildHeader(context, isDark, labelColor, searchController, focusNode, selectedIndex),
+              
+              // List
+              Expanded(
+                child: ListView(
+                  padding: EdgeInsets.zero,
                   children: [
-                    Text(
-                      'Maccy',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontFamily: '.AppleSystemUIFont',
-                        color: labelColor,
+                    // Pinned Items
+                    for (int i = 0; i < filteredPins.length; i++)
+                      _MaccyRow(
+                        content: filteredPins[i].title,
+                        shortcut: i < 9 ? '${i + 1}' : null,
+                        isPinned: true,
+                        isSelected: selectedIndex.value == i,
+                        selectionColor: highlightColor,
+                        onTap: () => selectItem(i),
+                        onHover: () => selectedIndex.value = i,
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Container(
-                        height: 22,
-                        alignment: Alignment.centerLeft, // Force vertical centering
-                        decoration: BoxDecoration(
-                          color: searchBg,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            const SizedBox(width: 6),
-                            Icon(Icons.search, size: 13, color: labelColor),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: TextField(
-                                controller: searchController,
-                                focusNode: focusNode,
-                                autofocus: true,
-                                cursorWidth: 1,
-                                cursorHeight: 14,
-                                cursorColor: isDark ? Colors.white70 : Colors.black87,
-                                textAlignVertical: TextAlignVertical.center, // Center input text
-                                style: TextStyle(
-                                  fontSize: 12.5, 
-                                  fontFamily: '.AppleSystemUIFont',
-                                  color: isDark ? Colors.white : Colors.black,
-                                  decoration: TextDecoration.none,
-                                ),
-                                decoration: const InputDecoration(
-                                  isCollapsed: true, // No internal padding
-                                  border: InputBorder.none,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                                onChanged: (_) => selectedIndex.value = 0,
-                              ),
-                            ),
-                          ],
-                        ),
+                    // History Items
+                    for (int i = 0; i < filteredHistory.length; i++)
+                      _MaccyRow(
+                        content: filteredHistory[i].content,
+                        shortcut: (i + filteredPins.length) < 9 ? '${i + filteredPins.length + 1}' : null,
+                        isPinned: false,
+                        isSelected: selectedIndex.value == (i + filteredPins.length),
+                        selectionColor: highlightColor,
+                        onTap: () => selectItem(i + filteredPins.length),
+                        onHover: () => selectedIndex.value = i + filteredPins.length,
                       ),
-                    ),
                   ],
                 ),
               ),
-              Expanded(
-                child: ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: filteredItems.length,
-                  itemBuilder: (context, index) {
-                    final item = filteredItems[index];
-                    final isSelected = index == selectedIndex.value;
-                    return _MaccyRow(
-                      content: item.content,
-                      shortcut: index < 9 ? '${index + 1}' : null,
-                      isSelected: isSelected,
-                      selectionColor: highlightColor,
-                      textColor: textColor,
-                      shortcutColor: labelColor,
-                      onTap: () => selectItem(index),
-                      onHover: () => selectedIndex.value = index,
-                    );
-                  },
+              
+              if (settings.showFooterMenu) ...[
+                Container(height: 0.5, color: isDark ? Colors.white10 : Colors.black12),
+                const SizedBox(height: 2),
+                _MaccyMenuRow(
+                  label: 'Clear',
+                  shortcut: '⌥⌘⌫',
+                  isSelected: selectedIndex.value == totalItems,
+                  selectionColor: highlightColor,
+                  onTap: () => db.delete(db.clipboardEntries).go(),
+                  onHover: () => selectedIndex.value = totalItems,
                 ),
-              ),
-              Container(height: 0.5, color: lineDividerColor),
-              const SizedBox(height: 2),
-              _MaccyMenuRow(
-                label: 'Clear',
-                shortcut: '⌥⌘⌫',
-                isSelected: selectedIndex.value == filteredItems.length,
-                selectionColor: highlightColor,
-                textColor: textColor,
-                shortcutColor: labelColor,
-                onTap: handleClear,
-                onHover: () => selectedIndex.value = filteredItems.length,
-              ),
-              _MaccyMenuRow(
-                label: 'Preferences...', 
-                shortcut: '⌘,',
-                isSelected: selectedIndex.value == filteredItems.length + 1,
-                selectionColor: highlightColor,
-                textColor: textColor,
-                shortcutColor: labelColor,
-                onTap: () {
-                  context.push('/settings');
-                  ref.read(appWindowManagerProvider.notifier).showSettings();
-                },
-                onHover: () => selectedIndex.value = filteredItems.length + 1,
-              ),
-              _MaccyMenuRow(
-                label: 'About',
-                isSelected: selectedIndex.value == filteredItems.length + 2,
-                selectionColor: highlightColor,
-                textColor: textColor,
-                shortcutColor: labelColor,
-                onTap: () {},
-                onHover: () => selectedIndex.value = filteredItems.length + 2,
-              ),
-              _MaccyMenuRow(
-                label: 'Quit',
-                shortcut: '⌘Q',
-                isSelected: selectedIndex.value == filteredItems.length + 3,
-                selectionColor: highlightColor,
-                textColor: textColor,
-                shortcutColor: labelColor,
-                onTap: () => exit(0),
-                onHover: () => selectedIndex.value = filteredItems.length + 3,
-              ),
-              const SizedBox(height: 5),
+                                _MaccyMenuRow(
+                                  label: 'Preferences...',
+                                  shortcut: '⌘,',
+                                  isSelected: selectedIndex.value == totalItems + 1,
+                                  selectionColor: highlightColor,
+                                  onTap: () {
+                                    ref.read(appWindowManagerProvider.notifier).showSettings();
+                                  },
+                                  onHover: () => selectedIndex.value = totalItems + 1,
+                                ),                _MaccyMenuRow(
+                  label: 'Quit',
+                  shortcut: '⌘Q',
+                  isSelected: selectedIndex.value == totalItems + 3,
+                  selectionColor: highlightColor,
+                  onTap: () => exit(0),
+                  onHover: () => selectedIndex.value = totalItems + 3,
+                ),
+                const SizedBox(height: 5),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, bool isDark, Color labelColor, TextEditingController ctrl, FocusNode fn, ValueNotifier<int> sel) {
+    final searchBg = isDark ? Colors.white10 : const Color(0xFFD1D1D1);
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Text('Maccy', style: TextStyle(fontSize: 13, fontFamily: '.AppleSystemUIFont', color: labelColor)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(
+              height: 22,
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(color: searchBg, borderRadius: BorderRadius.circular(4)),
+              child: Row(
+                children: [
+                  const SizedBox(width: 6),
+                  Icon(Icons.search, size: 13, color: labelColor),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: TextField(
+                      controller: ctrl,
+                      focusNode: fn,
+                      autofocus: true,
+                      cursorWidth: 1,
+                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white : Colors.black),
+                      decoration: const InputDecoration(isCollapsed: true, border: InputBorder.none),
+                      onChanged: (_) => sel.value = 0,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -239,26 +232,17 @@ class HistoryPage extends HookConsumerWidget {
 class _MaccyRow extends StatelessWidget {
   final String content;
   final String? shortcut;
+  final bool isPinned;
   final bool isSelected;
   final Color selectionColor;
-  final Color textColor;
-  final Color shortcutColor;
   final VoidCallback onTap;
   final VoidCallback onHover;
 
-  const _MaccyRow({
-    required this.content,
-    this.shortcut,
-    required this.isSelected,
-    required this.selectionColor,
-    required this.textColor,
-    required this.shortcutColor,
-    required this.onTap,
-    required this.onHover,
-  });
+  const _MaccyRow({required this.content, this.shortcut, required this.isPinned, required this.isSelected, required this.selectionColor, required this.onTap, required this.onHover});
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return MouseRegion(
       onEnter: (_) => onHover(),
       child: GestureDetector(
@@ -269,27 +253,20 @@ class _MaccyRow extends StatelessWidget {
           color: isSelected ? selectionColor : Colors.transparent,
           child: Row(
             children: [
+              if (isPinned) const Icon(Icons.push_pin, size: 10, color: Colors.blueAccent),
               Expanded(
-                child: Text(
-                  content.trim().replaceAll('\n', ' '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontFamily: '.AppleSystemUIFont',
-                    color: isSelected ? Colors.white : textColor,
+                child: Padding(
+                  padding: EdgeInsets.only(left: isPinned ? 4 : 0),
+                  child: Text(
+                    content.trim().replaceAll('\n', ' '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontFamily: '.AppleSystemUIFont', color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87)),
                   ),
                 ),
               ),
               if (shortcut != null)
-                Text(
-                  '⌘$shortcut',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontFamily: '.AppleSystemUIFont',
-                    color: isSelected ? Colors.white70 : shortcutColor,
-                  ),
-                ),
+                Text('⌘$shortcut', style: TextStyle(fontSize: 12, color: isSelected ? Colors.white70 : (isDark ? Colors.white24 : Colors.black26))),
             ],
           ),
         ),
@@ -303,21 +280,10 @@ class _MaccyMenuRow extends StatelessWidget {
   final String? shortcut;
   final bool isSelected;
   final Color selectionColor;
-  final Color textColor;
-  final Color shortcutColor;
   final VoidCallback onTap;
   final VoidCallback onHover;
 
-  const _MaccyMenuRow({
-    required this.label,
-    this.shortcut,
-    required this.isSelected,
-    required this.selectionColor,
-    required this.textColor,
-    required this.shortcutColor,
-    required this.onTap,
-    required this.onHover,
-  });
+  const _MaccyMenuRow({required this.label, this.shortcut, required this.isSelected, required this.selectionColor, required this.onTap, required this.onHover});
 
   @override
   Widget build(BuildContext context) {
@@ -333,24 +299,10 @@ class _MaccyMenuRow extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontFamily: '.AppleSystemUIFont',
-                    color: isSelected ? Colors.white : textColor,
-                  ),
-                ),
+                child: Text(label, style: TextStyle(fontSize: 13, color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87))),
               ),
               if (shortcut != null)
-                Text(
-                  shortcut!,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontFamily: '.AppleSystemUIFont',
-                    color: isSelected ? Colors.white70 : shortcutColor,
-                  ),
-                ),
+                Text(shortcut!, style: TextStyle(fontSize: 12, color: isSelected ? Colors.white70 : (isDark ? Colors.white24 : Colors.black26))),
             ],
           ),
         ),

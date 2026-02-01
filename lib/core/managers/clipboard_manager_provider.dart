@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../database/database_provider.dart';
 import '../database/database.dart';
 import 'package:drift/drift.dart';
+import '../../features/settings/providers/settings_provider.dart';
 
 part 'clipboard_manager_provider.g.dart';
 
@@ -15,42 +16,48 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     clipboardWatcher.addListener(this);
   }
 
-  void start() {
-    clipboardWatcher.start();
-  }
+  void start() => clipboardWatcher.start();
+  void stop() => clipboardWatcher.stop();
 
-  void stop() {
-    clipboardWatcher.stop();
-  }
-
-  /// 模拟系统粘贴快捷键
   Future<void> simulatePaste() async {
-    // 等待窗口隐藏和焦点切换
-    await Future.delayed(const Duration(milliseconds: 100));
+    final settings = await ref.read(settingsProvider.future);
+    if (!settings.autoPaste) return;
+
+    await Future.delayed(const Duration(milliseconds: 150));
 
     if (Platform.isMacOS) {
-      // macOS: 使用 AppleScript 模拟 Cmd+V
       await Process.run('osascript', [
         '-e',
         'tell application "System Events" to keystroke "v" using {command down}'
       ]);
     } else if (Platform.isWindows) {
-      // Windows: 使用 PowerShell 模拟 Ctrl+V
       await Process.run('powershell', [
         '-Command',
         r'$wshell = New-Object -ComObject WScript.Shell; $wshell.SendKeys("^v")'
       ]);
-    } else if (Platform.isLinux) {
-      // Linux: 尝试使用 xdotool (需预装)
-      await Process.run('xdotool', ['key', 'ctrl+v']);
     }
   }
 
   @override
   void onClipboardChanged() async {
+    final settings = await ref.read(settingsProvider.future);
+    
+    // 1. Check if recording is paused
+    if (settings.isPaused) return;
+
+    // 2. Read clipboard data
+    // Note: Drift currently supports text well. Images/Files would require blob storage.
     ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    
     if (data != null && data.text != null && data.text!.isNotEmpty) {
-      final content = data.text!;
+      String content = data.text!;
+
+      // 3. Filter by type (Text)
+      if (!settings.saveText) return;
+
+      // 4. Regex filtering (Placeholder for now)
+      // if (settings.regexFilter != null && RegExp(settings.regexFilter!).hasMatch(content)) return;
+
       final db = ref.read(appDatabaseProvider);
       
       final lastEntry = await (db.select(db.clipboardEntries)
@@ -59,6 +66,16 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         .getSingleOrNull();
         
       if (lastEntry?.content != content) {
+        // 5. Enforce history limit
+        final count = await db.clipboardEntries.count().getSingle();
+        if (count >= settings.historyLimit) {
+          final oldest = await (db.select(db.clipboardEntries)
+            ..orderBy([(t) => OrderingTerm.asc(t.createdAt)])
+            ..limit(1))
+            .getSingle();
+          await (db.delete(db.clipboardEntries)..where((t) => t.id.equals(oldest.id))).go();
+        }
+
         await db.into(db.clipboardEntries).insert(
           ClipboardEntriesCompanion.insert(
             content: content,

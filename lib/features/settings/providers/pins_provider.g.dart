@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'settings_provider.dart';
+part of 'pins_provider.dart';
 
 // **************************************************************************
 // RiverpodGenerator
@@ -9,43 +9,43 @@ part of 'settings_provider.dart';
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
 
-@ProviderFor(SettingsNotifier)
-final settingsProvider = SettingsNotifierProvider._();
+@ProviderFor(PinsNotifier)
+final pinsProvider = PinsNotifierProvider._();
 
-final class SettingsNotifierProvider
-    extends $AsyncNotifierProvider<SettingsNotifier, AppSetting> {
-  SettingsNotifierProvider._()
+final class PinsNotifierProvider
+    extends $StreamNotifierProvider<PinsNotifier, List<Pin>> {
+  PinsNotifierProvider._()
     : super(
         from: null,
         argument: null,
         retry: null,
-        name: r'settingsProvider',
+        name: r'pinsProvider',
         isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
 
   @override
-  String debugGetCreateSourceHash() => _$settingsNotifierHash();
+  String debugGetCreateSourceHash() => _$pinsNotifierHash();
 
   @$internal
   @override
-  SettingsNotifier create() => SettingsNotifier();
+  PinsNotifier create() => PinsNotifier();
 }
 
-String _$settingsNotifierHash() => r'8febd6138cc22f07612e201b025545b09dc9c3bf';
+String _$pinsNotifierHash() => r'4ec212387eb8345f4b31c00d847b6c4dcd9754d5';
 
-abstract class _$SettingsNotifier extends $AsyncNotifier<AppSetting> {
-  FutureOr<AppSetting> build();
+abstract class _$PinsNotifier extends $StreamNotifier<List<Pin>> {
+  Stream<List<Pin>> build();
   @$mustCallSuper
   @override
   void runBuild() {
-    final ref = this.ref as $Ref<AsyncValue<AppSetting>, AppSetting>;
+    final ref = this.ref as $Ref<AsyncValue<List<Pin>>, List<Pin>>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<AsyncValue<AppSetting>, AppSetting>,
-              AsyncValue<AppSetting>,
+              AnyNotifier<AsyncValue<List<Pin>>, List<Pin>>,
+              AsyncValue<List<Pin>>,
               Object?,
               Object?
             >;

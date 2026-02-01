@@ -41,7 +41,7 @@ final class AppWindowManagerProvider
   }
 }
 
-String _$appWindowManagerHash() => r'738cf4172237a99cd87334e7885ce83a96f27a04';
+String _$appWindowManagerHash() => r'7ef8570fbb43ec26185b80a7b3ef8d690749feff';
 
 abstract class _$AppWindowManager extends $Notifier<void> {
   void build();

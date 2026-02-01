@@ -1,6 +1,8 @@
 PODS:
   - clipboard_watcher (0.0.1):
     - FlutterMacOS
+  - desktop_multi_window (0.0.1):
+    - FlutterMacOS
   - FlutterMacOS (1.0.0)
   - HotKey (0.2.1)
   - hotkey_manager_macos (0.0.1):
@@ -40,6 +42,7 @@ PODS:
 
 DEPENDENCIES:
   - clipboard_watcher (from `Flutter/ephemeral/.symlinks/plugins/clipboard_watcher/macos`)
+  - desktop_multi_window (from `Flutter/ephemeral/.symlinks/plugins/desktop_multi_window/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - hotkey_manager_macos (from `Flutter/ephemeral/.symlinks/plugins/hotkey_manager_macos/macos`)
   - screen_retriever_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_retriever_macos/macos`)
@@ -55,6 +58,8 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   clipboard_watcher:
     :path: Flutter/ephemeral/.symlinks/plugins/clipboard_watcher/macos
+  desktop_multi_window:
+    :path: Flutter/ephemeral/.symlinks/plugins/desktop_multi_window/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
   hotkey_manager_macos:
@@ -70,6 +75,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   clipboard_watcher: e9c9d88b3aea4889fe80025037e690e73600b160
+  desktop_multi_window: 93667594ccc4b88d91a97972fd3b1b89667fa80a
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   HotKey: 400beb7caa29054ea8d864c96f5ba7e5b4852277
   hotkey_manager_macos: a4317849af96d2430fa89944d3c58977ca089fbe

@@ -7,6 +7,7 @@
 #include "generated_plugin_registrant.h"
 
 #include <clipboard_watcher/clipboard_watcher_plugin.h>
+#include <desktop_multi_window/desktop_multi_window_plugin.h>
 #include <hotkey_manager_windows/hotkey_manager_windows_plugin_c_api.h>
 #include <screen_retriever_windows/screen_retriever_windows_plugin_c_api.h>
 #include <sqlite3_flutter_libs/sqlite3_flutter_libs_plugin.h>
@@ -16,6 +17,8 @@
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   ClipboardWatcherPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("ClipboardWatcherPlugin"));
+  DesktopMultiWindowPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("DesktopMultiWindowPlugin"));
   HotkeyManagerWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("HotkeyManagerWindowsPluginCApi"));
   ScreenRetrieverWindowsPluginCApiRegisterWithRegistrar(
