@@ -41,7 +41,7 @@ final class AppTrayManagerProvider
   }
 }
 
-String _$appTrayManagerHash() => r'e533aa4d1f03715666f28c827582e0b7a514d508';
+String _$appTrayManagerHash() => r'f6eab252d52179203d861ab15443d93169d7754c';
 
 abstract class _$AppTrayManager extends $Notifier<void> {
   void build();

@@ -1,5 +1,5 @@
 name: clipboard
-description: "A cross-platform clipboard manager inspired by Maccy."
+description: "A lightweight, cross-platform clipboard manager assistant."
 publish_to: 'none'
 
 version: 1.0.0+1
@@ -51,4 +51,4 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/icon.png
+    - assets/

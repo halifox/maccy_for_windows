@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../providers/settings_provider.dart';
 import '../../../../core/database/database.dart';
@@ -21,9 +20,9 @@ class AdvancedTab extends ConsumerWidget {
             subtitle: 'Stop recording new clipboard items',
             icon: CupertinoIcons.pause_circle,
             iconColor: CupertinoColors.systemGrey,
-            trailing: CupertinoSwitch(
+            trailing: CupertinoCheckbox(
               value: settings.isPaused,
-              onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(isPaused: Value(v))),
+              onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(isPaused: Value(v ?? false))),
             ),
           ),
         ]),
@@ -32,9 +31,9 @@ class AdvancedTab extends ConsumerWidget {
             label: 'Clear on exit',
             icon: CupertinoIcons.trash,
             iconColor: CupertinoColors.systemRed,
-            trailing: CupertinoSwitch(
+            trailing: CupertinoCheckbox(
               value: settings.clearOnExit,
-              onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(clearOnExit: Value(v))),
+              onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(clearOnExit: Value(v ?? false))),
             ),
           ),
           MacosSettingsTile(
@@ -42,9 +41,9 @@ class AdvancedTab extends ConsumerWidget {
             subtitle: 'Also clear system clipboard when history is cleared',
             icon: CupertinoIcons.clear_circled,
             iconColor: CupertinoColors.systemOrange,
-            trailing: CupertinoSwitch(
+            trailing: CupertinoCheckbox(
               value: settings.clearSystemClipboard,
-              onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(clearSystemClipboard: Value(v))),
+              onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(clearSystemClipboard: Value(v ?? false))),
             ),
           ),
         ]),

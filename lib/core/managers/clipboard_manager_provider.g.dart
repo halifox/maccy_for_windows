@@ -42,7 +42,7 @@ final class AppClipboardManagerProvider
 }
 
 String _$appClipboardManagerHash() =>
-    r'f298e38ecd546aa90e5cc78925e86651dd62a7ec';
+    r'934a66f7f0c8fdeeb0bc14497bfd8a3b53fc9877';
 
 abstract class _$AppClipboardManager extends $Notifier<void> {
   void build();

@@ -41,7 +41,7 @@ final class AppHotKeyManagerProvider
   }
 }
 
-String _$appHotKeyManagerHash() => r'15ac13f529ac56181325f43293ccdbe715d03a26';
+String _$appHotKeyManagerHash() => r'fdcb9fcf2e07cc178dadaae562d045dc089b95c1';
 
 abstract class _$AppHotKeyManager extends $Notifier<void> {
   void build();

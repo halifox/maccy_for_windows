@@ -1,5 +1,4 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../../core/database/database.dart';
 import '../../../core/database/database_provider.dart';
 import 'package:drift/drift.dart';
@@ -18,6 +17,10 @@ class SettingsNotifier extends _$SettingsNotifier {
       final id = await db.into(db.appSettings).insert(
         AppSettingsCompanion.insert(
           launchAtStartup: const Value(false),
+          autoCheckUpdates: const Value(true),
+          hotkeyOpen: const Value('Alt+V'),
+          hotkeyPin: const Value(''),
+          hotkeyDelete: const Value(''),
           autoPaste: const Value(true),
           pastePlain: const Value(false),
           searchMode: const Value('fuzzy'),
@@ -29,6 +32,12 @@ class SettingsNotifier extends _$SettingsNotifier {
           pinPosition: const Value('top'),
           imageHeight: const Value(40),
           previewDelay: const Value(1500),
+          highlightMatch: const Value('bold'),
+          showSpecialChars: const Value(false),
+          showMenuBarIcon: const Value(true),
+          menuBarIconType: const Value('clipboard'),
+          showClipboardNearIcon: const Value(false),
+          showSearchBox: const Value('always'),
           showAppIcon: const Value(true),
           showAppName: const Value(false),
           showFooterMenu: const Value(true),

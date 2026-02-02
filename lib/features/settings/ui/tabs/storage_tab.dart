@@ -31,14 +31,13 @@ class StorageTab extends ConsumerWidget {
                   const SizedBox(width: 8),
                   CupertinoButton(
                     padding: EdgeInsets.zero,
-                    minSize: 0,
-                    child: const Icon(CupertinoIcons.chevron_up_chevron_down, size: 14, color: CupertinoColors.systemGrey),
                     onPressed: () {
                       // 弹出选择菜单或直接 +100
                       int next = (settings.historyLimit + 50);
                       if (next > 1000) next = 50;
                       notifier.updateHistoryLimit(next);
-                    },
+                    }, minimumSize: Size(0, 0),
+                    child: const Icon(CupertinoIcons.chevron_up_chevron_down, size: 14, color: CupertinoColors.systemGrey),
                   ),
                 ],
               ),

@@ -22,7 +22,7 @@
 - 定义 `ClipboardEntries` 表：`id`, `content`, `type`, `createdAt`。
 - 使用 `drift_dev` 生成类型安全的查询代码。
 
-### 2.3 窗口交互流 (Maccy Logic)
+### 2.3 窗口交互流 (Window Interaction Flow)
 1. **呼出**：获取 `Screen` 和 `Cursor` 坐标，计算窗口最佳弹出位置（防止溢出屏幕）。
 2. **过滤**：使用 `Drift` 的 SQL 模糊查询或集成 `fuzzy` 插件在内存中进行高性能过滤。
 3. **粘贴逻辑**：

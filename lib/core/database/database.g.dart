@@ -384,6 +384,21 @@ class $AppSettingsTable extends AppSettings
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _autoCheckUpdatesMeta = const VerificationMeta(
+    'autoCheckUpdates',
+  );
+  @override
+  late final GeneratedColumn<bool> autoCheckUpdates = GeneratedColumn<bool>(
+    'auto_check_updates',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_check_updates" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   static const VerificationMeta _hotkeyOpenMeta = const VerificationMeta(
     'hotkeyOpen',
   );
@@ -395,6 +410,30 @@ class $AppSettingsTable extends AppSettings
     type: DriftSqlType.string,
     requiredDuringInsert: false,
     defaultValue: const Constant('Alt+V'),
+  );
+  static const VerificationMeta _hotkeyPinMeta = const VerificationMeta(
+    'hotkeyPin',
+  );
+  @override
+  late final GeneratedColumn<String> hotkeyPin = GeneratedColumn<String>(
+    'hotkey_pin',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _hotkeyDeleteMeta = const VerificationMeta(
+    'hotkeyDelete',
+  );
+  @override
+  late final GeneratedColumn<String> hotkeyDelete = GeneratedColumn<String>(
+    'hotkey_delete',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
   );
   static const VerificationMeta _autoPasteMeta = const VerificationMeta(
     'autoPaste',
@@ -543,20 +582,86 @@ class $AppSettingsTable extends AppSettings
     requiredDuringInsert: false,
     defaultValue: const Constant(1500),
   );
-  static const VerificationMeta _showAppIconMeta = const VerificationMeta(
-    'showAppIcon',
+  static const VerificationMeta _highlightMatchMeta = const VerificationMeta(
+    'highlightMatch',
   );
   @override
-  late final GeneratedColumn<bool> showAppIcon = GeneratedColumn<bool>(
-    'show_app_icon',
+  late final GeneratedColumn<String> highlightMatch = GeneratedColumn<String>(
+    'highlight_match',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('bold'),
+  );
+  static const VerificationMeta _showSpecialCharsMeta = const VerificationMeta(
+    'showSpecialChars',
+  );
+  @override
+  late final GeneratedColumn<bool> showSpecialChars = GeneratedColumn<bool>(
+    'show_special_chars',
     aliasedName,
     false,
     type: DriftSqlType.bool,
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("show_app_icon" IN (0, 1))',
+      'CHECK ("show_special_chars" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _showMenuBarIconMeta = const VerificationMeta(
+    'showMenuBarIcon',
+  );
+  @override
+  late final GeneratedColumn<bool> showMenuBarIcon = GeneratedColumn<bool>(
+    'show_menu_bar_icon',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("show_menu_bar_icon" IN (0, 1))',
     ),
     defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _menuBarIconTypeMeta = const VerificationMeta(
+    'menuBarIconType',
+  );
+  @override
+  late final GeneratedColumn<String> menuBarIconType = GeneratedColumn<String>(
+    'menu_bar_icon_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('clipboard'),
+  );
+  static const VerificationMeta _showClipboardNearIconMeta =
+      const VerificationMeta('showClipboardNearIcon');
+  @override
+  late final GeneratedColumn<bool> showClipboardNearIcon =
+      GeneratedColumn<bool>(
+        'show_clipboard_near_icon',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("show_clipboard_near_icon" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
+  static const VerificationMeta _showSearchBoxMeta = const VerificationMeta(
+    'showSearchBox',
+  );
+  @override
+  late final GeneratedColumn<String> showSearchBox = GeneratedColumn<String>(
+    'show_search_box',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('always'),
   );
   static const VerificationMeta _showAppNameMeta = const VerificationMeta(
     'showAppName',
@@ -572,6 +677,21 @@ class $AppSettingsTable extends AppSettings
       'CHECK ("show_app_name" IN (0, 1))',
     ),
     defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _showAppIconMeta = const VerificationMeta(
+    'showAppIcon',
+  );
+  @override
+  late final GeneratedColumn<bool> showAppIcon = GeneratedColumn<bool>(
+    'show_app_icon',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("show_app_icon" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
   );
   static const VerificationMeta _showFooterMenuMeta = const VerificationMeta(
     'showFooterMenu',
@@ -672,7 +792,10 @@ class $AppSettingsTable extends AppSettings
   List<GeneratedColumn> get $columns => [
     id,
     launchAtStartup,
+    autoCheckUpdates,
     hotkeyOpen,
+    hotkeyPin,
+    hotkeyDelete,
     autoPaste,
     pastePlain,
     searchMode,
@@ -684,8 +807,14 @@ class $AppSettingsTable extends AppSettings
     pinPosition,
     imageHeight,
     previewDelay,
-    showAppIcon,
+    highlightMatch,
+    showSpecialChars,
+    showMenuBarIcon,
+    menuBarIconType,
+    showClipboardNearIcon,
+    showSearchBox,
     showAppName,
+    showAppIcon,
     showFooterMenu,
     windowWidth,
     themeMode,
@@ -718,10 +847,34 @@ class $AppSettingsTable extends AppSettings
         ),
       );
     }
+    if (data.containsKey('auto_check_updates')) {
+      context.handle(
+        _autoCheckUpdatesMeta,
+        autoCheckUpdates.isAcceptableOrUnknown(
+          data['auto_check_updates']!,
+          _autoCheckUpdatesMeta,
+        ),
+      );
+    }
     if (data.containsKey('hotkey_open')) {
       context.handle(
         _hotkeyOpenMeta,
         hotkeyOpen.isAcceptableOrUnknown(data['hotkey_open']!, _hotkeyOpenMeta),
+      );
+    }
+    if (data.containsKey('hotkey_pin')) {
+      context.handle(
+        _hotkeyPinMeta,
+        hotkeyPin.isAcceptableOrUnknown(data['hotkey_pin']!, _hotkeyPinMeta),
+      );
+    }
+    if (data.containsKey('hotkey_delete')) {
+      context.handle(
+        _hotkeyDeleteMeta,
+        hotkeyDelete.isAcceptableOrUnknown(
+          data['hotkey_delete']!,
+          _hotkeyDeleteMeta,
+        ),
       );
     }
     if (data.containsKey('auto_paste')) {
@@ -805,12 +958,57 @@ class $AppSettingsTable extends AppSettings
         ),
       );
     }
-    if (data.containsKey('show_app_icon')) {
+    if (data.containsKey('highlight_match')) {
       context.handle(
-        _showAppIconMeta,
-        showAppIcon.isAcceptableOrUnknown(
-          data['show_app_icon']!,
-          _showAppIconMeta,
+        _highlightMatchMeta,
+        highlightMatch.isAcceptableOrUnknown(
+          data['highlight_match']!,
+          _highlightMatchMeta,
+        ),
+      );
+    }
+    if (data.containsKey('show_special_chars')) {
+      context.handle(
+        _showSpecialCharsMeta,
+        showSpecialChars.isAcceptableOrUnknown(
+          data['show_special_chars']!,
+          _showSpecialCharsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('show_menu_bar_icon')) {
+      context.handle(
+        _showMenuBarIconMeta,
+        showMenuBarIcon.isAcceptableOrUnknown(
+          data['show_menu_bar_icon']!,
+          _showMenuBarIconMeta,
+        ),
+      );
+    }
+    if (data.containsKey('menu_bar_icon_type')) {
+      context.handle(
+        _menuBarIconTypeMeta,
+        menuBarIconType.isAcceptableOrUnknown(
+          data['menu_bar_icon_type']!,
+          _menuBarIconTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('show_clipboard_near_icon')) {
+      context.handle(
+        _showClipboardNearIconMeta,
+        showClipboardNearIcon.isAcceptableOrUnknown(
+          data['show_clipboard_near_icon']!,
+          _showClipboardNearIconMeta,
+        ),
+      );
+    }
+    if (data.containsKey('show_search_box')) {
+      context.handle(
+        _showSearchBoxMeta,
+        showSearchBox.isAcceptableOrUnknown(
+          data['show_search_box']!,
+          _showSearchBoxMeta,
         ),
       );
     }
@@ -820,6 +1018,15 @@ class $AppSettingsTable extends AppSettings
         showAppName.isAcceptableOrUnknown(
           data['show_app_name']!,
           _showAppNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('show_app_icon')) {
+      context.handle(
+        _showAppIconMeta,
+        showAppIcon.isAcceptableOrUnknown(
+          data['show_app_icon']!,
+          _showAppIconMeta,
         ),
       );
     }
@@ -897,9 +1104,21 @@ class $AppSettingsTable extends AppSettings
         DriftSqlType.bool,
         data['${effectivePrefix}launch_at_startup'],
       )!,
+      autoCheckUpdates: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_check_updates'],
+      )!,
       hotkeyOpen: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}hotkey_open'],
+      )!,
+      hotkeyPin: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}hotkey_pin'],
+      )!,
+      hotkeyDelete: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}hotkey_delete'],
       )!,
       autoPaste: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
@@ -945,13 +1164,37 @@ class $AppSettingsTable extends AppSettings
         DriftSqlType.int,
         data['${effectivePrefix}preview_delay'],
       )!,
-      showAppIcon: attachedDatabase.typeMapping.read(
+      highlightMatch: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}highlight_match'],
+      )!,
+      showSpecialChars: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
-        data['${effectivePrefix}show_app_icon'],
+        data['${effectivePrefix}show_special_chars'],
+      )!,
+      showMenuBarIcon: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}show_menu_bar_icon'],
+      )!,
+      menuBarIconType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}menu_bar_icon_type'],
+      )!,
+      showClipboardNearIcon: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}show_clipboard_near_icon'],
+      )!,
+      showSearchBox: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}show_search_box'],
       )!,
       showAppName: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}show_app_name'],
+      )!,
+      showAppIcon: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}show_app_icon'],
       )!,
       showFooterMenu: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
@@ -993,7 +1236,10 @@ class $AppSettingsTable extends AppSettings
 class AppSetting extends DataClass implements Insertable<AppSetting> {
   final int id;
   final bool launchAtStartup;
+  final bool autoCheckUpdates;
   final String hotkeyOpen;
+  final String hotkeyPin;
+  final String hotkeyDelete;
   final bool autoPaste;
   final bool pastePlain;
   final String searchMode;
@@ -1005,8 +1251,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
   final String pinPosition;
   final int imageHeight;
   final int previewDelay;
-  final bool showAppIcon;
+  final String highlightMatch;
+  final bool showSpecialChars;
+  final bool showMenuBarIcon;
+  final String menuBarIconType;
+  final bool showClipboardNearIcon;
+  final String showSearchBox;
   final bool showAppName;
+  final bool showAppIcon;
   final bool showFooterMenu;
   final double windowWidth;
   final String themeMode;
@@ -1017,7 +1269,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
   const AppSetting({
     required this.id,
     required this.launchAtStartup,
+    required this.autoCheckUpdates,
     required this.hotkeyOpen,
+    required this.hotkeyPin,
+    required this.hotkeyDelete,
     required this.autoPaste,
     required this.pastePlain,
     required this.searchMode,
@@ -1029,8 +1284,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     required this.pinPosition,
     required this.imageHeight,
     required this.previewDelay,
-    required this.showAppIcon,
+    required this.highlightMatch,
+    required this.showSpecialChars,
+    required this.showMenuBarIcon,
+    required this.menuBarIconType,
+    required this.showClipboardNearIcon,
+    required this.showSearchBox,
     required this.showAppName,
+    required this.showAppIcon,
     required this.showFooterMenu,
     required this.windowWidth,
     required this.themeMode,
@@ -1044,7 +1305,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
     map['launch_at_startup'] = Variable<bool>(launchAtStartup);
+    map['auto_check_updates'] = Variable<bool>(autoCheckUpdates);
     map['hotkey_open'] = Variable<String>(hotkeyOpen);
+    map['hotkey_pin'] = Variable<String>(hotkeyPin);
+    map['hotkey_delete'] = Variable<String>(hotkeyDelete);
     map['auto_paste'] = Variable<bool>(autoPaste);
     map['paste_plain'] = Variable<bool>(pastePlain);
     map['search_mode'] = Variable<String>(searchMode);
@@ -1056,8 +1320,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     map['pin_position'] = Variable<String>(pinPosition);
     map['image_height'] = Variable<int>(imageHeight);
     map['preview_delay'] = Variable<int>(previewDelay);
-    map['show_app_icon'] = Variable<bool>(showAppIcon);
+    map['highlight_match'] = Variable<String>(highlightMatch);
+    map['show_special_chars'] = Variable<bool>(showSpecialChars);
+    map['show_menu_bar_icon'] = Variable<bool>(showMenuBarIcon);
+    map['menu_bar_icon_type'] = Variable<String>(menuBarIconType);
+    map['show_clipboard_near_icon'] = Variable<bool>(showClipboardNearIcon);
+    map['show_search_box'] = Variable<String>(showSearchBox);
     map['show_app_name'] = Variable<bool>(showAppName);
+    map['show_app_icon'] = Variable<bool>(showAppIcon);
     map['show_footer_menu'] = Variable<bool>(showFooterMenu);
     map['window_width'] = Variable<double>(windowWidth);
     map['theme_mode'] = Variable<String>(themeMode);
@@ -1072,7 +1342,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     return AppSettingsCompanion(
       id: Value(id),
       launchAtStartup: Value(launchAtStartup),
+      autoCheckUpdates: Value(autoCheckUpdates),
       hotkeyOpen: Value(hotkeyOpen),
+      hotkeyPin: Value(hotkeyPin),
+      hotkeyDelete: Value(hotkeyDelete),
       autoPaste: Value(autoPaste),
       pastePlain: Value(pastePlain),
       searchMode: Value(searchMode),
@@ -1084,8 +1357,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
       pinPosition: Value(pinPosition),
       imageHeight: Value(imageHeight),
       previewDelay: Value(previewDelay),
-      showAppIcon: Value(showAppIcon),
+      highlightMatch: Value(highlightMatch),
+      showSpecialChars: Value(showSpecialChars),
+      showMenuBarIcon: Value(showMenuBarIcon),
+      menuBarIconType: Value(menuBarIconType),
+      showClipboardNearIcon: Value(showClipboardNearIcon),
+      showSearchBox: Value(showSearchBox),
       showAppName: Value(showAppName),
+      showAppIcon: Value(showAppIcon),
       showFooterMenu: Value(showFooterMenu),
       windowWidth: Value(windowWidth),
       themeMode: Value(themeMode),
@@ -1104,7 +1383,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     return AppSetting(
       id: serializer.fromJson<int>(json['id']),
       launchAtStartup: serializer.fromJson<bool>(json['launchAtStartup']),
+      autoCheckUpdates: serializer.fromJson<bool>(json['autoCheckUpdates']),
       hotkeyOpen: serializer.fromJson<String>(json['hotkeyOpen']),
+      hotkeyPin: serializer.fromJson<String>(json['hotkeyPin']),
+      hotkeyDelete: serializer.fromJson<String>(json['hotkeyDelete']),
       autoPaste: serializer.fromJson<bool>(json['autoPaste']),
       pastePlain: serializer.fromJson<bool>(json['pastePlain']),
       searchMode: serializer.fromJson<String>(json['searchMode']),
@@ -1116,8 +1398,16 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
       pinPosition: serializer.fromJson<String>(json['pinPosition']),
       imageHeight: serializer.fromJson<int>(json['imageHeight']),
       previewDelay: serializer.fromJson<int>(json['previewDelay']),
-      showAppIcon: serializer.fromJson<bool>(json['showAppIcon']),
+      highlightMatch: serializer.fromJson<String>(json['highlightMatch']),
+      showSpecialChars: serializer.fromJson<bool>(json['showSpecialChars']),
+      showMenuBarIcon: serializer.fromJson<bool>(json['showMenuBarIcon']),
+      menuBarIconType: serializer.fromJson<String>(json['menuBarIconType']),
+      showClipboardNearIcon: serializer.fromJson<bool>(
+        json['showClipboardNearIcon'],
+      ),
+      showSearchBox: serializer.fromJson<String>(json['showSearchBox']),
       showAppName: serializer.fromJson<bool>(json['showAppName']),
+      showAppIcon: serializer.fromJson<bool>(json['showAppIcon']),
       showFooterMenu: serializer.fromJson<bool>(json['showFooterMenu']),
       windowWidth: serializer.fromJson<double>(json['windowWidth']),
       themeMode: serializer.fromJson<String>(json['themeMode']),
@@ -1135,7 +1425,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
       'launchAtStartup': serializer.toJson<bool>(launchAtStartup),
+      'autoCheckUpdates': serializer.toJson<bool>(autoCheckUpdates),
       'hotkeyOpen': serializer.toJson<String>(hotkeyOpen),
+      'hotkeyPin': serializer.toJson<String>(hotkeyPin),
+      'hotkeyDelete': serializer.toJson<String>(hotkeyDelete),
       'autoPaste': serializer.toJson<bool>(autoPaste),
       'pastePlain': serializer.toJson<bool>(pastePlain),
       'searchMode': serializer.toJson<String>(searchMode),
@@ -1147,8 +1440,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
       'pinPosition': serializer.toJson<String>(pinPosition),
       'imageHeight': serializer.toJson<int>(imageHeight),
       'previewDelay': serializer.toJson<int>(previewDelay),
-      'showAppIcon': serializer.toJson<bool>(showAppIcon),
+      'highlightMatch': serializer.toJson<String>(highlightMatch),
+      'showSpecialChars': serializer.toJson<bool>(showSpecialChars),
+      'showMenuBarIcon': serializer.toJson<bool>(showMenuBarIcon),
+      'menuBarIconType': serializer.toJson<String>(menuBarIconType),
+      'showClipboardNearIcon': serializer.toJson<bool>(showClipboardNearIcon),
+      'showSearchBox': serializer.toJson<String>(showSearchBox),
       'showAppName': serializer.toJson<bool>(showAppName),
+      'showAppIcon': serializer.toJson<bool>(showAppIcon),
       'showFooterMenu': serializer.toJson<bool>(showFooterMenu),
       'windowWidth': serializer.toJson<double>(windowWidth),
       'themeMode': serializer.toJson<String>(themeMode),
@@ -1162,7 +1461,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
   AppSetting copyWith({
     int? id,
     bool? launchAtStartup,
+    bool? autoCheckUpdates,
     String? hotkeyOpen,
+    String? hotkeyPin,
+    String? hotkeyDelete,
     bool? autoPaste,
     bool? pastePlain,
     String? searchMode,
@@ -1174,8 +1476,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     String? pinPosition,
     int? imageHeight,
     int? previewDelay,
-    bool? showAppIcon,
+    String? highlightMatch,
+    bool? showSpecialChars,
+    bool? showMenuBarIcon,
+    String? menuBarIconType,
+    bool? showClipboardNearIcon,
+    String? showSearchBox,
     bool? showAppName,
+    bool? showAppIcon,
     bool? showFooterMenu,
     double? windowWidth,
     String? themeMode,
@@ -1186,7 +1494,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
   }) => AppSetting(
     id: id ?? this.id,
     launchAtStartup: launchAtStartup ?? this.launchAtStartup,
+    autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
     hotkeyOpen: hotkeyOpen ?? this.hotkeyOpen,
+    hotkeyPin: hotkeyPin ?? this.hotkeyPin,
+    hotkeyDelete: hotkeyDelete ?? this.hotkeyDelete,
     autoPaste: autoPaste ?? this.autoPaste,
     pastePlain: pastePlain ?? this.pastePlain,
     searchMode: searchMode ?? this.searchMode,
@@ -1198,8 +1509,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     pinPosition: pinPosition ?? this.pinPosition,
     imageHeight: imageHeight ?? this.imageHeight,
     previewDelay: previewDelay ?? this.previewDelay,
-    showAppIcon: showAppIcon ?? this.showAppIcon,
+    highlightMatch: highlightMatch ?? this.highlightMatch,
+    showSpecialChars: showSpecialChars ?? this.showSpecialChars,
+    showMenuBarIcon: showMenuBarIcon ?? this.showMenuBarIcon,
+    menuBarIconType: menuBarIconType ?? this.menuBarIconType,
+    showClipboardNearIcon: showClipboardNearIcon ?? this.showClipboardNearIcon,
+    showSearchBox: showSearchBox ?? this.showSearchBox,
     showAppName: showAppName ?? this.showAppName,
+    showAppIcon: showAppIcon ?? this.showAppIcon,
     showFooterMenu: showFooterMenu ?? this.showFooterMenu,
     windowWidth: windowWidth ?? this.windowWidth,
     themeMode: themeMode ?? this.themeMode,
@@ -1214,9 +1531,16 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
       launchAtStartup: data.launchAtStartup.present
           ? data.launchAtStartup.value
           : this.launchAtStartup,
+      autoCheckUpdates: data.autoCheckUpdates.present
+          ? data.autoCheckUpdates.value
+          : this.autoCheckUpdates,
       hotkeyOpen: data.hotkeyOpen.present
           ? data.hotkeyOpen.value
           : this.hotkeyOpen,
+      hotkeyPin: data.hotkeyPin.present ? data.hotkeyPin.value : this.hotkeyPin,
+      hotkeyDelete: data.hotkeyDelete.present
+          ? data.hotkeyDelete.value
+          : this.hotkeyDelete,
       autoPaste: data.autoPaste.present ? data.autoPaste.value : this.autoPaste,
       pastePlain: data.pastePlain.present
           ? data.pastePlain.value
@@ -1244,12 +1568,30 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
       previewDelay: data.previewDelay.present
           ? data.previewDelay.value
           : this.previewDelay,
-      showAppIcon: data.showAppIcon.present
-          ? data.showAppIcon.value
-          : this.showAppIcon,
+      highlightMatch: data.highlightMatch.present
+          ? data.highlightMatch.value
+          : this.highlightMatch,
+      showSpecialChars: data.showSpecialChars.present
+          ? data.showSpecialChars.value
+          : this.showSpecialChars,
+      showMenuBarIcon: data.showMenuBarIcon.present
+          ? data.showMenuBarIcon.value
+          : this.showMenuBarIcon,
+      menuBarIconType: data.menuBarIconType.present
+          ? data.menuBarIconType.value
+          : this.menuBarIconType,
+      showClipboardNearIcon: data.showClipboardNearIcon.present
+          ? data.showClipboardNearIcon.value
+          : this.showClipboardNearIcon,
+      showSearchBox: data.showSearchBox.present
+          ? data.showSearchBox.value
+          : this.showSearchBox,
       showAppName: data.showAppName.present
           ? data.showAppName.value
           : this.showAppName,
+      showAppIcon: data.showAppIcon.present
+          ? data.showAppIcon.value
+          : this.showAppIcon,
       showFooterMenu: data.showFooterMenu.present
           ? data.showFooterMenu.value
           : this.showFooterMenu,
@@ -1275,7 +1617,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     return (StringBuffer('AppSetting(')
           ..write('id: $id, ')
           ..write('launchAtStartup: $launchAtStartup, ')
+          ..write('autoCheckUpdates: $autoCheckUpdates, ')
           ..write('hotkeyOpen: $hotkeyOpen, ')
+          ..write('hotkeyPin: $hotkeyPin, ')
+          ..write('hotkeyDelete: $hotkeyDelete, ')
           ..write('autoPaste: $autoPaste, ')
           ..write('pastePlain: $pastePlain, ')
           ..write('searchMode: $searchMode, ')
@@ -1287,8 +1632,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
           ..write('pinPosition: $pinPosition, ')
           ..write('imageHeight: $imageHeight, ')
           ..write('previewDelay: $previewDelay, ')
-          ..write('showAppIcon: $showAppIcon, ')
+          ..write('highlightMatch: $highlightMatch, ')
+          ..write('showSpecialChars: $showSpecialChars, ')
+          ..write('showMenuBarIcon: $showMenuBarIcon, ')
+          ..write('menuBarIconType: $menuBarIconType, ')
+          ..write('showClipboardNearIcon: $showClipboardNearIcon, ')
+          ..write('showSearchBox: $showSearchBox, ')
           ..write('showAppName: $showAppName, ')
+          ..write('showAppIcon: $showAppIcon, ')
           ..write('showFooterMenu: $showFooterMenu, ')
           ..write('windowWidth: $windowWidth, ')
           ..write('themeMode: $themeMode, ')
@@ -1304,7 +1655,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
   int get hashCode => Object.hashAll([
     id,
     launchAtStartup,
+    autoCheckUpdates,
     hotkeyOpen,
+    hotkeyPin,
+    hotkeyDelete,
     autoPaste,
     pastePlain,
     searchMode,
@@ -1316,8 +1670,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
     pinPosition,
     imageHeight,
     previewDelay,
-    showAppIcon,
+    highlightMatch,
+    showSpecialChars,
+    showMenuBarIcon,
+    menuBarIconType,
+    showClipboardNearIcon,
+    showSearchBox,
     showAppName,
+    showAppIcon,
     showFooterMenu,
     windowWidth,
     themeMode,
@@ -1332,7 +1692,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
       (other is AppSetting &&
           other.id == this.id &&
           other.launchAtStartup == this.launchAtStartup &&
+          other.autoCheckUpdates == this.autoCheckUpdates &&
           other.hotkeyOpen == this.hotkeyOpen &&
+          other.hotkeyPin == this.hotkeyPin &&
+          other.hotkeyDelete == this.hotkeyDelete &&
           other.autoPaste == this.autoPaste &&
           other.pastePlain == this.pastePlain &&
           other.searchMode == this.searchMode &&
@@ -1344,8 +1707,14 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
           other.pinPosition == this.pinPosition &&
           other.imageHeight == this.imageHeight &&
           other.previewDelay == this.previewDelay &&
-          other.showAppIcon == this.showAppIcon &&
+          other.highlightMatch == this.highlightMatch &&
+          other.showSpecialChars == this.showSpecialChars &&
+          other.showMenuBarIcon == this.showMenuBarIcon &&
+          other.menuBarIconType == this.menuBarIconType &&
+          other.showClipboardNearIcon == this.showClipboardNearIcon &&
+          other.showSearchBox == this.showSearchBox &&
           other.showAppName == this.showAppName &&
+          other.showAppIcon == this.showAppIcon &&
           other.showFooterMenu == this.showFooterMenu &&
           other.windowWidth == this.windowWidth &&
           other.themeMode == this.themeMode &&
@@ -1358,7 +1727,10 @@ class AppSetting extends DataClass implements Insertable<AppSetting> {
 class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   final Value<int> id;
   final Value<bool> launchAtStartup;
+  final Value<bool> autoCheckUpdates;
   final Value<String> hotkeyOpen;
+  final Value<String> hotkeyPin;
+  final Value<String> hotkeyDelete;
   final Value<bool> autoPaste;
   final Value<bool> pastePlain;
   final Value<String> searchMode;
@@ -1370,8 +1742,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   final Value<String> pinPosition;
   final Value<int> imageHeight;
   final Value<int> previewDelay;
-  final Value<bool> showAppIcon;
+  final Value<String> highlightMatch;
+  final Value<bool> showSpecialChars;
+  final Value<bool> showMenuBarIcon;
+  final Value<String> menuBarIconType;
+  final Value<bool> showClipboardNearIcon;
+  final Value<String> showSearchBox;
   final Value<bool> showAppName;
+  final Value<bool> showAppIcon;
   final Value<bool> showFooterMenu;
   final Value<double> windowWidth;
   final Value<String> themeMode;
@@ -1382,7 +1760,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   const AppSettingsCompanion({
     this.id = const Value.absent(),
     this.launchAtStartup = const Value.absent(),
+    this.autoCheckUpdates = const Value.absent(),
     this.hotkeyOpen = const Value.absent(),
+    this.hotkeyPin = const Value.absent(),
+    this.hotkeyDelete = const Value.absent(),
     this.autoPaste = const Value.absent(),
     this.pastePlain = const Value.absent(),
     this.searchMode = const Value.absent(),
@@ -1394,8 +1775,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     this.pinPosition = const Value.absent(),
     this.imageHeight = const Value.absent(),
     this.previewDelay = const Value.absent(),
-    this.showAppIcon = const Value.absent(),
+    this.highlightMatch = const Value.absent(),
+    this.showSpecialChars = const Value.absent(),
+    this.showMenuBarIcon = const Value.absent(),
+    this.menuBarIconType = const Value.absent(),
+    this.showClipboardNearIcon = const Value.absent(),
+    this.showSearchBox = const Value.absent(),
     this.showAppName = const Value.absent(),
+    this.showAppIcon = const Value.absent(),
     this.showFooterMenu = const Value.absent(),
     this.windowWidth = const Value.absent(),
     this.themeMode = const Value.absent(),
@@ -1407,7 +1794,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   AppSettingsCompanion.insert({
     this.id = const Value.absent(),
     this.launchAtStartup = const Value.absent(),
+    this.autoCheckUpdates = const Value.absent(),
     this.hotkeyOpen = const Value.absent(),
+    this.hotkeyPin = const Value.absent(),
+    this.hotkeyDelete = const Value.absent(),
     this.autoPaste = const Value.absent(),
     this.pastePlain = const Value.absent(),
     this.searchMode = const Value.absent(),
@@ -1419,8 +1809,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     this.pinPosition = const Value.absent(),
     this.imageHeight = const Value.absent(),
     this.previewDelay = const Value.absent(),
-    this.showAppIcon = const Value.absent(),
+    this.highlightMatch = const Value.absent(),
+    this.showSpecialChars = const Value.absent(),
+    this.showMenuBarIcon = const Value.absent(),
+    this.menuBarIconType = const Value.absent(),
+    this.showClipboardNearIcon = const Value.absent(),
+    this.showSearchBox = const Value.absent(),
     this.showAppName = const Value.absent(),
+    this.showAppIcon = const Value.absent(),
     this.showFooterMenu = const Value.absent(),
     this.windowWidth = const Value.absent(),
     this.themeMode = const Value.absent(),
@@ -1432,7 +1828,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   static Insertable<AppSetting> custom({
     Expression<int>? id,
     Expression<bool>? launchAtStartup,
+    Expression<bool>? autoCheckUpdates,
     Expression<String>? hotkeyOpen,
+    Expression<String>? hotkeyPin,
+    Expression<String>? hotkeyDelete,
     Expression<bool>? autoPaste,
     Expression<bool>? pastePlain,
     Expression<String>? searchMode,
@@ -1444,8 +1843,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     Expression<String>? pinPosition,
     Expression<int>? imageHeight,
     Expression<int>? previewDelay,
-    Expression<bool>? showAppIcon,
+    Expression<String>? highlightMatch,
+    Expression<bool>? showSpecialChars,
+    Expression<bool>? showMenuBarIcon,
+    Expression<String>? menuBarIconType,
+    Expression<bool>? showClipboardNearIcon,
+    Expression<String>? showSearchBox,
     Expression<bool>? showAppName,
+    Expression<bool>? showAppIcon,
     Expression<bool>? showFooterMenu,
     Expression<double>? windowWidth,
     Expression<String>? themeMode,
@@ -1457,7 +1862,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (launchAtStartup != null) 'launch_at_startup': launchAtStartup,
+      if (autoCheckUpdates != null) 'auto_check_updates': autoCheckUpdates,
       if (hotkeyOpen != null) 'hotkey_open': hotkeyOpen,
+      if (hotkeyPin != null) 'hotkey_pin': hotkeyPin,
+      if (hotkeyDelete != null) 'hotkey_delete': hotkeyDelete,
       if (autoPaste != null) 'auto_paste': autoPaste,
       if (pastePlain != null) 'paste_plain': pastePlain,
       if (searchMode != null) 'search_mode': searchMode,
@@ -1469,8 +1877,15 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
       if (pinPosition != null) 'pin_position': pinPosition,
       if (imageHeight != null) 'image_height': imageHeight,
       if (previewDelay != null) 'preview_delay': previewDelay,
-      if (showAppIcon != null) 'show_app_icon': showAppIcon,
+      if (highlightMatch != null) 'highlight_match': highlightMatch,
+      if (showSpecialChars != null) 'show_special_chars': showSpecialChars,
+      if (showMenuBarIcon != null) 'show_menu_bar_icon': showMenuBarIcon,
+      if (menuBarIconType != null) 'menu_bar_icon_type': menuBarIconType,
+      if (showClipboardNearIcon != null)
+        'show_clipboard_near_icon': showClipboardNearIcon,
+      if (showSearchBox != null) 'show_search_box': showSearchBox,
       if (showAppName != null) 'show_app_name': showAppName,
+      if (showAppIcon != null) 'show_app_icon': showAppIcon,
       if (showFooterMenu != null) 'show_footer_menu': showFooterMenu,
       if (windowWidth != null) 'window_width': windowWidth,
       if (themeMode != null) 'theme_mode': themeMode,
@@ -1485,7 +1900,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   AppSettingsCompanion copyWith({
     Value<int>? id,
     Value<bool>? launchAtStartup,
+    Value<bool>? autoCheckUpdates,
     Value<String>? hotkeyOpen,
+    Value<String>? hotkeyPin,
+    Value<String>? hotkeyDelete,
     Value<bool>? autoPaste,
     Value<bool>? pastePlain,
     Value<String>? searchMode,
@@ -1497,8 +1915,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     Value<String>? pinPosition,
     Value<int>? imageHeight,
     Value<int>? previewDelay,
-    Value<bool>? showAppIcon,
+    Value<String>? highlightMatch,
+    Value<bool>? showSpecialChars,
+    Value<bool>? showMenuBarIcon,
+    Value<String>? menuBarIconType,
+    Value<bool>? showClipboardNearIcon,
+    Value<String>? showSearchBox,
     Value<bool>? showAppName,
+    Value<bool>? showAppIcon,
     Value<bool>? showFooterMenu,
     Value<double>? windowWidth,
     Value<String>? themeMode,
@@ -1510,7 +1934,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     return AppSettingsCompanion(
       id: id ?? this.id,
       launchAtStartup: launchAtStartup ?? this.launchAtStartup,
+      autoCheckUpdates: autoCheckUpdates ?? this.autoCheckUpdates,
       hotkeyOpen: hotkeyOpen ?? this.hotkeyOpen,
+      hotkeyPin: hotkeyPin ?? this.hotkeyPin,
+      hotkeyDelete: hotkeyDelete ?? this.hotkeyDelete,
       autoPaste: autoPaste ?? this.autoPaste,
       pastePlain: pastePlain ?? this.pastePlain,
       searchMode: searchMode ?? this.searchMode,
@@ -1522,8 +1949,15 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
       pinPosition: pinPosition ?? this.pinPosition,
       imageHeight: imageHeight ?? this.imageHeight,
       previewDelay: previewDelay ?? this.previewDelay,
-      showAppIcon: showAppIcon ?? this.showAppIcon,
+      highlightMatch: highlightMatch ?? this.highlightMatch,
+      showSpecialChars: showSpecialChars ?? this.showSpecialChars,
+      showMenuBarIcon: showMenuBarIcon ?? this.showMenuBarIcon,
+      menuBarIconType: menuBarIconType ?? this.menuBarIconType,
+      showClipboardNearIcon:
+          showClipboardNearIcon ?? this.showClipboardNearIcon,
+      showSearchBox: showSearchBox ?? this.showSearchBox,
       showAppName: showAppName ?? this.showAppName,
+      showAppIcon: showAppIcon ?? this.showAppIcon,
       showFooterMenu: showFooterMenu ?? this.showFooterMenu,
       windowWidth: windowWidth ?? this.windowWidth,
       themeMode: themeMode ?? this.themeMode,
@@ -1543,8 +1977,17 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     if (launchAtStartup.present) {
       map['launch_at_startup'] = Variable<bool>(launchAtStartup.value);
     }
+    if (autoCheckUpdates.present) {
+      map['auto_check_updates'] = Variable<bool>(autoCheckUpdates.value);
+    }
     if (hotkeyOpen.present) {
       map['hotkey_open'] = Variable<String>(hotkeyOpen.value);
+    }
+    if (hotkeyPin.present) {
+      map['hotkey_pin'] = Variable<String>(hotkeyPin.value);
+    }
+    if (hotkeyDelete.present) {
+      map['hotkey_delete'] = Variable<String>(hotkeyDelete.value);
     }
     if (autoPaste.present) {
       map['auto_paste'] = Variable<bool>(autoPaste.value);
@@ -1579,11 +2022,31 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     if (previewDelay.present) {
       map['preview_delay'] = Variable<int>(previewDelay.value);
     }
-    if (showAppIcon.present) {
-      map['show_app_icon'] = Variable<bool>(showAppIcon.value);
+    if (highlightMatch.present) {
+      map['highlight_match'] = Variable<String>(highlightMatch.value);
+    }
+    if (showSpecialChars.present) {
+      map['show_special_chars'] = Variable<bool>(showSpecialChars.value);
+    }
+    if (showMenuBarIcon.present) {
+      map['show_menu_bar_icon'] = Variable<bool>(showMenuBarIcon.value);
+    }
+    if (menuBarIconType.present) {
+      map['menu_bar_icon_type'] = Variable<String>(menuBarIconType.value);
+    }
+    if (showClipboardNearIcon.present) {
+      map['show_clipboard_near_icon'] = Variable<bool>(
+        showClipboardNearIcon.value,
+      );
+    }
+    if (showSearchBox.present) {
+      map['show_search_box'] = Variable<String>(showSearchBox.value);
     }
     if (showAppName.present) {
       map['show_app_name'] = Variable<bool>(showAppName.value);
+    }
+    if (showAppIcon.present) {
+      map['show_app_icon'] = Variable<bool>(showAppIcon.value);
     }
     if (showFooterMenu.present) {
       map['show_footer_menu'] = Variable<bool>(showFooterMenu.value);
@@ -1616,7 +2079,10 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
     return (StringBuffer('AppSettingsCompanion(')
           ..write('id: $id, ')
           ..write('launchAtStartup: $launchAtStartup, ')
+          ..write('autoCheckUpdates: $autoCheckUpdates, ')
           ..write('hotkeyOpen: $hotkeyOpen, ')
+          ..write('hotkeyPin: $hotkeyPin, ')
+          ..write('hotkeyDelete: $hotkeyDelete, ')
           ..write('autoPaste: $autoPaste, ')
           ..write('pastePlain: $pastePlain, ')
           ..write('searchMode: $searchMode, ')
@@ -1628,8 +2094,14 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
           ..write('pinPosition: $pinPosition, ')
           ..write('imageHeight: $imageHeight, ')
           ..write('previewDelay: $previewDelay, ')
-          ..write('showAppIcon: $showAppIcon, ')
+          ..write('highlightMatch: $highlightMatch, ')
+          ..write('showSpecialChars: $showSpecialChars, ')
+          ..write('showMenuBarIcon: $showMenuBarIcon, ')
+          ..write('menuBarIconType: $menuBarIconType, ')
+          ..write('showClipboardNearIcon: $showClipboardNearIcon, ')
+          ..write('showSearchBox: $showSearchBox, ')
           ..write('showAppName: $showAppName, ')
+          ..write('showAppIcon: $showAppIcon, ')
           ..write('showFooterMenu: $showFooterMenu, ')
           ..write('windowWidth: $windowWidth, ')
           ..write('themeMode: $themeMode, ')
@@ -1642,346 +2114,6 @@ class AppSettingsCompanion extends UpdateCompanion<AppSetting> {
   }
 }
 
-class $PinsTable extends Pins with TableInfo<$PinsTable, Pin> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $PinsTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<int> id = GeneratedColumn<int>(
-    'id',
-    aliasedName,
-    false,
-    hasAutoIncrement: true,
-    type: DriftSqlType.int,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'PRIMARY KEY AUTOINCREMENT',
-    ),
-  );
-  static const VerificationMeta _titleMeta = const VerificationMeta('title');
-  @override
-  late final GeneratedColumn<String> title = GeneratedColumn<String>(
-    'title',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _contentMeta = const VerificationMeta(
-    'content',
-  );
-  @override
-  late final GeneratedColumn<String> content = GeneratedColumn<String>(
-    'content',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _hotkeyMeta = const VerificationMeta('hotkey');
-  @override
-  late final GeneratedColumn<String> hotkey = GeneratedColumn<String>(
-    'hotkey',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: false,
-    defaultValue: currentDateAndTime,
-  );
-  @override
-  List<GeneratedColumn> get $columns => [id, title, content, hotkey, createdAt];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'pins';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<Pin> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    }
-    if (data.containsKey('title')) {
-      context.handle(
-        _titleMeta,
-        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_titleMeta);
-    }
-    if (data.containsKey('content')) {
-      context.handle(
-        _contentMeta,
-        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_contentMeta);
-    }
-    if (data.containsKey('hotkey')) {
-      context.handle(
-        _hotkeyMeta,
-        hotkey.isAcceptableOrUnknown(data['hotkey']!, _hotkeyMeta),
-      );
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  Pin map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return Pin(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}id'],
-      )!,
-      title: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}title'],
-      )!,
-      content: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}content'],
-      )!,
-      hotkey: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}hotkey'],
-      ),
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
-      )!,
-    );
-  }
-
-  @override
-  $PinsTable createAlias(String alias) {
-    return $PinsTable(attachedDatabase, alias);
-  }
-}
-
-class Pin extends DataClass implements Insertable<Pin> {
-  final int id;
-  final String title;
-  final String content;
-  final String? hotkey;
-  final DateTime createdAt;
-  const Pin({
-    required this.id,
-    required this.title,
-    required this.content,
-    this.hotkey,
-    required this.createdAt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<int>(id);
-    map['title'] = Variable<String>(title);
-    map['content'] = Variable<String>(content);
-    if (!nullToAbsent || hotkey != null) {
-      map['hotkey'] = Variable<String>(hotkey);
-    }
-    map['created_at'] = Variable<DateTime>(createdAt);
-    return map;
-  }
-
-  PinsCompanion toCompanion(bool nullToAbsent) {
-    return PinsCompanion(
-      id: Value(id),
-      title: Value(title),
-      content: Value(content),
-      hotkey: hotkey == null && nullToAbsent
-          ? const Value.absent()
-          : Value(hotkey),
-      createdAt: Value(createdAt),
-    );
-  }
-
-  factory Pin.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return Pin(
-      id: serializer.fromJson<int>(json['id']),
-      title: serializer.fromJson<String>(json['title']),
-      content: serializer.fromJson<String>(json['content']),
-      hotkey: serializer.fromJson<String?>(json['hotkey']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<int>(id),
-      'title': serializer.toJson<String>(title),
-      'content': serializer.toJson<String>(content),
-      'hotkey': serializer.toJson<String?>(hotkey),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-    };
-  }
-
-  Pin copyWith({
-    int? id,
-    String? title,
-    String? content,
-    Value<String?> hotkey = const Value.absent(),
-    DateTime? createdAt,
-  }) => Pin(
-    id: id ?? this.id,
-    title: title ?? this.title,
-    content: content ?? this.content,
-    hotkey: hotkey.present ? hotkey.value : this.hotkey,
-    createdAt: createdAt ?? this.createdAt,
-  );
-  Pin copyWithCompanion(PinsCompanion data) {
-    return Pin(
-      id: data.id.present ? data.id.value : this.id,
-      title: data.title.present ? data.title.value : this.title,
-      content: data.content.present ? data.content.value : this.content,
-      hotkey: data.hotkey.present ? data.hotkey.value : this.hotkey,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('Pin(')
-          ..write('id: $id, ')
-          ..write('title: $title, ')
-          ..write('content: $content, ')
-          ..write('hotkey: $hotkey, ')
-          ..write('createdAt: $createdAt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(id, title, content, hotkey, createdAt);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is Pin &&
-          other.id == this.id &&
-          other.title == this.title &&
-          other.content == this.content &&
-          other.hotkey == this.hotkey &&
-          other.createdAt == this.createdAt);
-}
-
-class PinsCompanion extends UpdateCompanion<Pin> {
-  final Value<int> id;
-  final Value<String> title;
-  final Value<String> content;
-  final Value<String?> hotkey;
-  final Value<DateTime> createdAt;
-  const PinsCompanion({
-    this.id = const Value.absent(),
-    this.title = const Value.absent(),
-    this.content = const Value.absent(),
-    this.hotkey = const Value.absent(),
-    this.createdAt = const Value.absent(),
-  });
-  PinsCompanion.insert({
-    this.id = const Value.absent(),
-    required String title,
-    required String content,
-    this.hotkey = const Value.absent(),
-    this.createdAt = const Value.absent(),
-  }) : title = Value(title),
-       content = Value(content);
-  static Insertable<Pin> custom({
-    Expression<int>? id,
-    Expression<String>? title,
-    Expression<String>? content,
-    Expression<String>? hotkey,
-    Expression<DateTime>? createdAt,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (title != null) 'title': title,
-      if (content != null) 'content': content,
-      if (hotkey != null) 'hotkey': hotkey,
-      if (createdAt != null) 'created_at': createdAt,
-    });
-  }
-
-  PinsCompanion copyWith({
-    Value<int>? id,
-    Value<String>? title,
-    Value<String>? content,
-    Value<String?>? hotkey,
-    Value<DateTime>? createdAt,
-  }) {
-    return PinsCompanion(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      content: content ?? this.content,
-      hotkey: hotkey ?? this.hotkey,
-      createdAt: createdAt ?? this.createdAt,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<int>(id.value);
-    }
-    if (title.present) {
-      map['title'] = Variable<String>(title.value);
-    }
-    if (content.present) {
-      map['content'] = Variable<String>(content.value);
-    }
-    if (hotkey.present) {
-      map['hotkey'] = Variable<String>(hotkey.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('PinsCompanion(')
-          ..write('id: $id, ')
-          ..write('title: $title, ')
-          ..write('content: $content, ')
-          ..write('hotkey: $hotkey, ')
-          ..write('createdAt: $createdAt')
-          ..write(')'))
-        .toString();
-  }
-}
-
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1989,7 +2121,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     this,
   );
   late final $AppSettingsTable appSettings = $AppSettingsTable(this);
-  late final $PinsTable pins = $PinsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1997,7 +2128,6 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     clipboardEntries,
     appSettings,
-    pins,
   ];
 }
 
@@ -2205,7 +2335,10 @@ typedef $$AppSettingsTableCreateCompanionBuilder =
     AppSettingsCompanion Function({
       Value<int> id,
       Value<bool> launchAtStartup,
+      Value<bool> autoCheckUpdates,
       Value<String> hotkeyOpen,
+      Value<String> hotkeyPin,
+      Value<String> hotkeyDelete,
       Value<bool> autoPaste,
       Value<bool> pastePlain,
       Value<String> searchMode,
@@ -2217,8 +2350,14 @@ typedef $$AppSettingsTableCreateCompanionBuilder =
       Value<String> pinPosition,
       Value<int> imageHeight,
       Value<int> previewDelay,
-      Value<bool> showAppIcon,
+      Value<String> highlightMatch,
+      Value<bool> showSpecialChars,
+      Value<bool> showMenuBarIcon,
+      Value<String> menuBarIconType,
+      Value<bool> showClipboardNearIcon,
+      Value<String> showSearchBox,
       Value<bool> showAppName,
+      Value<bool> showAppIcon,
       Value<bool> showFooterMenu,
       Value<double> windowWidth,
       Value<String> themeMode,
@@ -2231,7 +2370,10 @@ typedef $$AppSettingsTableUpdateCompanionBuilder =
     AppSettingsCompanion Function({
       Value<int> id,
       Value<bool> launchAtStartup,
+      Value<bool> autoCheckUpdates,
       Value<String> hotkeyOpen,
+      Value<String> hotkeyPin,
+      Value<String> hotkeyDelete,
       Value<bool> autoPaste,
       Value<bool> pastePlain,
       Value<String> searchMode,
@@ -2243,8 +2385,14 @@ typedef $$AppSettingsTableUpdateCompanionBuilder =
       Value<String> pinPosition,
       Value<int> imageHeight,
       Value<int> previewDelay,
-      Value<bool> showAppIcon,
+      Value<String> highlightMatch,
+      Value<bool> showSpecialChars,
+      Value<bool> showMenuBarIcon,
+      Value<String> menuBarIconType,
+      Value<bool> showClipboardNearIcon,
+      Value<String> showSearchBox,
       Value<bool> showAppName,
+      Value<bool> showAppIcon,
       Value<bool> showFooterMenu,
       Value<double> windowWidth,
       Value<String> themeMode,
@@ -2273,8 +2421,23 @@ class $$AppSettingsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<bool> get autoCheckUpdates => $composableBuilder(
+    column: $table.autoCheckUpdates,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<String> get hotkeyOpen => $composableBuilder(
     column: $table.hotkeyOpen,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get hotkeyPin => $composableBuilder(
+    column: $table.hotkeyPin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get hotkeyDelete => $composableBuilder(
+    column: $table.hotkeyDelete,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2333,13 +2496,43 @@ class $$AppSettingsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<bool> get showAppIcon => $composableBuilder(
-    column: $table.showAppIcon,
+  ColumnFilters<String> get highlightMatch => $composableBuilder(
+    column: $table.highlightMatch,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get showSpecialChars => $composableBuilder(
+    column: $table.showSpecialChars,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get showMenuBarIcon => $composableBuilder(
+    column: $table.showMenuBarIcon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get menuBarIconType => $composableBuilder(
+    column: $table.menuBarIconType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get showClipboardNearIcon => $composableBuilder(
+    column: $table.showClipboardNearIcon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get showSearchBox => $composableBuilder(
+    column: $table.showSearchBox,
     builder: (column) => ColumnFilters(column),
   );
 
   ColumnFilters<bool> get showAppName => $composableBuilder(
     column: $table.showAppName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get showAppIcon => $composableBuilder(
+    column: $table.showAppIcon,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2398,8 +2591,23 @@ class $$AppSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get autoCheckUpdates => $composableBuilder(
+    column: $table.autoCheckUpdates,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get hotkeyOpen => $composableBuilder(
     column: $table.hotkeyOpen,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get hotkeyPin => $composableBuilder(
+    column: $table.hotkeyPin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get hotkeyDelete => $composableBuilder(
+    column: $table.hotkeyDelete,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -2458,13 +2666,43 @@ class $$AppSettingsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<bool> get showAppIcon => $composableBuilder(
-    column: $table.showAppIcon,
+  ColumnOrderings<String> get highlightMatch => $composableBuilder(
+    column: $table.highlightMatch,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get showSpecialChars => $composableBuilder(
+    column: $table.showSpecialChars,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get showMenuBarIcon => $composableBuilder(
+    column: $table.showMenuBarIcon,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get menuBarIconType => $composableBuilder(
+    column: $table.menuBarIconType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get showClipboardNearIcon => $composableBuilder(
+    column: $table.showClipboardNearIcon,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get showSearchBox => $composableBuilder(
+    column: $table.showSearchBox,
     builder: (column) => ColumnOrderings(column),
   );
 
   ColumnOrderings<bool> get showAppName => $composableBuilder(
     column: $table.showAppName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get showAppIcon => $composableBuilder(
+    column: $table.showAppIcon,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -2521,8 +2759,21 @@ class $$AppSettingsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get autoCheckUpdates => $composableBuilder(
+    column: $table.autoCheckUpdates,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get hotkeyOpen => $composableBuilder(
     column: $table.hotkeyOpen,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get hotkeyPin =>
+      $composableBuilder(column: $table.hotkeyPin, builder: (column) => column);
+
+  GeneratedColumn<String> get hotkeyDelete => $composableBuilder(
+    column: $table.hotkeyDelete,
     builder: (column) => column,
   );
 
@@ -2575,13 +2826,43 @@ class $$AppSettingsTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<bool> get showAppIcon => $composableBuilder(
-    column: $table.showAppIcon,
+  GeneratedColumn<String> get highlightMatch => $composableBuilder(
+    column: $table.highlightMatch,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get showSpecialChars => $composableBuilder(
+    column: $table.showSpecialChars,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get showMenuBarIcon => $composableBuilder(
+    column: $table.showMenuBarIcon,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get menuBarIconType => $composableBuilder(
+    column: $table.menuBarIconType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get showClipboardNearIcon => $composableBuilder(
+    column: $table.showClipboardNearIcon,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get showSearchBox => $composableBuilder(
+    column: $table.showSearchBox,
     builder: (column) => column,
   );
 
   GeneratedColumn<bool> get showAppName => $composableBuilder(
     column: $table.showAppName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get showAppIcon => $composableBuilder(
+    column: $table.showAppIcon,
     builder: (column) => column,
   );
 
@@ -2650,7 +2931,10 @@ class $$AppSettingsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<bool> launchAtStartup = const Value.absent(),
+                Value<bool> autoCheckUpdates = const Value.absent(),
                 Value<String> hotkeyOpen = const Value.absent(),
+                Value<String> hotkeyPin = const Value.absent(),
+                Value<String> hotkeyDelete = const Value.absent(),
                 Value<bool> autoPaste = const Value.absent(),
                 Value<bool> pastePlain = const Value.absent(),
                 Value<String> searchMode = const Value.absent(),
@@ -2662,8 +2946,14 @@ class $$AppSettingsTableTableManager
                 Value<String> pinPosition = const Value.absent(),
                 Value<int> imageHeight = const Value.absent(),
                 Value<int> previewDelay = const Value.absent(),
-                Value<bool> showAppIcon = const Value.absent(),
+                Value<String> highlightMatch = const Value.absent(),
+                Value<bool> showSpecialChars = const Value.absent(),
+                Value<bool> showMenuBarIcon = const Value.absent(),
+                Value<String> menuBarIconType = const Value.absent(),
+                Value<bool> showClipboardNearIcon = const Value.absent(),
+                Value<String> showSearchBox = const Value.absent(),
                 Value<bool> showAppName = const Value.absent(),
+                Value<bool> showAppIcon = const Value.absent(),
                 Value<bool> showFooterMenu = const Value.absent(),
                 Value<double> windowWidth = const Value.absent(),
                 Value<String> themeMode = const Value.absent(),
@@ -2674,7 +2964,10 @@ class $$AppSettingsTableTableManager
               }) => AppSettingsCompanion(
                 id: id,
                 launchAtStartup: launchAtStartup,
+                autoCheckUpdates: autoCheckUpdates,
                 hotkeyOpen: hotkeyOpen,
+                hotkeyPin: hotkeyPin,
+                hotkeyDelete: hotkeyDelete,
                 autoPaste: autoPaste,
                 pastePlain: pastePlain,
                 searchMode: searchMode,
@@ -2686,8 +2979,14 @@ class $$AppSettingsTableTableManager
                 pinPosition: pinPosition,
                 imageHeight: imageHeight,
                 previewDelay: previewDelay,
-                showAppIcon: showAppIcon,
+                highlightMatch: highlightMatch,
+                showSpecialChars: showSpecialChars,
+                showMenuBarIcon: showMenuBarIcon,
+                menuBarIconType: menuBarIconType,
+                showClipboardNearIcon: showClipboardNearIcon,
+                showSearchBox: showSearchBox,
                 showAppName: showAppName,
+                showAppIcon: showAppIcon,
                 showFooterMenu: showFooterMenu,
                 windowWidth: windowWidth,
                 themeMode: themeMode,
@@ -2700,7 +2999,10 @@ class $$AppSettingsTableTableManager
               ({
                 Value<int> id = const Value.absent(),
                 Value<bool> launchAtStartup = const Value.absent(),
+                Value<bool> autoCheckUpdates = const Value.absent(),
                 Value<String> hotkeyOpen = const Value.absent(),
+                Value<String> hotkeyPin = const Value.absent(),
+                Value<String> hotkeyDelete = const Value.absent(),
                 Value<bool> autoPaste = const Value.absent(),
                 Value<bool> pastePlain = const Value.absent(),
                 Value<String> searchMode = const Value.absent(),
@@ -2712,8 +3014,14 @@ class $$AppSettingsTableTableManager
                 Value<String> pinPosition = const Value.absent(),
                 Value<int> imageHeight = const Value.absent(),
                 Value<int> previewDelay = const Value.absent(),
-                Value<bool> showAppIcon = const Value.absent(),
+                Value<String> highlightMatch = const Value.absent(),
+                Value<bool> showSpecialChars = const Value.absent(),
+                Value<bool> showMenuBarIcon = const Value.absent(),
+                Value<String> menuBarIconType = const Value.absent(),
+                Value<bool> showClipboardNearIcon = const Value.absent(),
+                Value<String> showSearchBox = const Value.absent(),
                 Value<bool> showAppName = const Value.absent(),
+                Value<bool> showAppIcon = const Value.absent(),
                 Value<bool> showFooterMenu = const Value.absent(),
                 Value<double> windowWidth = const Value.absent(),
                 Value<String> themeMode = const Value.absent(),
@@ -2724,7 +3032,10 @@ class $$AppSettingsTableTableManager
               }) => AppSettingsCompanion.insert(
                 id: id,
                 launchAtStartup: launchAtStartup,
+                autoCheckUpdates: autoCheckUpdates,
                 hotkeyOpen: hotkeyOpen,
+                hotkeyPin: hotkeyPin,
+                hotkeyDelete: hotkeyDelete,
                 autoPaste: autoPaste,
                 pastePlain: pastePlain,
                 searchMode: searchMode,
@@ -2736,8 +3047,14 @@ class $$AppSettingsTableTableManager
                 pinPosition: pinPosition,
                 imageHeight: imageHeight,
                 previewDelay: previewDelay,
-                showAppIcon: showAppIcon,
+                highlightMatch: highlightMatch,
+                showSpecialChars: showSpecialChars,
+                showMenuBarIcon: showMenuBarIcon,
+                menuBarIconType: menuBarIconType,
+                showClipboardNearIcon: showClipboardNearIcon,
+                showSearchBox: showSearchBox,
                 showAppName: showAppName,
+                showAppIcon: showAppIcon,
                 showFooterMenu: showFooterMenu,
                 windowWidth: windowWidth,
                 themeMode: themeMode,
@@ -2771,192 +3088,6 @@ typedef $$AppSettingsTableProcessedTableManager =
       AppSetting,
       PrefetchHooks Function()
     >;
-typedef $$PinsTableCreateCompanionBuilder =
-    PinsCompanion Function({
-      Value<int> id,
-      required String title,
-      required String content,
-      Value<String?> hotkey,
-      Value<DateTime> createdAt,
-    });
-typedef $$PinsTableUpdateCompanionBuilder =
-    PinsCompanion Function({
-      Value<int> id,
-      Value<String> title,
-      Value<String> content,
-      Value<String?> hotkey,
-      Value<DateTime> createdAt,
-    });
-
-class $$PinsTableFilterComposer extends Composer<_$AppDatabase, $PinsTable> {
-  $$PinsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get title => $composableBuilder(
-    column: $table.title,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get content => $composableBuilder(
-    column: $table.content,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get hotkey => $composableBuilder(
-    column: $table.hotkey,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$PinsTableOrderingComposer extends Composer<_$AppDatabase, $PinsTable> {
-  $$PinsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<int> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get title => $composableBuilder(
-    column: $table.title,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get content => $composableBuilder(
-    column: $table.content,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get hotkey => $composableBuilder(
-    column: $table.hotkey,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$PinsTableAnnotationComposer
-    extends Composer<_$AppDatabase, $PinsTable> {
-  $$PinsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<int> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get title =>
-      $composableBuilder(column: $table.title, builder: (column) => column);
-
-  GeneratedColumn<String> get content =>
-      $composableBuilder(column: $table.content, builder: (column) => column);
-
-  GeneratedColumn<String> get hotkey =>
-      $composableBuilder(column: $table.hotkey, builder: (column) => column);
-
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
-}
-
-class $$PinsTableTableManager
-    extends
-        RootTableManager<
-          _$AppDatabase,
-          $PinsTable,
-          Pin,
-          $$PinsTableFilterComposer,
-          $$PinsTableOrderingComposer,
-          $$PinsTableAnnotationComposer,
-          $$PinsTableCreateCompanionBuilder,
-          $$PinsTableUpdateCompanionBuilder,
-          (Pin, BaseReferences<_$AppDatabase, $PinsTable, Pin>),
-          Pin,
-          PrefetchHooks Function()
-        > {
-  $$PinsTableTableManager(_$AppDatabase db, $PinsTable table)
-    : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$PinsTableFilterComposer($db: db, $table: table),
-          createOrderingComposer: () =>
-              $$PinsTableOrderingComposer($db: db, $table: table),
-          createComputedFieldComposer: () =>
-              $$PinsTableAnnotationComposer($db: db, $table: table),
-          updateCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                Value<String> title = const Value.absent(),
-                Value<String> content = const Value.absent(),
-                Value<String?> hotkey = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-              }) => PinsCompanion(
-                id: id,
-                title: title,
-                content: content,
-                hotkey: hotkey,
-                createdAt: createdAt,
-              ),
-          createCompanionCallback:
-              ({
-                Value<int> id = const Value.absent(),
-                required String title,
-                required String content,
-                Value<String?> hotkey = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-              }) => PinsCompanion.insert(
-                id: id,
-                title: title,
-                content: content,
-                hotkey: hotkey,
-                createdAt: createdAt,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$PinsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$AppDatabase,
-      $PinsTable,
-      Pin,
-      $$PinsTableFilterComposer,
-      $$PinsTableOrderingComposer,
-      $$PinsTableAnnotationComposer,
-      $$PinsTableCreateCompanionBuilder,
-      $$PinsTableUpdateCompanionBuilder,
-      (Pin, BaseReferences<_$AppDatabase, $PinsTable, Pin>),
-      Pin,
-      PrefetchHooks Function()
-    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2965,5 +3096,4 @@ class $AppDatabaseManager {
       $$ClipboardEntriesTableTableManager(_db, _db.clipboardEntries);
   $$AppSettingsTableTableManager get appSettings =>
       $$AppSettingsTableTableManager(_db, _db.appSettings);
-  $$PinsTableTableManager get pins => $$PinsTableTableManager(_db, _db.pins);
 }
