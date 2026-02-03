@@ -2,21 +2,20 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
-import '../providers/settings_provider.dart';
 import 'tabs/general_tab.dart';
 import 'tabs/storage_tab.dart';
 import 'tabs/appearance_tab.dart';
 import 'tabs/pins_tab.dart';
 import 'tabs/ignore_tab.dart';
 import 'tabs/advanced_tab.dart';
-import '../../../core/database/database.dart';
 
+/// 设置页面，采用 macOS 风格的侧边栏布局
 class SettingsPage extends HookConsumerWidget {
+  /// 构造函数
   const SettingsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settingsAsync = ref.watch(settingsProvider);
     final selectedCategory = useState('General');
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
 
@@ -49,18 +48,15 @@ class SettingsPage extends HookConsumerWidget {
           ),
           // Right Content Area
           Expanded(
-            child: settingsAsync.when(
-              data: (settings) => _buildContent(context, ref, settings, selectedCategory.value),
-              loading: () => const Center(child: CupertinoActivityIndicator()),
-              error: (err, stack) => Center(child: Text('Error: $err')),
-            ),
+            child: _buildContent(context, ref, selectedCategory.value),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildContent(BuildContext context, WidgetRef ref, AppSetting settings, String category) {
+  /// 构建右侧内容区域，根据选中的分类显示不同的 Tab
+  Widget _buildContent(BuildContext context, WidgetRef ref, String category) {
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
     return CustomScrollView(
       key: ValueKey(category), // 关键：强制 CustomScrollView 在分类切换时重新创建
@@ -83,12 +79,12 @@ class SettingsPage extends HookConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(32, 10, 32, 32),
             child: switch (category) {
-              'General' => GeneralTab(settings: settings),
-              'Storage' => StorageTab(settings: settings),
-              'Appearance' => AppearanceTab(settings: settings),
+              'General' => const GeneralTab(),
+              'Storage' => const StorageTab(),
+              'Appearance' => const AppearanceTab(),
               'Pins' => const PinsTab(),
               'Ignore' => const IgnoreTab(),
-              'Advanced' => AdvancedTab(settings: settings),
+              'Advanced' => const AdvancedTab(),
               _ => const SizedBox.shrink(),
             },
           ),
@@ -98,12 +94,18 @@ class SettingsPage extends HookConsumerWidget {
   }
 }
 
+/// 侧边栏项目组件
 class _SidebarItem extends StatelessWidget {
+  /// 图标
   final IconData icon;
+  /// 标签文本
   final String label;
+  /// 是否被选中
   final bool isSelected;
+  /// 点击回调
   final VoidCallback onTap;
 
+  /// 构造函数
   const _SidebarItem({required this.icon, required this.label, required this.isSelected, required this.onTap});
 
   @override

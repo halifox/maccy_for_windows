@@ -2,7 +2,9 @@ import 'package:flutter/cupertino.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../widgets/macos_settings_widgets.dart';
 
+/// 忽略列表选项卡，用于配置不监听剪贴板的黑名单应用
 class IgnoreTab extends ConsumerWidget {
+  /// 构造函数
   const IgnoreTab({super.key});
 
   @override

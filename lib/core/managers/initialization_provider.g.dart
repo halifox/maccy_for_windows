@@ -8,13 +8,17 @@ part of 'initialization_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// 应用程序启动初始化 Provider，用于预先加载并运行所有的后台管理服务（窗口、托盘、快捷键、剪贴板监听）。
 
 @ProviderFor(appStartup)
 final appStartupProvider = AppStartupProvider._();
 
+/// 应用程序启动初始化 Provider，用于预先加载并运行所有的后台管理服务（窗口、托盘、快捷键、剪贴板监听）。
+
 final class AppStartupProvider
     extends $FunctionalProvider<AsyncValue<void>, void, FutureOr<void>>
     with $FutureModifier<void>, $FutureProvider<void> {
+  /// 应用程序启动初始化 Provider，用于预先加载并运行所有的后台管理服务（窗口、托盘、快捷键、剪贴板监听）。
   AppStartupProvider._()
     : super(
         from: null,
@@ -40,4 +44,4 @@ final class AppStartupProvider
   }
 }
 
-String _$appStartupHash() => r'2ceaf08b1c50a26d9d46e8b1957c5600ccebf8aa';
+String _$appStartupHash() => r'a0db7950e9eb389f12320c4a4a02f13fe3899c53';

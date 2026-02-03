@@ -1,9 +1,13 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+/// macOS 风格的设置组容器，包含标题和圆角白底背景
 class MacosSettingsGroup extends StatelessWidget {
+  /// 子组件列表
   final List<Widget> children;
+  /// 组标题
   final String? title;
+  /// 构造函数
   const MacosSettingsGroup({super.key, required this.children, this.title});
 
   @override
@@ -39,6 +43,7 @@ class MacosSettingsGroup extends StatelessWidget {
     );
   }
 
+  /// 在组件之间插入分割线
   List<Widget> _separateWithDividers(List<Widget> widgets, bool isDark) {
     if (widgets.length <= 1) return widgets;
     final List<Widget> result = [];
@@ -52,13 +57,20 @@ class MacosSettingsGroup extends StatelessWidget {
   }
 }
 
+/// macOS 风格的设置行组件
 class MacosSettingsTile extends StatelessWidget {
+  /// 标签文本
   final String label;
+  /// 副标题
   final String? subtitle;
+  /// 图标数据
   final IconData? icon;
+  /// 图标背景颜色
   final Color? iconColor;
+  /// 右侧尾随组件
   final Widget trailing;
 
+  /// 构造函数
   const MacosSettingsTile({super.key, required this.label, this.subtitle, this.icon, this.iconColor, required this.trailing});
 
   @override

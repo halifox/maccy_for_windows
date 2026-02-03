@@ -8,12 +8,15 @@ part of 'history_providers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// 历史记录搜索查询 Provider
 
 @ProviderFor(HistorySearchQuery)
 final historySearchQueryProvider = HistorySearchQueryProvider._();
 
+/// 历史记录搜索查询 Provider
 final class HistorySearchQueryProvider
     extends $NotifierProvider<HistorySearchQuery, String> {
+  /// 历史记录搜索查询 Provider
   HistorySearchQueryProvider._()
     : super(
         from: null,
@@ -44,6 +47,8 @@ final class HistorySearchQueryProvider
 String _$historySearchQueryHash() =>
     r'89f46053fb648ac09a67c8521aed87dfa229f048';
 
+/// 历史记录搜索查询 Provider
+
 abstract class _$HistorySearchQuery extends $Notifier<String> {
   String build();
   @$mustCallSuper
@@ -62,11 +67,15 @@ abstract class _$HistorySearchQuery extends $Notifier<String> {
   }
 }
 
+/// 历史记录当前选中索引 Provider
+
 @ProviderFor(HistorySelectedIndex)
 final historySelectedIndexProvider = HistorySelectedIndexProvider._();
 
+/// 历史记录当前选中索引 Provider
 final class HistorySelectedIndexProvider
     extends $NotifierProvider<HistorySelectedIndex, int> {
+  /// 历史记录当前选中索引 Provider
   HistorySelectedIndexProvider._()
     : super(
         from: null,
@@ -97,6 +106,8 @@ final class HistorySelectedIndexProvider
 String _$historySelectedIndexHash() =>
     r'425ec12dcebe77a16ed3d53e939050f322188e4b';
 
+/// 历史记录当前选中索引 Provider
+
 abstract class _$HistorySelectedIndex extends $Notifier<int> {
   int build();
   @$mustCallSuper
@@ -115,10 +126,73 @@ abstract class _$HistorySelectedIndex extends $Notifier<int> {
   }
 }
 
-@ProviderFor(historyEntries)
-final historyEntriesProvider = HistoryEntriesProvider._();
+/// 历史记录焦点请求 Provider，用于触发搜索框获取焦点
 
-final class HistoryEntriesProvider
+@ProviderFor(HistoryFocusRequest)
+final historyFocusRequestProvider = HistoryFocusRequestProvider._();
+
+/// 历史记录焦点请求 Provider，用于触发搜索框获取焦点
+final class HistoryFocusRequestProvider
+    extends $NotifierProvider<HistoryFocusRequest, int> {
+  /// 历史记录焦点请求 Provider，用于触发搜索框获取焦点
+  HistoryFocusRequestProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'historyFocusRequestProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$historyFocusRequestHash();
+
+  @$internal
+  @override
+  HistoryFocusRequest create() => HistoryFocusRequest();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(int value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<int>(value),
+    );
+  }
+}
+
+String _$historyFocusRequestHash() =>
+    r'5abbaf064177c6a49fb0c42d249e5ffd686814cc';
+
+/// 历史记录焦点请求 Provider，用于触发搜索框获取焦点
+
+abstract class _$HistoryFocusRequest extends $Notifier<int> {
+  int build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<int, int>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<int, int>,
+              int,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
+  }
+}
+
+/// 经过过滤和排序的历史记录流 Provider
+
+@ProviderFor(filteredHistory)
+final filteredHistoryProvider = FilteredHistoryProvider._();
+
+/// 经过过滤和排序的历史记录流 Provider
+
+final class FilteredHistoryProvider
     extends
         $FunctionalProvider<
           AsyncValue<List<ClipboardEntry>>,
@@ -128,92 +202,7 @@ final class HistoryEntriesProvider
     with
         $FutureModifier<List<ClipboardEntry>>,
         $StreamProvider<List<ClipboardEntry>> {
-  HistoryEntriesProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'historyEntriesProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$historyEntriesHash();
-
-  @$internal
-  @override
-  $StreamProviderElement<List<ClipboardEntry>> $createElement(
-    $ProviderPointer pointer,
-  ) => $StreamProviderElement(pointer);
-
-  @override
-  Stream<List<ClipboardEntry>> create(Ref ref) {
-    return historyEntries(ref);
-  }
-}
-
-String _$historyEntriesHash() => r'26e1b16528f1fd4301815bfe10ce7848229a1005';
-
-@ProviderFor(filteredPins)
-final filteredPinsProvider = FilteredPinsProvider._();
-
-final class FilteredPinsProvider
-    extends
-        $FunctionalProvider<
-          List<ClipboardEntry>,
-          List<ClipboardEntry>,
-          List<ClipboardEntry>
-        >
-    with $Provider<List<ClipboardEntry>> {
-  FilteredPinsProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'filteredPinsProvider',
-        isAutoDispose: true,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$filteredPinsHash();
-
-  @$internal
-  @override
-  $ProviderElement<List<ClipboardEntry>> $createElement(
-    $ProviderPointer pointer,
-  ) => $ProviderElement(pointer);
-
-  @override
-  List<ClipboardEntry> create(Ref ref) {
-    return filteredPins(ref);
-  }
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(List<ClipboardEntry> value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<List<ClipboardEntry>>(value),
-    );
-  }
-}
-
-String _$filteredPinsHash() => r'36300a32af240f189af7ea862e2f8f2757ad92a5';
-
-@ProviderFor(filteredHistory)
-final filteredHistoryProvider = FilteredHistoryProvider._();
-
-final class FilteredHistoryProvider
-    extends
-        $FunctionalProvider<
-          List<ClipboardEntry>,
-          List<ClipboardEntry>,
-          List<ClipboardEntry>
-        >
-    with $Provider<List<ClipboardEntry>> {
+  /// 经过过滤和排序的历史记录流 Provider
   FilteredHistoryProvider._()
     : super(
         from: null,
@@ -230,48 +219,44 @@ final class FilteredHistoryProvider
 
   @$internal
   @override
-  $ProviderElement<List<ClipboardEntry>> $createElement(
+  $StreamProviderElement<List<ClipboardEntry>> $createElement(
     $ProviderPointer pointer,
-  ) => $ProviderElement(pointer);
+  ) => $StreamProviderElement(pointer);
 
   @override
-  List<ClipboardEntry> create(Ref ref) {
+  Stream<List<ClipboardEntry>> create(Ref ref) {
     return filteredHistory(ref);
-  }
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(List<ClipboardEntry> value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<List<ClipboardEntry>>(value),
-    );
   }
 }
 
-String _$filteredHistoryHash() => r'fd5586b4cfc933c23c324d75ad796e3228e57a15';
+String _$filteredHistoryHash() => r'594d3b3b8c1f7979b2e8421b57b1c789d825522a';
 
-@ProviderFor(HistoryActions)
-final historyActionsProvider = HistoryActionsProvider._();
+/// 历史记录控制器，负责处理用户交互操作（选择、删除、置顶、清空等）
 
-final class HistoryActionsProvider
-    extends $NotifierProvider<HistoryActions, void> {
-  HistoryActionsProvider._()
+@ProviderFor(HistoryController)
+final historyControllerProvider = HistoryControllerProvider._();
+
+/// 历史记录控制器，负责处理用户交互操作（选择、删除、置顶、清空等）
+final class HistoryControllerProvider
+    extends $NotifierProvider<HistoryController, void> {
+  /// 历史记录控制器，负责处理用户交互操作（选择、删除、置顶、清空等）
+  HistoryControllerProvider._()
     : super(
         from: null,
         argument: null,
         retry: null,
-        name: r'historyActionsProvider',
+        name: r'historyControllerProvider',
         isAutoDispose: true,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
 
   @override
-  String debugGetCreateSourceHash() => _$historyActionsHash();
+  String debugGetCreateSourceHash() => _$historyControllerHash();
 
   @$internal
   @override
-  HistoryActions create() => HistoryActions();
+  HistoryController create() => HistoryController();
 
   /// {@macro riverpod.override_with_value}
   Override overrideWithValue(void value) {
@@ -282,9 +267,11 @@ final class HistoryActionsProvider
   }
 }
 
-String _$historyActionsHash() => r'25039df90f324d8c4ae196faaaa5bca852cc73e5';
+String _$historyControllerHash() => r'c8c1f1314c367e4d2ddbef49f62c2911a81b5fc4';
 
-abstract class _$HistoryActions extends $Notifier<void> {
+/// 历史记录控制器，负责处理用户交互操作（选择、删除、置顶、清空等）
+
+abstract class _$HistoryController extends $Notifier<void> {
   void build();
   @$mustCallSuper
   @override

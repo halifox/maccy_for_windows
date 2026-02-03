@@ -8,12 +8,15 @@ part of 'tray_manager_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// 系统托盘管理器，负责初始化托盘图标、设置悬停提示以及监听托盘点击事件。
 
 @ProviderFor(AppTrayManager)
 final appTrayManagerProvider = AppTrayManagerProvider._();
 
+/// 系统托盘管理器，负责初始化托盘图标、设置悬停提示以及监听托盘点击事件。
 final class AppTrayManagerProvider
-    extends $NotifierProvider<AppTrayManager, void> {
+    extends $AsyncNotifierProvider<AppTrayManager, void> {
+  /// 系统托盘管理器，负责初始化托盘图标、设置悬停提示以及监听托盘点击事件。
   AppTrayManagerProvider._()
     : super(
         from: null,
@@ -31,29 +34,23 @@ final class AppTrayManagerProvider
   @$internal
   @override
   AppTrayManager create() => AppTrayManager();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(void value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<void>(value),
-    );
-  }
 }
 
-String _$appTrayManagerHash() => r'f6eab252d52179203d861ab15443d93169d7754c';
+String _$appTrayManagerHash() => r'c2ce56c81e349de770e7ee1d15aea209b5228d52';
 
-abstract class _$AppTrayManager extends $Notifier<void> {
-  void build();
+/// 系统托盘管理器，负责初始化托盘图标、设置悬停提示以及监听托盘点击事件。
+
+abstract class _$AppTrayManager extends $AsyncNotifier<void> {
+  FutureOr<void> build();
   @$mustCallSuper
   @override
   void runBuild() {
-    final ref = this.ref as $Ref<void, void>;
+    final ref = this.ref as $Ref<AsyncValue<void>, void>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<void, void>,
-              void,
+              AnyNotifier<AsyncValue<void>, void>,
+              AsyncValue<void>,
               Object?,
               Object?
             >;

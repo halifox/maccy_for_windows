@@ -2,19 +2,16 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../providers/settings_provider.dart';
-import '../../../../core/database/database.dart';
-import 'package:drift/drift.dart' show Value;
 import '../widgets/macos_settings_widgets.dart';
+import '../widgets/number_stepper.dart';
 
+/// 外观设置选项卡，包含面板配置、样式和界面元素设置
 class AppearanceTab extends ConsumerWidget {
-  final AppSetting settings;
-  const AppearanceTab({super.key, required this.settings});
+  /// 构造函数
+  const AppearanceTab({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(settingsProvider.notifier);
-    final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
-
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -23,32 +20,34 @@ class AppearanceTab extends ConsumerWidget {
             children: [
               _buildDropdownTile(
                 context,
+                ref,
                 label: 'Popup Position',
                 subtitle: 'Where the clipboard history appears',
                 icon: CupertinoIcons.cursor_rays,
                 iconColor: CupertinoColors.activeBlue,
-                currentValue: settings.popupPosition,
+                currentValue: ref.watch(popupPositionProvider),
                 options: {'cursor': 'Cursor', 'center': 'Center'},
-                onSelected: (v) => notifier.updateSettings(AppSettingsCompanion(popupPosition: Value(v))),
+                onSelected: (v) => ref.read(popupPositionProvider.notifier).set(v),
               ),
               _buildDropdownTile(
                 context,
+                ref,
                 label: 'Pinned Position',
                 subtitle: 'Where pinned items are displayed',
                 icon: CupertinoIcons.pin,
                 iconColor: CupertinoColors.systemOrange,
-                currentValue: settings.pinPosition,
+                currentValue: ref.watch(pinPositionProvider),
                 options: {'top': 'Top', 'bottom': 'Bottom'},
-                onSelected: (v) => notifier.updateSettings(AppSettingsCompanion(pinPosition: Value(v))),
+                onSelected: (v) => ref.read(pinPositionProvider.notifier).set(v),
               ),
               MacosSettingsTile(
                 label: 'Image Height',
                 subtitle: 'Height of image previews in history',
                 icon: CupertinoIcons.photo,
                 iconColor: CupertinoColors.systemPink,
-                trailing: _NumberStepper(
-                  value: settings.imageHeight,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(imageHeight: Value(v))),
+                trailing: NumberStepper(
+                  value: ref.watch(imageHeightProvider),
+                  onChanged: (v) => ref.read(imageHeightProvider.notifier).set(v),
                 ),
               ),
               MacosSettingsTile(
@@ -56,21 +55,22 @@ class AppearanceTab extends ConsumerWidget {
                 subtitle: 'Delay before showing content preview (ms)',
                 icon: CupertinoIcons.timer,
                 iconColor: CupertinoColors.systemTeal,
-                trailing: _NumberStepper(
-                  value: settings.previewDelay,
+                trailing: NumberStepper(
+                  value: ref.watch(previewDelayProvider),
                   step: 100,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(previewDelay: Value(v))),
+                  onChanged: (v) => ref.read(previewDelayProvider.notifier).set(v),
                 ),
               ),
               _buildDropdownTile(
                 context,
+                ref,
                 label: 'Highlight Match',
                 subtitle: 'Visual style for search results',
                 icon: CupertinoIcons.selection_pin_in_out,
                 iconColor: CupertinoColors.systemYellow,
-                currentValue: settings.highlightMatch,
+                currentValue: ref.watch(highlightMatchProvider),
                 options: {'bold': 'Bold', 'color': 'Color'},
-                onSelected: (v) => notifier.updateSettings(AppSettingsCompanion(highlightMatch: Value(v))),
+                onSelected: (v) => ref.read(highlightMatchProvider.notifier).set(v),
               ),
             ],
           ),
@@ -83,8 +83,8 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.paragraph,
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
-                  value: settings.showSpecialChars,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(showSpecialChars: Value(v ?? false))),
+                  value: ref.watch(showSpecialCharsProvider),
+                  onChanged: (v) => ref.read(showSpecialCharsProvider.notifier).set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -95,13 +95,13 @@ class AppearanceTab extends ConsumerWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildIconDropdown(context, settings.menuBarIconType, (v) {
-                      notifier.updateSettings(AppSettingsCompanion(menuBarIconType: Value(v)));
+                    _buildIconDropdown(context, ref, ref.watch(menuBarIconTypeProvider), (v) {
+                      ref.read(menuBarIconTypeProvider.notifier).set(v);
                     }),
                     const SizedBox(width: 12),
                     CupertinoCheckbox(
-                      value: settings.showMenuBarIcon,
-                      onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(showMenuBarIcon: Value(v ?? false))),
+                      value: ref.watch(showMenuBarIconProvider),
+                      onChanged: (v) => ref.read(showMenuBarIconProvider.notifier).set(v ?? false),
                     ),
                   ],
                 ),
@@ -112,19 +112,20 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.text_insert,
                 iconColor: CupertinoColors.systemIndigo,
                 trailing: CupertinoCheckbox(
-                  value: settings.showClipboardNearIcon,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(showClipboardNearIcon: Value(v ?? false))),
+                  value: ref.watch(showClipboardNearIconProvider),
+                  onChanged: (v) => ref.read(showClipboardNearIconProvider.notifier).set(v ?? false),
                 ),
               ),
               _buildDropdownTile(
                 context,
+                ref,
                 label: 'Search Box',
                 subtitle: 'When to display the search input',
                 icon: CupertinoIcons.search,
                 iconColor: CupertinoColors.systemBlue,
-                currentValue: settings.showSearchBox,
+                currentValue: ref.watch(showSearchBoxProvider),
                 options: {'always': 'Always', 'typing': 'When Typing', 'never': 'Never'},
-                onSelected: (v) => notifier.updateSettings(AppSettingsCompanion(showSearchBox: Value(v))),
+                onSelected: (v) => ref.read(showSearchBoxProvider.notifier).set(v),
               ),
               MacosSettingsTile(
                 label: 'Source App Name',
@@ -132,8 +133,8 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.info_circle,
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
-                  value: settings.showAppName,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(showAppName: Value(v ?? false))),
+                  value: ref.watch(showAppNameProvider),
+                  onChanged: (v) => ref.read(showAppNameProvider.notifier).set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -142,8 +143,8 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.app_badge,
                 iconColor: CupertinoColors.systemIndigo,
                 trailing: CupertinoCheckbox(
-                  value: settings.showAppIcon,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(showAppIcon: Value(v ?? false))),
+                  value: ref.watch(showAppIconProvider),
+                  onChanged: (v) => ref.read(showAppIconProvider.notifier).set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -152,8 +153,8 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.list_bullet_below_rectangle,
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
-                  value: settings.showFooterMenu,
-                  onChanged: (v) => notifier.updateSettings(AppSettingsCompanion(showFooterMenu: Value(v ?? false))),
+                  value: ref.watch(showFooterMenuProvider),
+                  onChanged: (v) => ref.read(showFooterMenuProvider.notifier).set(v ?? false),
                 ),
               ),
             ],
@@ -165,7 +166,8 @@ class AppearanceTab extends ConsumerWidget {
   }
 
   Widget _buildDropdownTile(
-    BuildContext context, {
+    BuildContext context,
+    WidgetRef ref, {
     required String label,
     required String subtitle,
     required IconData icon,
@@ -197,7 +199,8 @@ class AppearanceTab extends ConsumerWidget {
         builder: (context, controller, child) {
           return CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: () => controller.isOpen ? controller.close() : controller.open(), minimumSize: Size(0, 0),
+            onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+            minimumSize: Size.zero,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
@@ -249,7 +252,7 @@ class AppearanceTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildIconDropdown(BuildContext context, String current, ValueChanged<String> onSelected) {
+  Widget _buildIconDropdown(BuildContext context, WidgetRef ref, String current, ValueChanged<String> onSelected) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final icons = {
       'clipboard': CupertinoIcons.doc_on_clipboard,
@@ -274,7 +277,8 @@ class AppearanceTab extends ConsumerWidget {
       builder: (context, controller, child) {
         return CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () => controller.isOpen ? controller.close() : controller.open(), minimumSize: Size(0, 0),
+          onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+          minimumSize: Size.zero,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
@@ -322,54 +326,4 @@ class AppearanceTab extends ConsumerWidget {
   }
 }
 
-class _NumberStepper extends StatelessWidget {
-  final int value;
-  final int step;
-  final ValueChanged<int> onChanged;
-  const _NumberStepper({required this.value, this.step = 1, required this.onChanged});
 
-  @override
-  Widget build(BuildContext context) {
-    final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
-    final color = isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04);
-    final borderColor = isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1);
-
-    return Container(
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6), border: Border.all(color: borderColor, width: 0.5)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text('$value', style: const TextStyle(fontSize: 13))),
-          Container(width: 0.5, height: 20, color: borderColor),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _StepperButton(icon: CupertinoIcons.chevron_up, onTap: () => onChanged(value + step)),
-              Container(width: 20, height: 0.5, color: borderColor),
-              _StepperButton(icon: CupertinoIcons.chevron_down, onTap: () => onChanged(value - step > 0 ? value - step : 0)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StepperButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _StepperButton({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 24, height: 12,
-        color: Colors.transparent,
-        child: Icon(icon, size: 8, color: isDark ? Colors.white54 : Colors.black54),
-      ),
-    );
-  }
-}

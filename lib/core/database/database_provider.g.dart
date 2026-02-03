@@ -8,13 +8,17 @@ part of 'database_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// 提供全局唯一的数据库实例，并在 dispose 时关闭连接
 
 @ProviderFor(appDatabase)
 final appDatabaseProvider = AppDatabaseProvider._();
 
+/// 提供全局唯一的数据库实例，并在 dispose 时关闭连接
+
 final class AppDatabaseProvider
     extends $FunctionalProvider<AppDatabase, AppDatabase, AppDatabase>
     with $Provider<AppDatabase> {
+  /// 提供全局唯一的数据库实例，并在 dispose 时关闭连接
   AppDatabaseProvider._()
     : super(
         from: null,

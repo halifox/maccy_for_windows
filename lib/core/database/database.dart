@@ -1,65 +1,38 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 part 'database.g.dart';
 
+/// 剪贴板条目数据库表定义
 class ClipboardEntries extends Table {
+  /// 主键 ID，自增
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get content => text()();
+
+  /// 剪贴板内容，唯一索引
+  TextColumn get content => text().unique()();
+
+  /// 内容类型（如 text, image, file），默认为 'text'
   TextColumn get type => text().withDefault(const Constant('text'))();
+
+  /// 创建时间，默认为当前系统时间
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  /// 是否置顶，默认为 false
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
+
+  /// 置顶排序权重
+  IntColumn get pinOrder => integer().nullable()();
 }
 
-class AppSettings extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  
-  // 通用
-  BoolColumn get launchAtStartup => boolean().withDefault(const Constant(false))();
-  BoolColumn get autoCheckUpdates => boolean().withDefault(const Constant(true))();
-  TextColumn get hotkeyOpen => text().withDefault(const Constant('Alt+V'))();
-  TextColumn get hotkeyPin => text().withDefault(const Constant(''))();
-  TextColumn get hotkeyDelete => text().withDefault(const Constant(''))();
-  BoolColumn get autoPaste => boolean().withDefault(const Constant(true))();
-  BoolColumn get pastePlain => boolean().withDefault(const Constant(false))();
-  TextColumn get searchMode => text().withDefault(const Constant('fuzzy'))(); // exact, fuzzy, regex, mixed
-
-  // 存储
-  IntColumn get historyLimit => integer().withDefault(const Constant(200))();
-  BoolColumn get saveText => boolean().withDefault(const Constant(true))();
-  BoolColumn get saveImages => boolean().withDefault(const Constant(true))();
-  BoolColumn get saveFiles => boolean().withDefault(const Constant(true))();
-
-  TextColumn get popupPosition => text().withDefault(const Constant('cursor'))(); // cursor, center
-  TextColumn get pinPosition => text().withDefault(const Constant('top'))(); // top, bottom
-  IntColumn get imageHeight => integer().withDefault(const Constant(40))();
-  IntColumn get previewDelay => integer().withDefault(const Constant(1500))();
-  TextColumn get highlightMatch => text().withDefault(const Constant('bold'))(); // bold, color
-  
-  BoolColumn get showSpecialChars => boolean().withDefault(const Constant(false))();
-  BoolColumn get showMenuBarIcon => boolean().withDefault(const Constant(true))();
-  TextColumn get menuBarIconType => text().withDefault(const Constant('clipboard'))();
-  BoolColumn get showClipboardNearIcon => boolean().withDefault(const Constant(false))();
-  TextColumn get showSearchBox => text().withDefault(const Constant('always'))(); // always, never, typing
-  BoolColumn get showAppName => boolean().withDefault(const Constant(false))();
-  BoolColumn get showAppIcon => boolean().withDefault(const Constant(true))();
-  BoolColumn get showFooterMenu => boolean().withDefault(const Constant(true))();
-  RealColumn get windowWidth => real().withDefault(const Constant(350.0))();
-  TextColumn get themeMode => text().withDefault(const Constant('system'))();
-
-  // 忽略 & 高级
-  BoolColumn get isPaused => boolean().withDefault(const Constant(false))();
-  BoolColumn get clearOnExit => boolean().withDefault(const Constant(false))();
-  BoolColumn get clearSystemClipboard => boolean().withDefault(const Constant(false))();
-  TextColumn get ignoreAppsJson => text().withDefault(const Constant('[]'))();
-}
-
-@DriftDatabase(tables: [ClipboardEntries, AppSettings])
+/// 应用程序数据库类
+@DriftDatabase(tables: [ClipboardEntries])
 class AppDatabase extends _$AppDatabase {
+  /// 构造函数，初始化数据库连接
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration {
@@ -69,22 +42,46 @@ class AppDatabase extends _$AppDatabase {
       },
       onUpgrade: (m, from, to) async {
         if (from < 5) {
-          // Migration logic to handle isPinned addition if it wasn't there in previous versions
-          // and potentially migrate data from Pins table if it existed.
-          // For now, focusing on schema cleanup.
           try {
             await m.addColumn(clipboardEntries, clipboardEntries.isPinned);
           } catch (_) {}
         }
+        if (from < 6) {
+          try {
+            await m.addColumn(clipboardEntries, clipboardEntries.pinOrder);
+          } catch (_) {}
+        }
+        if (from < 7) {
+          // 为现有表添加唯一索引以支持 Upsert
+          await m.createIndex(Index('clipboard_entries_content', 'CREATE UNIQUE INDEX IF NOT EXISTS clipboard_entries_content ON clipboard_entries (content)'));
+        }
+      },
+      beforeOpen: (details) async {
+        // 在打开数据库前注册 REGEXP 函数
       },
     );
   }
 
+  /// 开启数据库连接并配置原生选项
   static QueryExecutor _openConnection() {
     return driftDatabase(
       name: 'clipboard_db',
-      native: const DriftNativeOptions(
+      native: DriftNativeOptions(
         shareAcrossIsolates: true,
+        setup: (db) {
+          // 注册正则表达式函数
+          db.createFunction(
+            functionName: 'regexp',
+            argumentCount: AllowedArgumentCount(2),
+            deterministic: true,
+            directOnly: false,
+            function: (args) {
+              final pattern = args[0] as String;
+              final input = args[1] as String;
+              return RegExp(pattern, caseSensitive: false).hasMatch(input) ? 1 : 0;
+            },
+          );
+        },
       ),
     );
   }

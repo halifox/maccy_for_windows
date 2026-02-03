@@ -1,111 +1,36 @@
-import 'dart:io';
-import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import '../../../core/database/database_provider.dart';
+
 import '../../../core/managers/window_manager_provider.dart';
 import '../../settings/providers/settings_provider.dart';
 import '../providers/history_providers.dart';
 
+/// 历史记录页面，显示剪贴板历史列表、搜索框及底部操作菜单
 class HistoryPage extends HookConsumerWidget {
+  /// 构造函数
   const HistoryPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final db = ref.watch(appDatabaseProvider);
-    final settingsAsync = ref.watch(settingsProvider);
+    // 性能优化：仅监听列表长度变化，条目内容变化不会导致整页 Rebuild
+    final totalItems = ref.watch(filteredHistoryProvider.select((v) => v.value?.length ?? 0));
+    final showFooterMenu = ref.watch(showFooterMenuProvider);
 
-    final filteredPins = ref.watch(filteredPinsProvider);
-    final filteredHistory = ref.watch(filteredHistoryProvider);
-    final selectedIndex = ref.watch(historySelectedIndexProvider);
-    final searchQuery = ref.watch(historySearchQueryProvider);
-
-    final searchController = useTextEditingController(text: searchQuery);
-    // Sync controller with provider if search query changes externally (though here it's mostly internal)
-    useEffect(() {
-      if (searchController.text != searchQuery) {
-        searchController.text = searchQuery;
-      }
-      return null;
-    }, [searchQuery]);
-
-    final searchFocusNode = useFocusNode();
-    final historyFocusNode = useFocusNode();
-
-    final totalItems = filteredPins.length + filteredHistory.length;
-
-    void handleKeyEvent(KeyEvent event) {
-      if (event is KeyDownEvent) {
-        print(event);
-        final settings = settingsAsync.value;
-        int menuCount = (settings?.showFooterMenu ?? true) ? 4 : 0;
-        int maxIdx = totalItems + menuCount - 1;
-        if (maxIdx < 0) return;
-
-        if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-          ref.read(historySelectedIndexProvider.notifier).update((val) => (val + 1).clamp(0, maxIdx));
-        } else if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-          ref.read(historySelectedIndexProvider.notifier).update((val) => (val - 1).clamp(0, maxIdx));
-        } else if (event.logicalKey == LogicalKeyboardKey.enter) {
-          if (selectedIndex < totalItems) {
-            ref.read(historyActionsProvider.notifier).selectItem(selectedIndex);
-          } else {
-            final menuIdx = selectedIndex - totalItems;
-            if (menuIdx == 0) db.delete(db.clipboardEntries).go();
-            if (menuIdx == 1) ref.read(appWindowManagerProvider.notifier).showSettings();
-            if (menuIdx == 3) exit(0);
-          }
-        } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-          ref.read(appWindowManagerProvider.notifier).hideHistory();
-        } else if (HardwareKeyboard.instance.isAltPressed) {
-          switch (event.logicalKey) {
-            case LogicalKeyboardKey.digit1:
-              ref.read(historyActionsProvider.notifier).selectItem(0);
-              break;
-            case LogicalKeyboardKey.digit2:
-              ref.read(historyActionsProvider.notifier).selectItem(1);
-              break;
-            case LogicalKeyboardKey.digit3:
-              ref.read(historyActionsProvider.notifier).selectItem(2);
-              break;
-            case LogicalKeyboardKey.digit4:
-              ref.read(historyActionsProvider.notifier).selectItem(3);
-              break;
-            case LogicalKeyboardKey.digit5:
-              ref.read(historyActionsProvider.notifier).selectItem(4);
-              break;
-            case LogicalKeyboardKey.digit6:
-              ref.read(historyActionsProvider.notifier).selectItem(5);
-              break;
-            case LogicalKeyboardKey.digit7:
-              ref.read(historyActionsProvider.notifier).selectItem(6);
-              break;
-            case LogicalKeyboardKey.digit8:
-              ref.read(historyActionsProvider.notifier).selectItem(7);
-              break;
-            case LogicalKeyboardKey.digit9:
-              ref.read(historyActionsProvider.notifier).selectItem(8);
-              break;
-          }
-        }
-      }
-    }
-
-    if (settingsAsync.value == null) return const SizedBox.shrink();
-    final settings = settingsAsync.value!;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final bgColor = isDark ? const Color(0xFF2C2C2C).withOpacity(0.98) : const Color(0xFFEBEBEB).withOpacity(0.98);
+    // 缓存不变的样式
+    final bgColor = useMemoized(() => isDark ? const Color(0xFF2C2C2C).withOpacity(0.98) : const Color(0xFFEBEBEB).withOpacity(0.98), [isDark]);
     final highlightColor = isDark ? const Color(0xFF0058D0) : const Color(0xFF0063E1);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: KeyboardListener(
-        focusNode: historyFocusNode,
-        autofocus: true,
-        onKeyEvent: handleKeyEvent,
+        focusNode: useFocusNode(), // 这里的 FocusNode 不需要监听
+        onKeyEvent: (event) => ref.read(historyControllerProvider.notifier).handleKeyEvent(event),
         child: Container(
           decoration: BoxDecoration(
             color: bgColor,
@@ -115,109 +40,167 @@ class HistoryPage extends HookConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
-              _buildHeader(context, isDark, searchController, searchFocusNode, ref),
-
-              // List
+              const _HistoryHeader(),
               Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    // Pinned Items
-                    for (int i = 0; i < filteredPins.length; i++)
-                      _HistoryRow(
-                        content: filteredPins[i].content,
-                        shortcut: i < 9 ? '${i + 1}' : null,
-                        isPinned: true,
-                        isSelected: selectedIndex == i,
-                        selectionColor: highlightColor,
-                        onTap: () => ref.read(historyActionsProvider.notifier).selectItem(i),
-                        onHover: () => ref.read(historySelectedIndexProvider.notifier).set(i),
-                        onPin: () => ref.read(historyActionsProvider.notifier).togglePin(i),
-                        onDelete: () => ref.read(historyActionsProvider.notifier).deleteItem(i),
-                      ),
-                    // History Items
-                    for (int i = 0; i < filteredHistory.length; i++)
-                      _HistoryRow(
-                        content: filteredHistory[i].content,
-                        shortcut: (i + filteredPins.length) < 9 ? '${i + filteredPins.length + 1}' : null,
-                        isPinned: false,
-                        isSelected: selectedIndex == (i + filteredPins.length),
-                        selectionColor: highlightColor,
-                        onTap: () => ref.read(historyActionsProvider.notifier).selectItem(i + filteredPins.length),
-                        onHover: () => ref.read(historySelectedIndexProvider.notifier).set(i + filteredPins.length),
-                        onPin: () => ref.read(historyActionsProvider.notifier).togglePin(i + filteredPins.length),
-                        onDelete: () => ref.read(historyActionsProvider.notifier).deleteItem(i + filteredPins.length),
-                      ),
-                  ],
+                // 性能优化：RepaintBoundary 隔离列表滚动/动画的重绘范围
+                child: RepaintBoundary(
+                  child: Consumer(
+                    builder: (context, ref, child) {
+                      final history = ref.watch(filteredHistoryProvider).value ?? [];
+                      return ListView.builder(
+                        padding: EdgeInsets.zero,
+                        itemCount: history.length,
+                        itemBuilder: (BuildContext context, int index) {
+                          final item = history[index];
+                          return _HistoryRow(
+                            index: index,
+                            content: item.content,
+                            shortcut: index < 9 ? '${index + 1}' : null,
+                            isPinned: item.isPinned,
+                            selectionColor: highlightColor,
+                            onTap: () => ref.read(historyControllerProvider.notifier).selectItem(index),
+                            onHover: () => ref.read(historySelectedIndexProvider.notifier).set(index),
+                            onPin: () => ref.read(historyControllerProvider.notifier).togglePin(index),
+                            onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(index),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
               ),
-
-              if (settings.showFooterMenu) ...[
-                Container(height: 0.5, color: isDark ? Colors.white10 : Colors.black12),
-                const SizedBox(height: 2),
-                _MenuRow(
-                  label: 'Clear History',
-                  shortcut: '⌥⌘⌫',
-                  isSelected: selectedIndex == totalItems,
-                  selectionColor: highlightColor,
-                  onTap: () => db.delete(db.clipboardEntries).go(),
-                  onHover: () => ref.read(historySelectedIndexProvider.notifier).set(totalItems),
-                ),
-                _MenuRow(
-                  label: 'Settings...',
-                  shortcut: '⌘,',
-                  isSelected: selectedIndex == totalItems + 1,
-                  selectionColor: highlightColor,
-                  onTap: () {
-                    ref.read(appWindowManagerProvider.notifier).showSettings();
-                  },
-                  onHover: () => ref.read(historySelectedIndexProvider.notifier).set(totalItems + 1),
-                ),
-                _MenuRow(
-                  label: 'Quit',
-                  shortcut: '⌘Q',
-                  isSelected: selectedIndex == totalItems + 3,
-                  selectionColor: highlightColor,
-                  onTap: () => exit(0),
-                  onHover: () => ref.read(historySelectedIndexProvider.notifier).set(totalItems + 3),
-                ),
-                const SizedBox(height: 5),
-              ],
+              if (showFooterMenu) _FooterMenu(totalItems: totalItems, highlightColor: highlightColor),
             ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildHeader(BuildContext context, bool isDark, TextEditingController ctrl, FocusNode fn, WidgetRef ref) {
+class _FooterMenu extends ConsumerWidget {
+  final int totalItems;
+  final Color highlightColor;
+
+  const _FooterMenu({required this.totalItems, required this.highlightColor});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Divider(indent: 8, endIndent: 8, height: 4, color: isDark ? Colors.white10 : Colors.black12),
+        _MenuRow(
+          index: totalItems,
+          label: 'Clear History',
+          shortcut: '⌥⌘⌫',
+          selectionColor: highlightColor,
+          onTap: () => ref.read(historyControllerProvider.notifier).clearHistory(),
+          onHover: () => ref.read(historySelectedIndexProvider.notifier).set(totalItems),
+        ),
+        _MenuRow(
+          index: totalItems + 1,
+          label: 'Settings...',
+          shortcut: '⌘,',
+          selectionColor: highlightColor,
+          onTap: () {
+            ref.read(appWindowManagerProvider.notifier).showSettings();
+          },
+          onHover: () => ref.read(historySelectedIndexProvider.notifier).set(totalItems + 1),
+        ),
+        _MenuRow(
+          index: totalItems + 2,
+          label: 'Quit',
+          shortcut: '⌘Q',
+          selectionColor: highlightColor,
+          onTap: () => ref.read(historyControllerProvider.notifier).quitApp(),
+          onHover: () => ref.read(historySelectedIndexProvider.notifier).set(totalItems + 2),
+        ),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+}
+
+class _HistoryHeader extends HookConsumerWidget {
+  const _HistoryHeader();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final searchQuery = ref.watch(historySearchQueryProvider);
+    final searchController = useTextEditingController(text: searchQuery);
+    final searchFocusNode = useFocusNode();
+
+    // 性能优化：搜索防抖逻辑
+    final debouncer = useMemoized(() => _Debouncer(milliseconds: 150));
+
+    ref.listen(historyFocusRequestProvider, (_, __) {
+      searchFocusNode.requestFocus();
+    });
+
+    useEffect(() {
+      if (searchController.text != searchQuery) {
+        searchController.text = searchQuery;
+      }
+      return null;
+    }, [searchQuery]);
+
+    useEffect(() {
+      searchFocusNode.requestFocus();
+      return null;
+    }, []);
+
+    useOnAppLifecycleStateChange((oldState, newState) {
+      if (newState == AppLifecycleState.resumed) {
+        searchFocusNode.requestFocus();
+      }
+    });
+
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
       child: CupertinoSearchTextField(
-        controller: ctrl,
-        focusNode: fn,
+        controller: searchController,
+        focusNode: searchFocusNode,
         autofocus: true,
         placeholder: 'Search...',
         itemSize: 12,
         padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 0),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(6),
         backgroundColor: isDark ? Colors.white10 : Colors.black.withOpacity(0.06),
         style: TextStyle(fontSize: 12, color: isDark ? Colors.white : Colors.black, fontFamily: '.AppleSystemUIFont'),
         onChanged: (value) {
-          ref.read(historySearchQueryProvider.notifier).set(value);
-          ref.read(historySelectedIndexProvider.notifier).set(0);
+          // 性能优化：防抖更新 Provider，减少数据库压力
+          debouncer.run(() {
+            ref.read(historySearchQueryProvider.notifier).set(value);
+            ref.read(historySelectedIndexProvider.notifier).set(0);
+          });
         },
       ),
     );
   }
 }
 
-class _HistoryRow extends StatelessWidget {
+class _Debouncer {
+  final int milliseconds;
+  VoidCallback? action;
+  Timer? _timer;
+
+  _Debouncer({required this.milliseconds});
+
+  void run(VoidCallback action) {
+    _timer?.cancel();
+    _timer = Timer(Duration(milliseconds: milliseconds), action);
+  }
+}
+
+class _HistoryRow extends HookConsumerWidget {
+  final int index;
   final String content;
   final String? shortcut;
   final bool isPinned;
-  final bool isSelected;
   final Color selectionColor;
   final VoidCallback onTap;
   final VoidCallback onHover;
@@ -225,10 +208,10 @@ class _HistoryRow extends StatelessWidget {
   final VoidCallback onDelete;
 
   const _HistoryRow({
+    required this.index,
     required this.content,
     this.shortcut,
     required this.isPinned,
-    required this.isSelected,
     required this.selectionColor,
     required this.onTap,
     required this.onHover,
@@ -237,8 +220,70 @@ class _HistoryRow extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSelected = ref.watch(historySelectedIndexProvider.select((val) => val == index));
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final highlightMode = ref.watch(highlightMatchProvider);
+    final searchQuery = ref.watch(historySearchQueryProvider);
+
+    // 性能优化：预处理显示内容，避免重复 trim 和 replaceAll
+    final displayContent = useMemoized(() {
+      String text = content;
+      if (text.length > 1000) text = text.substring(0, 1000);
+      return text.trim().replaceAll('\n', ' ');
+    }, [content]);
+
+    // 性能优化：生成高亮 TextSpans
+    final spans = useMemoized(() {
+      final baseStyle = TextStyle(
+        fontSize: 13,
+        fontFamily: '.AppleSystemUIFont',
+        color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87),
+      );
+
+      if (searchQuery.isEmpty) {
+        return [TextSpan(text: displayContent, style: baseStyle)];
+      }
+
+      final List<TextSpan> result = [];
+      final lowerContent = displayContent.toLowerCase();
+      final lowerQuery = searchQuery.toLowerCase();
+      int start = 0;
+      int idx = lowerContent.indexOf(lowerQuery);
+
+      if (idx == -1) {
+        return [TextSpan(text: displayContent, style: baseStyle)];
+      }
+
+      final matchColor = isDark ? Colors.orangeAccent : Colors.deepOrange;
+
+      while (idx != -1) {
+        // 添加匹配前的文本
+        if (idx > start) {
+          result.add(TextSpan(text: displayContent.substring(start, idx), style: baseStyle));
+        }
+
+        // 添加匹配的文本
+        final matchText = displayContent.substring(idx, idx + searchQuery.length);
+        result.add(TextSpan(
+          text: matchText,
+          style: baseStyle.copyWith(
+            fontWeight: highlightMode == 'bold' || isSelected ? FontWeight.bold : FontWeight.w600,
+            color: highlightMode == 'color' && !isSelected ? matchColor : null,
+          ),
+        ));
+
+        start = idx + searchQuery.length;
+        idx = lowerContent.indexOf(lowerQuery, start);
+      }
+
+      // 添加剩余文本
+      if (start < displayContent.length) {
+        result.add(TextSpan(text: displayContent.substring(start), style: baseStyle));
+      }
+      return result;
+    }, [displayContent, searchQuery, highlightMode, isSelected, isDark]);
+
     return MouseRegion(
       onHover: (_) => onHover(),
       child: GestureDetector(
@@ -253,11 +298,10 @@ class _HistoryRow extends StatelessWidget {
               Expanded(
                 child: Padding(
                   padding: EdgeInsets.only(left: isPinned ? 4 : 0),
-                  child: Text(
-                    content.trim().replaceAll('\n', ' '),
+                  child: Text.rich(
+                    TextSpan(children: spans),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, fontFamily: '.AppleSystemUIFont', color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87)),
                   ),
                 ),
               ),
@@ -277,11 +321,16 @@ class _HistoryRow extends StatelessWidget {
 }
 
 class _HoverIcon extends HookWidget {
+  /// 图标数据
   final IconData icon;
+  /// 点击回调
   final VoidCallback onTap;
+  /// 悬停时的颜色
   final Color hoverColor;
+  /// 基础颜色
   final Color baseColor;
 
+  /// 构造函数
   const _HoverIcon({required this.icon, required this.onTap, this.hoverColor = Colors.white, this.baseColor = Colors.white70});
 
   @override
@@ -303,18 +352,19 @@ class _HoverIcon extends HookWidget {
   }
 }
 
-class _MenuRow extends StatelessWidget {
+class _MenuRow extends ConsumerWidget {
+  final int index;
   final String label;
   final String? shortcut;
-  final bool isSelected;
   final Color selectionColor;
   final VoidCallback onTap;
   final VoidCallback onHover;
 
-  const _MenuRow({required this.label, this.shortcut, required this.isSelected, required this.selectionColor, required this.onTap, required this.onHover});
+  const _MenuRow({required this.index, required this.label, this.shortcut, required this.selectionColor, required this.onTap, required this.onHover});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSelected = ref.watch(historySelectedIndexProvider.select((val) => val == index));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return MouseRegion(
       onHover: (_) => onHover(),

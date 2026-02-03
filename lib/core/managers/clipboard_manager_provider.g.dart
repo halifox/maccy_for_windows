@@ -8,12 +8,15 @@ part of 'clipboard_manager_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
+/// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
 
 @ProviderFor(AppClipboardManager)
 final appClipboardManagerProvider = AppClipboardManagerProvider._();
 
+/// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
 final class AppClipboardManagerProvider
-    extends $NotifierProvider<AppClipboardManager, void> {
+    extends $AsyncNotifierProvider<AppClipboardManager, void> {
+  /// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
   AppClipboardManagerProvider._()
     : super(
         from: null,
@@ -31,30 +34,24 @@ final class AppClipboardManagerProvider
   @$internal
   @override
   AppClipboardManager create() => AppClipboardManager();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(void value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<void>(value),
-    );
-  }
 }
 
 String _$appClipboardManagerHash() =>
-    r'934a66f7f0c8fdeeb0bc14497bfd8a3b53fc9877';
+    r'21a29476f4ba8c1cf8f51d234b2a594695f87476';
 
-abstract class _$AppClipboardManager extends $Notifier<void> {
-  void build();
+/// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
+
+abstract class _$AppClipboardManager extends $AsyncNotifier<void> {
+  FutureOr<void> build();
   @$mustCallSuper
   @override
   void runBuild() {
-    final ref = this.ref as $Ref<void, void>;
+    final ref = this.ref as $Ref<AsyncValue<void>, void>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<void, void>,
-              void,
+              AnyNotifier<AsyncValue<void>, void>,
+              AsyncValue<void>,
               Object?,
               Object?
             >;
