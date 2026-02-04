@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:clipboard/app.dart';
-import 'package:clipboard/features/history/providers/history_providers.dart';
-import 'package:clipboard/features/settings/providers/settings_provider.dart';
+import 'package:haliclip/app.dart';
+import 'package:haliclip/features/history/providers/history_providers.dart';
+import 'package:haliclip/features/settings/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -21,31 +21,41 @@ enum TriggerSource {
   hotkey,
 }
 
-/// 窗口管理器，负责主窗口（剪贴板历史、设置界面）的显示、隐藏、定位以及生命周期管理。
+/// 窗口管理器。
+///
+/// 负责主窗口（剪贴板历史窗口、设置窗口）的生命周期管理，
+/// 包括窗口的创建、显示/隐藏切换、窗口位置计算（如光标跟随或托盘跟随）以及失焦自动隐藏逻辑。
+///
+/// 字段说明:
+/// [_isShowing] 标记当前窗口是否处于显示状态。
+/// [_lastHideTime] 上次窗口隐藏的时间戳，用于防止触发抖动。
+/// [_windowSize] 历史记录窗口的默认尺寸。
 @Riverpod(keepAlive: true)
 class AppWindowManager extends _$AppWindowManager with WindowListener {
   bool _isShowing = false;
   DateTime? _lastHideTime;
   final Size _windowSize = const Size(450, 450);
 
-  /// 初始化窗口管理器，注册监听器。
+  /// 初始化窗口管理器。
+  ///
+  /// 注册窗口事件监听器，用于响应失焦隐藏等操作。
   @override
   FutureOr<void> build() async {
-    debugPrint('🚀 AppWindowManager: 开始初始化...');
     windowManager.addListener(this);
     ref.onDispose(() {
-      debugPrint('🛑 AppWindowManager: 正在注销监听器并销毁...');
       windowManager.removeListener(this);
     });
-    debugPrint('✅ AppWindowManager: 初始化完成');
+    debugPrint('[WindowManager] 服务已就绪');
   }
 
-  /// 初始化窗口管理插件及默认选项。
+  /// 插件预初始化静态方法。
+  ///
+  /// 在 [main] 函数中调用，负责底层 window_manager 插件的初始化、无边框阴影设置
+  /// 以及窗口的初始隐藏状态配置。
   static Future<void> init() async {
-    debugPrint('📦 WindowManager 插件: 正在确保初始化...');
     await windowManager.ensureInitialized();
 
-    WindowOptions windowOptions = const WindowOptions(
+    const WindowOptions windowOptions = WindowOptions(
       size: Size(450, 450),
       center: true,
       backgroundColor: Colors.transparent,
@@ -59,20 +69,20 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
       await windowManager.setHasShadow(true);
       await windowManager.setResizable(false);
       await windowManager.hide();
-      debugPrint('✅ WindowManager 插件: 已就绪并隐藏主窗口');
     });
   }
 
+  /// 切换历史窗口的显示或隐藏状态。
+  ///
+  /// 包含防抖逻辑：若 200ms 内刚执行过隐藏，则忽略此次显示请求，以处理某些平台托盘点击与失焦事件的冲突。
+  ///
+  /// [source] 触发切换的来源。
   Future<void> toggleHistory({
     TriggerSource source = TriggerSource.hotkey,
   }) async {
-    debugPrint('🪟 AppWindowManager: 切换历史窗口状态 (来源: $source)...');
     final now = DateTime.now();
-    // 如果刚刚（200ms内）因为失焦而隐藏，说明可能是点击托盘导致的
-    // 此时我们不应该再次显示它
     if (_lastHideTime != null &&
         now.difference(_lastHideTime!) < const Duration(milliseconds: 200)) {
-      debugPrint('🪟 AppWindowManager: 触发过快，忽略此次切换请求');
       return;
     }
     if (_isShowing) {
@@ -83,33 +93,32 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
   }
 
   /// 显示剪贴板历史窗口。
-  /// 会根据触发来源（托盘或快捷键/设置）自动调整窗口位置。
+  ///
+  /// 执行显示前的准备工作：路由跳转、Native 层活跃应用记录、根据 [source] 计算窗口弹出的位置。
+  ///
+  /// [source] 显示来源，决定了窗口是出现在光标处、托盘处还是屏幕中央。
   Future<void> showHistory({
     TriggerSource source = TriggerSource.hotkey,
   }) async {
-    debugPrint('🪟 AppWindowManager: 准备显示历史窗口...');
-
     if (Platform.isMacOS || Platform.isWindows) {
       try {
         const platform = MethodChannel('com.hali.clip/native_utils');
         await platform.invokeMethod('recordActiveApp');
       } catch (e) {
-        debugPrint('⚠️ AppWindowManager: 记录活跃应用失败: $e');
+        debugPrint('[WindowManager] 记录活跃应用失败: $e');
       }
     }
 
-    router.go('/');
+    router.go('/clipboard');
     await windowManager.setSize(_windowSize);
 
     if (source == TriggerSource.tray) {
       await _positionNearTray();
     } else {
       final popupPosition = ref.read(popupPositionProvider);
-      debugPrint('🪟 AppWindowManager: 配置显示位置为: $popupPosition');
       if (popupPosition == 'cursor') {
         await _positionNearCursor();
       } else {
-        debugPrint('🪟 AppWindowManager: 将窗口居中显示');
         await windowManager.center();
       }
     }
@@ -117,22 +126,22 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     await windowManager.show();
     await windowManager.focus();
     _isShowing = true;
-    debugPrint('🪟 AppWindowManager: 窗口已显示并聚焦');
 
-    // 重置搜索内容和选中项
     ref.read(historySearchQueryProvider.notifier).set('');
     ref.read(historySelectedIndexProvider.notifier).set(0);
     ref.read(historyFocusRequestProvider.notifier).request();
+    debugPrint('[WindowManager] 历史记录窗口已显示');
   }
 
   /// 计算并将窗口定位在当前鼠标光标附近。
+  ///
+  /// 包含多显示器边界检查，确保窗口不会超出屏幕边缘。
   Future<void> _positionNearCursor() async {
-    debugPrint('🪟 AppWindowManager: 正在计算光标附近位置...');
-    Offset cursorPoint = await screenRetriever.getCursorScreenPoint();
-    List<Display> displays = await screenRetriever.getAllDisplays();
+    final Offset cursorPoint = await screenRetriever.getCursorScreenPoint();
+    final List<Display> displays = await screenRetriever.getAllDisplays();
     Display targetDisplay = displays.first;
 
-    for (var display in displays) {
+    for (final display in displays) {
       final rect = Rect.fromLTWH(
         display.visiblePosition?.dx ?? 0,
         display.visiblePosition?.dy ?? 0,
@@ -148,11 +157,9 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     final visiblePos = targetDisplay.visiblePosition ?? Offset.zero;
     final visibleSize = targetDisplay.visibleSize ?? targetDisplay.size;
 
-    // 默认在光标右下方显示，但如果超出屏幕，则调整位置
     double x = cursorPoint.dx;
     double y = cursorPoint.dy;
 
-    // 边界检查
     if (x + _windowSize.width > visiblePos.dx + visibleSize.width) {
       x = x - _windowSize.width;
     }
@@ -160,7 +167,6 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
       y = y - _windowSize.height;
     }
 
-    // 确保不小于可见区域起始位置
     x = x.clamp(
       visiblePos.dx,
       visiblePos.dx + visibleSize.width - _windowSize.width,
@@ -170,25 +176,23 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
       visiblePos.dy + visibleSize.height - _windowSize.height,
     );
 
-    debugPrint('🪟 AppWindowManager: 设置窗口位置到光标附近 ($x, $y)');
     await windowManager.setPosition(Offset(x, y));
   }
 
   /// 计算并将窗口定位在系统托盘图标附近。
+  ///
+  /// 能够根据任务栏的位置（上、下、左、右）自动调整窗口的对齐方式。
   Future<void> _positionNearTray() async {
-    debugPrint('🪟 AppWindowManager: 正在计算托盘附近位置...');
-    Rect? trayBounds = await trayManager.getBounds();
+    final Rect? trayBounds = await trayManager.getBounds();
 
-    // 如果无法获取托盘位置，则回退到光标位置
     if (trayBounds == null) {
-      debugPrint('🪟 AppWindowManager: 无法获取托盘边界，回退到光标位置');
       await _positionNearCursor();
       return;
     }
 
-    List<Display> displays = await screenRetriever.getAllDisplays();
+    final List<Display> displays = await screenRetriever.getAllDisplays();
     Display targetDisplay = displays.first;
-    for (var display in displays) {
+    for (final display in displays) {
       final rect = Rect.fromLTWH(
         display.visiblePosition?.dx ?? 0,
         display.visiblePosition?.dy ?? 0,
@@ -211,24 +215,18 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     double x = trayBounds.center.dx - _windowSize.width / 2;
     double y = trayBounds.center.dy - _windowSize.height / 2;
 
-    // 常见的任务栏位置：底部、顶部、左侧、右侧
     if (trayBounds.top > screenY + screenHeight * 0.8) {
-      // 任务栏在底部
       y = trayBounds.top - _windowSize.height - 10;
     } else if (trayBounds.bottom < screenY + screenHeight * 0.2) {
-      // 任务栏在顶部
       y = trayBounds.bottom + 10;
     } else if (trayBounds.left > screenX + screenWidth * 0.8) {
-      // 任务栏在右侧
       x = trayBounds.left - _windowSize.width - 10;
       y = trayBounds.center.dy - _windowSize.height / 2;
     } else if (trayBounds.right < screenX + screenWidth * 0.2) {
-      // 任务栏在左侧
       x = trayBounds.right + 10;
       y = trayBounds.center.dy - _windowSize.height / 2;
     }
 
-    // 最终边界检查
     x = x.clamp(
       visiblePos.dx,
       visiblePos.dx + visibleSize.width - _windowSize.width,
@@ -238,69 +236,81 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
       visiblePos.dy + visibleSize.height - _windowSize.height,
     );
 
-    debugPrint('🪟 AppWindowManager: 设置窗口位置到托盘附近 ($x, $y)');
     await windowManager.setPosition(Offset(x, y));
   }
 
-  /// 隐藏当前窗口，并记录隐藏时间。
+  /// 隐藏当前主窗口并记录时间戳。
   Future<void> hideHistory() async {
-    debugPrint('🪟 AppWindowManager: 正在隐藏历史窗口...');
-    router.go('/');
+    router.go('/clipboard');
     await windowManager.hide();
     _isShowing = false;
     _lastHideTime = DateTime.now();
   }
 
-  /// 显示设置界面，调整窗口大小并居中显示。
+  /// 显示应用程序的设置界面。
+  ///
+  /// 将窗口调整为较大的尺寸并居中显示，切换路由至设置页面。
   Future<void> showSettings() async {
-    debugPrint('🪟 AppWindowManager: 显示设置窗口...');
-    router.go('/settings');
+    await windowManager.hide();
     await windowManager.setSize(const Size(800, 800));
+    router.go('/settings');
     await windowManager.center();
     await windowManager.show();
     await windowManager.focus();
     _isShowing = true;
   }
 
-  /// 当窗口失去焦点时，自动隐藏剪贴板历史窗口。
+  /// 窗口失去焦点时的监听回调。
+  ///
+  /// 用于实现“点击别处自动隐藏”的剪贴板工具常见行为。
   @override
   void onWindowBlur() {
-    debugPrint('🪟 AppWindowManager: 窗口失去焦点，执行自动隐藏');
+    debugPrint('[WindowManager] 窗口失去焦点，执行自动隐藏');
     hideHistory();
   }
 
-  /// 窗口事件通用回调。
   @override
-  void onWindowEvent(String eventName) {
-    // debugPrint('🪟 Window Event: $eventName');
-  }
+  void onWindowEvent(String eventName) {}
 
   @override
-  void onWindowUndocked() => debugPrint('🪟 Window Event: Undocked');
+  void onWindowUndocked() {}
+
   @override
-  void onWindowDocked() => debugPrint('🪟 Window Event: Docked');
+  void onWindowDocked() {}
+
   @override
-  void onWindowLeaveFullScreen() => debugPrint('🪟 Window Event: LeaveFullScreen');
+  void onWindowLeaveFullScreen() {}
+
   @override
-  void onWindowEnterFullScreen() => debugPrint('🪟 Window Event: EnterFullScreen');
+  void onWindowEnterFullScreen() {}
+
   @override
-  void onWindowMoved() => debugPrint('🪟 Window Event: Moved');
+  void onWindowMoved() {}
+
   @override
-  void onWindowMove() => debugPrint('🪟 Window Event: Move');
+  void onWindowMove() {}
+
   @override
-  void onWindowResized() => debugPrint('🪟 Window Event: Resized');
+  void onWindowResized() {}
+
   @override
-  void onWindowResize() => debugPrint('🪟 Window Event: Resize');
+  void onWindowResize() {}
+
   @override
-  void onWindowRestore() => debugPrint('🪟 Window Event: Restore');
+  void onWindowRestore() {}
+
   @override
-  void onWindowMinimize() => debugPrint('🪟 Window Event: Minimize');
+  void onWindowMinimize() {}
+
   @override
-  void onWindowUnmaximize() => debugPrint('🪟 Window Event: Unmaximize');
+  void onWindowUnmaximize() {}
+
   @override
-  void onWindowMaximize() => debugPrint('🪟 Window Event: Maximize');
+  void onWindowMaximize() {}
+
   @override
-  void onWindowFocus() => debugPrint('🪟 Window Event: Focus');
+  void onWindowFocus() {}
+
   @override
-  void onWindowClose() => debugPrint('🪟 Window Event: Close');
+  void onWindowClose() {}
 }

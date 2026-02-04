@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <vector>
 #include <windows.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
@@ -27,7 +28,7 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
 
-  // 注册 MethodChannel
+  // Register MethodChannel
   auto channel = std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
       flutter_controller_->engine()->messenger(), "com.hali.clip/native_utils",
       &flutter::StandardMethodCodec::GetInstance());
@@ -54,40 +55,49 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::RecordActiveApp() {
   HWND foreground = GetForegroundWindow();
-  if (foreground != GetNativeWindow()) {
+  if (foreground != GetHandle()) {
     last_active_window_ = foreground;
-    // printf("📍 Native Win: Recorded window HWND: %p\n", last_active_window_);
   }
 }
 
 void FlutterWindow::RestoreAndPaste() {
   if (last_active_window_ && IsWindow(last_active_window_)) {
-    // 1. 恢复焦点
-    ShowWindow(last_active_window_, SW_RESTORE);
+    // 1. Restore window if minimized and bring to front
+    if (IsIconic(last_active_window_)) {
+      ShowWindow(last_active_window_, SW_RESTORE);
+    }
     SetForegroundWindow(last_active_window_);
 
-    // 2. 模拟按键 (Ctrl + V)
-    INPUT inputs[4] = {};
-    
-    // Ctrl Down
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = VK_CONTROL;
-    
-    // V Down
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = 'V';
-    
-    // V Up
-    inputs[2].type = INPUT_KEYBOARD;
-    inputs[2].ki.wVk = 'V';
-    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    
-    // Ctrl Up
-    inputs[3].type = INPUT_KEYBOARD;
-    inputs[3].ki.wVk = VK_CONTROL;
-    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    // 2. Wait for focus to switch (max 200ms)
+    int attempts = 20;
+    while (GetForegroundWindow() != last_active_window_ && attempts > 0) {
+      Sleep(10);
+      attempts--;
+    }
 
-    SendInput(4, inputs, sizeof(INPUT));
+    // 3. Prepare input sequence
+    std::vector<INPUT> inputs;
+    auto AddKey = [&](WORD vk, bool up) {
+      INPUT input = {0};
+      input.type = INPUT_KEYBOARD;
+      input.ki.wVk = vk;
+      if (up) input.ki.dwFlags = KEYEVENTF_KEYUP;
+      inputs.push_back(input);
+    }; // Added missing semicolon here
+
+    // 4. Release physical modifiers to avoid combos like Ctrl+Alt+V
+    if (GetKeyState(VK_SHIFT) & 0x8000) AddKey(VK_SHIFT, true);
+    if (GetKeyState(VK_MENU) & 0x8000) AddKey(VK_MENU, true);
+    if (GetKeyState(VK_LWIN) & 0x8000) AddKey(VK_LWIN, true);
+    if (GetKeyState(VK_RWIN) & 0x8000) AddKey(VK_RWIN, true);
+
+    // 5. Simulate Ctrl+V
+    AddKey(VK_CONTROL, false);
+    AddKey('V', false);
+    AddKey('V', true);
+    AddKey(VK_CONTROL, true);
+
+    SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
   }
 }
 
@@ -103,7 +113,6 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
-  // Give Flutter, including plugins, an opportunity to handle window messages.
   if (flutter_controller_) {
     std::optional<LRESULT> result =
         flutter_controller_->HandleTopLevelWindowProc(hwnd, message, wparam,

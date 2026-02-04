@@ -1,11 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import '../../providers/settings_provider.dart';
-import '../widgets/macos_settings_widgets.dart';
+import 'package:haliclip/features/settings/providers/settings_provider.dart';
+import 'package:haliclip/features/settings/ui/widgets/macos_settings_widgets.dart';
 
-/// 高级设置选项卡，包含录制控制和隐私设置
+/// 设置：高级选项页。
+///
+/// 包含录制状态控制（暂停/恢复）以及隐私清理相关的逻辑配置。
 class AdvancedTab extends ConsumerWidget {
-  /// 构造函数
   const AdvancedTab({super.key});
 
   @override
@@ -22,7 +23,8 @@ class AdvancedTab extends ConsumerWidget {
               iconColor: CupertinoColors.systemGrey,
               trailing: CupertinoCheckbox(
                 value: ref.watch(isPausedProvider),
-                onChanged: (v) => ref.read(isPausedProvider.notifier).set(v ?? false),
+                onChanged: (v) =>
+                    ref.read(isPausedProvider.notifier).set(v ?? false),
               ),
             ),
           ],
@@ -36,7 +38,8 @@ class AdvancedTab extends ConsumerWidget {
               iconColor: CupertinoColors.systemRed,
               trailing: CupertinoCheckbox(
                 value: ref.watch(clearOnExitProvider),
-                onChanged: (v) => ref.read(clearOnExitProvider.notifier).set(v ?? false),
+                onChanged: (v) =>
+                    ref.read(clearOnExitProvider.notifier).set(v ?? false),
               ),
             ),
             MacosSettingsTile(
@@ -46,7 +49,9 @@ class AdvancedTab extends ConsumerWidget {
               iconColor: CupertinoColors.systemOrange,
               trailing: CupertinoCheckbox(
                 value: ref.watch(clearSystemClipboardProvider),
-                onChanged: (v) => ref.read(clearSystemClipboardProvider.notifier).set(v ?? false),
+                onChanged: (v) => ref
+                    .read(clearSystemClipboardProvider.notifier)
+                    .set(v ?? false),
               ),
             ),
           ],

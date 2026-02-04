@@ -8,12 +8,12 @@ part of 'history_repository.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// 提供全局的历史记录数据仓库实例
+/// 提供全局的历史记录数据仓库实例。
 
 @ProviderFor(historyRepository)
 final historyRepositoryProvider = HistoryRepositoryProvider._();
 
-/// 提供全局的历史记录数据仓库实例
+/// 提供全局的历史记录数据仓库实例。
 
 final class HistoryRepositoryProvider
     extends
@@ -23,7 +23,7 @@ final class HistoryRepositoryProvider
           HistoryRepository
         >
     with $Provider<HistoryRepository> {
-  /// 提供全局的历史记录数据仓库实例
+  /// 提供全局的历史记录数据仓库实例。
   HistoryRepositoryProvider._()
     : super(
         from: null,

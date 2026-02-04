@@ -1,4 +1,4 @@
-name: clipboard
+name: haliclip
 description: "A lightweight, cross-platform clipboard manager assistant."
 publish_to: 'none'
 
@@ -37,6 +37,11 @@ dependencies:
   screen_retriever: ^0.2.0
 
   sqlite3: any
+  launch_at_startup: ^0.5.1
+  package_info_plus: ^9.0.0
+  super_clipboard: ^0.9.1
+  crypto: ^3.0.7
+  stream_transform: ^2.1.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

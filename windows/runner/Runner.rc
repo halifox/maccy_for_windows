@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.halifox" "\0"
-            VALUE "FileDescription", "clipboard" "\0"
+            VALUE "FileDescription", "HaliClip" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "clipboard" "\0"
+            VALUE "InternalName", "HaliClip" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 com.halifox. All rights reserved." "\0"
-            VALUE "OriginalFilename", "clipboard.exe" "\0"
-            VALUE "ProductName", "clipboard" "\0"
+            VALUE "OriginalFilename", "HaliClip.exe" "\0"
+            VALUE "ProductName", "HaliClip" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

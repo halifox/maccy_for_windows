@@ -1,13 +1,15 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import '../../providers/settings_provider.dart';
-import '../widgets/macos_settings_widgets.dart';
-import '../widgets/number_stepper.dart';
+import 'package:haliclip/features/settings/providers/settings_provider.dart';
+import 'package:haliclip/features/settings/ui/widgets/macos_settings_widgets.dart';
+import 'package:haliclip/features/settings/ui/widgets/number_stepper.dart';
 
-/// 外观设置选项卡，包含面板配置、样式和界面元素设置
+/// 设置：外观选项页。
+///
+/// 负责管理面板弹出位置、界面元素的可见性（如菜单栏图标、页脚菜单）以及
+/// 搜索匹配的高亮样式等视觉参数。
 class AppearanceTab extends ConsumerWidget {
-  /// 构造函数
   const AppearanceTab({super.key});
 
   @override
@@ -27,7 +29,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.activeBlue,
                 currentValue: ref.watch(popupPositionProvider),
                 options: {'cursor': 'Cursor', 'center': 'Center'},
-                onSelected: (v) => ref.read(popupPositionProvider.notifier).set(v),
+                onSelected: (v) =>
+                    ref.read(popupPositionProvider.notifier).set(v),
               ),
               _buildDropdownTile(
                 context,
@@ -38,7 +41,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemOrange,
                 currentValue: ref.watch(pinPositionProvider),
                 options: {'top': 'Top', 'bottom': 'Bottom'},
-                onSelected: (v) => ref.read(pinPositionProvider.notifier).set(v),
+                onSelected: (v) =>
+                    ref.read(pinPositionProvider.notifier).set(v),
               ),
               MacosSettingsTile(
                 label: 'Image Height',
@@ -47,7 +51,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemPink,
                 trailing: NumberStepper(
                   value: ref.watch(imageHeightProvider),
-                  onChanged: (v) => ref.read(imageHeightProvider.notifier).set(v),
+                  onChanged: (v) =>
+                      ref.read(imageHeightProvider.notifier).set(v),
                 ),
               ),
               MacosSettingsTile(
@@ -58,7 +63,8 @@ class AppearanceTab extends ConsumerWidget {
                 trailing: NumberStepper(
                   value: ref.watch(previewDelayProvider),
                   step: 100,
-                  onChanged: (v) => ref.read(previewDelayProvider.notifier).set(v),
+                  onChanged: (v) =>
+                      ref.read(previewDelayProvider.notifier).set(v),
                 ),
               ),
               _buildDropdownTile(
@@ -70,7 +76,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemYellow,
                 currentValue: ref.watch(highlightMatchProvider),
                 options: {'bold': 'Bold', 'color': 'Color'},
-                onSelected: (v) => ref.read(highlightMatchProvider.notifier).set(v),
+                onSelected: (v) =>
+                    ref.read(highlightMatchProvider.notifier).set(v),
               ),
             ],
           ),
@@ -84,7 +91,9 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
                   value: ref.watch(showSpecialCharsProvider),
-                  onChanged: (v) => ref.read(showSpecialCharsProvider.notifier).set(v ?? false),
+                  onChanged: (v) => ref
+                      .read(showSpecialCharsProvider.notifier)
+                      .set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -95,13 +104,20 @@ class AppearanceTab extends ConsumerWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _buildIconDropdown(context, ref, ref.watch(menuBarIconTypeProvider), (v) {
-                      ref.read(menuBarIconTypeProvider.notifier).set(v);
-                    }),
+                    _buildIconDropdown(
+                      context,
+                      ref,
+                      ref.watch(menuBarIconTypeProvider),
+                      (v) {
+                        ref.read(menuBarIconTypeProvider.notifier).set(v);
+                      },
+                    ),
                     const SizedBox(width: 12),
                     CupertinoCheckbox(
                       value: ref.watch(showMenuBarIconProvider),
-                      onChanged: (v) => ref.read(showMenuBarIconProvider.notifier).set(v ?? false),
+                      onChanged: (v) => ref
+                          .read(showMenuBarIconProvider.notifier)
+                          .set(v ?? false),
                     ),
                   ],
                 ),
@@ -113,7 +129,9 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemIndigo,
                 trailing: CupertinoCheckbox(
                   value: ref.watch(showClipboardNearIconProvider),
-                  onChanged: (v) => ref.read(showClipboardNearIconProvider.notifier).set(v ?? false),
+                  onChanged: (v) => ref
+                      .read(showClipboardNearIconProvider.notifier)
+                      .set(v ?? false),
                 ),
               ),
               _buildDropdownTile(
@@ -124,8 +142,13 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.search,
                 iconColor: CupertinoColors.systemBlue,
                 currentValue: ref.watch(showSearchBoxProvider),
-                options: {'always': 'Always', 'typing': 'When Typing', 'never': 'Never'},
-                onSelected: (v) => ref.read(showSearchBoxProvider.notifier).set(v),
+                options: {
+                  'always': 'Always',
+                  'typing': 'When Typing',
+                  'never': 'Never',
+                },
+                onSelected: (v) =>
+                    ref.read(showSearchBoxProvider.notifier).set(v),
               ),
               MacosSettingsTile(
                 label: 'Source App Name',
@@ -134,7 +157,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
                   value: ref.watch(showAppNameProvider),
-                  onChanged: (v) => ref.read(showAppNameProvider.notifier).set(v ?? false),
+                  onChanged: (v) =>
+                      ref.read(showAppNameProvider.notifier).set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -144,7 +168,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemIndigo,
                 trailing: CupertinoCheckbox(
                   value: ref.watch(showAppIconProvider),
-                  onChanged: (v) => ref.read(showAppIconProvider.notifier).set(v ?? false),
+                  onChanged: (v) =>
+                      ref.read(showAppIconProvider.notifier).set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -154,7 +179,8 @@ class AppearanceTab extends ConsumerWidget {
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
                   value: ref.watch(showFooterMenuProvider),
-                  onChanged: (v) => ref.read(showFooterMenuProvider.notifier).set(v ?? false),
+                  onChanged: (v) =>
+                      ref.read(showFooterMenuProvider.notifier).set(v ?? false),
                 ),
               ),
             ],
@@ -165,6 +191,7 @@ class AppearanceTab extends ConsumerWidget {
     );
   }
 
+  /// 构建带有下拉菜单选择器的设置行。
   Widget _buildDropdownTile(
     BuildContext context,
     WidgetRef ref, {
@@ -185,74 +212,139 @@ class AppearanceTab extends ConsumerWidget {
       trailing: MenuAnchor(
         alignmentOffset: const Offset(0, 4),
         style: MenuStyle(
-          backgroundColor: WidgetStatePropertyAll(isDark ? const Color(0xFF2D2D2D) : const Color(0xFFF2F2F2)),
+          backgroundColor: WidgetStatePropertyAll(
+            isDark ? const Color(0xFF2D2D2D) : const Color(0xFFF2F2F2),
+          ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
-              side: BorderSide(color: isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.1), width: 0.5),
+              side: BorderSide(
+                color: isDark
+                    ? Colors.white.withOpacity(0.15)
+                    : Colors.black.withOpacity(0.1),
+                width: 0.5,
+              ),
             ),
           ),
           elevation: const WidgetStatePropertyAll(16),
-          shadowColor: WidgetStatePropertyAll(Colors.black.withOpacity(isDark ? 0.5 : 0.2)),
+          shadowColor: WidgetStatePropertyAll(
+            Colors.black.withOpacity(isDark ? 0.5 : 0.2),
+          ),
           padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
         ),
         builder: (context, controller, child) {
           return CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+            onPressed: () =>
+                controller.isOpen ? controller.close() : controller.open(),
             minimumSize: Size.zero,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+                color: isDark
+                    ? Colors.white.withOpacity(0.06)
+                    : Colors.black.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1), width: 0.5),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.1)
+                      : Colors.black.withOpacity(0.1),
+                  width: 0.5,
+                ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     options[currentValue] ?? currentValue,
-                    style: TextStyle(fontSize: 13, color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.9)
+                          : Colors.black87,
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  Icon(CupertinoIcons.chevron_up_chevron_down, size: 10, color: isDark ? Colors.white38 : Colors.black38),
+                  Icon(
+                    CupertinoIcons.chevron_up_chevron_down,
+                    size: 10,
+                    color: isDark ? Colors.white38 : Colors.black38,
+                  ),
                 ],
               ),
             ),
           );
         },
-        menuChildren: options.entries.map((e) => _buildMenuItem(context, e.key, e.value, currentValue == e.key, onSelected)).toList(),
+        menuChildren: options.entries
+            .map(
+              (e) => _buildMenuItem(
+                context,
+                e.key,
+                e.value,
+                currentValue == e.key,
+                onSelected,
+              ),
+            )
+            .toList(),
       ),
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, String value, String text, bool selected, ValueChanged<String> onSelected) {
+  /// 构建下拉菜单项。
+  Widget _buildMenuItem(
+    BuildContext context,
+    String value,
+    String text,
+    bool selected,
+    ValueChanged<String> onSelected,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return MenuItemButton(
       onPressed: () => onSelected(value),
       style: ButtonStyle(
-        padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 4),
+        ),
         minimumSize: const WidgetStatePropertyAll(Size(100, 26)),
         fixedSize: const WidgetStatePropertyAll(Size.fromHeight(26)),
-        overlayColor: WidgetStatePropertyAll(CupertinoColors.activeBlue.withValues(alpha: 0.9)),
+        overlayColor: WidgetStatePropertyAll(
+          CupertinoColors.activeBlue.withValues(alpha: 0.9),
+        ),
         foregroundColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.hovered) || states.contains(WidgetState.pressed)
+          (states) =>
+              states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.pressed)
               ? Colors.white
               : (isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
         ),
-        shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+        ),
       ),
       child: Row(
         children: [
-          SizedBox(width: 20, child: selected ? const Icon(CupertinoIcons.checkmark, size: 14) : null),
-          Text(text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400)),
+          SizedBox(
+            width: 20,
+            child: selected
+                ? const Icon(CupertinoIcons.checkmark, size: 14)
+                : null,
+          ),
+          Text(
+            text,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildIconDropdown(BuildContext context, WidgetRef ref, String current, ValueChanged<String> onSelected) {
+  /// 构建托盘图标类型的专用下拉选择器。
+  Widget _buildIconDropdown(
+    BuildContext context,
+    WidgetRef ref,
+    String current,
+    ValueChanged<String> onSelected,
+  ) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final icons = {
       'clipboard': CupertinoIcons.doc_on_clipboard,
@@ -263,35 +355,62 @@ class AppearanceTab extends ConsumerWidget {
     return MenuAnchor(
       alignmentOffset: const Offset(0, 4),
       style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(isDark ? const Color(0xFF2D2D2D) : const Color(0xFFF2F2F2)),
+        backgroundColor: WidgetStatePropertyAll(
+          isDark ? const Color(0xFF2D2D2D) : const Color(0xFFF2F2F2),
+        ),
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.1), width: 0.5),
+            side: BorderSide(
+              color: isDark
+                  ? Colors.white.withOpacity(0.15)
+                  : Colors.black.withOpacity(0.1),
+              width: 0.5,
+            ),
           ),
         ),
         elevation: const WidgetStatePropertyAll(16),
-        shadowColor: WidgetStatePropertyAll(Colors.black.withOpacity(isDark ? 0.5 : 0.2)),
+        shadowColor: WidgetStatePropertyAll(
+          Colors.black.withOpacity(isDark ? 0.5 : 0.2),
+        ),
         padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
       ),
       builder: (context, controller, child) {
         return CupertinoButton(
           padding: EdgeInsets.zero,
-          onPressed: () => controller.isOpen ? controller.close() : controller.open(),
+          onPressed: () =>
+              controller.isOpen ? controller.close() : controller.open(),
           minimumSize: Size.zero,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withOpacity(0.06) : Colors.black.withOpacity(0.04),
+              color: isDark
+                  ? Colors.white.withOpacity(0.06)
+                  : Colors.black.withOpacity(0.04),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1), width: 0.5),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.black.withOpacity(0.1),
+                width: 0.5,
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icons[current] ?? CupertinoIcons.doc_on_clipboard, size: 14, color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
+                Icon(
+                  icons[current] ?? CupertinoIcons.doc_on_clipboard,
+                  size: 14,
+                  color: isDark
+                      ? Colors.white.withOpacity(0.9)
+                      : Colors.black87,
+                ),
                 const SizedBox(width: 8),
-                Icon(CupertinoIcons.chevron_up_chevron_down, size: 10, color: isDark ? Colors.white38 : Colors.black38),
+                Icon(
+                  CupertinoIcons.chevron_up_chevron_down,
+                  size: 10,
+                  color: isDark ? Colors.white38 : Colors.black38,
+                ),
               ],
             ),
           ),
@@ -301,23 +420,39 @@ class AppearanceTab extends ConsumerWidget {
         return MenuItemButton(
           onPressed: () => onSelected(e.key),
           style: ButtonStyle(
-            padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 4),
+            ),
             minimumSize: const WidgetStatePropertyAll(Size(80, 26)),
             fixedSize: const WidgetStatePropertyAll(Size.fromHeight(26)),
-            overlayColor: WidgetStatePropertyAll(CupertinoColors.activeBlue.withValues(alpha: 0.9)),
+            overlayColor: WidgetStatePropertyAll(
+              CupertinoColors.activeBlue.withValues(alpha: 0.9),
+            ),
             foregroundColor: WidgetStateProperty.resolveWith(
-              (states) => states.contains(WidgetState.hovered) || states.contains(WidgetState.pressed)
+              (states) =>
+                  states.contains(WidgetState.hovered) ||
+                      states.contains(WidgetState.pressed)
                   ? Colors.white
                   : (isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
             ),
-            shape: WidgetStatePropertyAll(RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+            ),
           ),
           child: Row(
             children: [
-              SizedBox(width: 20, child: current == e.key ? const Icon(CupertinoIcons.checkmark, size: 14) : null),
+              SizedBox(
+                width: 20,
+                child: current == e.key
+                    ? const Icon(CupertinoIcons.checkmark, size: 14)
+                    : null,
+              ),
               Icon(e.value, size: 14),
               const SizedBox(width: 8),
-              Text(e.key[0].toUpperCase() + e.key.substring(1), style: const TextStyle(fontSize: 13)),
+              Text(
+                e.key[0].toUpperCase() + e.key.substring(1),
+                style: const TextStyle(fontSize: 13),
+              ),
             ],
           ),
         );
@@ -325,5 +460,3 @@ class AppearanceTab extends ConsumerWidget {
     );
   }
 }
-
-

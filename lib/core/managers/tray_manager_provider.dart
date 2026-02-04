@@ -4,17 +4,22 @@ import 'package:flutter/cupertino.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:tray_manager/tray_manager.dart';
 
-import 'window_manager_provider.dart';
+import 'package:haliclip/core/managers/window_manager_provider.dart';
 
 part 'tray_manager_provider.g.dart';
 
-/// 系统托盘管理器，负责初始化托盘图标、设置悬停提示以及监听托盘点击事件。
+/// 系统托盘管理器。
+///
+/// 负责在操作系统的任务栏或状态栏创建图标，设置悬停提示信息，
+/// 并处理托盘图标的点击、右键菜单等交互事件。
 @Riverpod(keepAlive: true)
 class AppTrayManager extends _$AppTrayManager with TrayListener {
-  /// 初始化托盘图标，根据不同操作系统选择相应格式的图标文件。
+  /// 初始化托盘管理器。
+  ///
+  /// 根据当前运行的操作系统平台选择相应的图标格式（.png 或 .ico），
+  /// 设置全局提示文字并注册交互监听器。
   @override
   FutureOr<void> build() async {
-    debugPrint('🚀 AppTrayManager: 开始初始化托盘...');
     String iconPath = '';
     if (Platform.isMacOS) {
       iconPath = 'assets/tray_icon_32.png';
@@ -23,47 +28,39 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
     } else if (Platform.isWindows) {
       iconPath = 'assets/tray_icon_32.ico';
     }
-    
+
     await trayManager.setIcon(iconPath, isTemplate: true);
-    await trayManager.setToolTip("hali clip");
+    await trayManager.setToolTip('HaliClip');
     trayManager.addListener(this);
-    
+
     ref.onDispose(() {
-      debugPrint('🛑 AppTrayManager: 正在注销托盘监听器...');
       trayManager.removeListener(this);
     });
-    debugPrint('✅ AppTrayManager: 托盘初始化完成');
+    debugPrint('[TrayManager] 服务已就绪');
   }
 
-  /// 托盘图标左键点击回调：切换剪贴板历史窗口的显示或隐藏。
+  /// 托盘图标按下回调。
+  ///
+  /// 通常响应左键点击，用于快速切换历史记录窗口的显隐状态。
   @override
   void onTrayIconMouseDown() {
-    debugPrint('🖱️ Tray: 托盘图标按下 (左键)');
-    // 左键单击：切换显示或隐藏
-    ref.read(appWindowManagerProvider.notifier).toggleHistory(source: TriggerSource.tray);
+    ref
+        .read(appWindowManagerProvider.notifier)
+        .toggleHistory(source: TriggerSource.tray);
   }
 
   /// 托盘菜单项点击回调。
+  ///
+  /// [menuItem] 被点击的菜单项对象。
   @override
-  void onTrayMenuItemClick(MenuItem menuItem) {
-    debugPrint('🖱️ Tray: 菜单项被点击: ${menuItem.label}');
-  }
+  void onTrayMenuItemClick(MenuItem menuItem) {}
 
-  /// 托盘图标右键松开回调。
   @override
-  void onTrayIconRightMouseUp() {
-    debugPrint('🖱️ Tray: 托盘图标右键抬起');
-  }
+  void onTrayIconRightMouseUp() {}
 
-  /// 托盘图标右键按下回调。
   @override
-  void onTrayIconRightMouseDown() {
-    debugPrint('🖱️ Tray: 托盘图标右键按下');
-  }
+  void onTrayIconRightMouseDown() {}
 
-  /// 托盘图标左键松开回调。
   @override
-  void onTrayIconMouseUp() {
-    debugPrint('🖱️ Tray: 托盘图标左键抬起');
-  }
+  void onTrayIconMouseUp() {}
 }

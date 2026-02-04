@@ -181,22 +181,11 @@ class $ClipboardEntriesTable extends ClipboardEntries
 }
 
 class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
-  /// 主键 ID，自增
   final int id;
-
-  /// 剪贴板内容，唯一索引
   final String content;
-
-  /// 内容类型（如 text, image, file），默认为 'text'
   final String type;
-
-  /// 创建时间，默认为当前系统时间
   final DateTime createdAt;
-
-  /// 是否置顶，默认为 false
   final bool isPinned;
-
-  /// 置顶排序权重
   final int? pinOrder;
   const ClipboardEntry({
     required this.id,

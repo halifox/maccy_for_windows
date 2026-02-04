@@ -8,15 +8,33 @@ part of 'clipboard_manager_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
+/// 剪贴板管理器。
+///
+/// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
+/// 以及跨平台的自动粘贴模拟操作。
+///
+/// 字段说明:
+/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
 
 @ProviderFor(AppClipboardManager)
 final appClipboardManagerProvider = AppClipboardManagerProvider._();
 
-/// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
+/// 剪贴板管理器。
+///
+/// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
+/// 以及跨平台的自动粘贴模拟操作。
+///
+/// 字段说明:
+/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
 final class AppClipboardManagerProvider
     extends $AsyncNotifierProvider<AppClipboardManager, void> {
-  /// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
+  /// 剪贴板管理器。
+  ///
+  /// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
+  /// 以及跨平台的自动粘贴模拟操作。
+  ///
+  /// 字段说明:
+  /// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
   AppClipboardManagerProvider._()
     : super(
         from: null,
@@ -37,9 +55,15 @@ final class AppClipboardManagerProvider
 }
 
 String _$appClipboardManagerHash() =>
-    r'21a29476f4ba8c1cf8f51d234b2a594695f87476';
+    r'7d10ee157c63ac17284d3e02e96d7e0a848900f8';
 
-/// 剪贴板管理器，负责监听系统剪贴板变化、处理数据过滤并持久化到数据库。
+/// 剪贴板管理器。
+///
+/// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
+/// 以及跨平台的自动粘贴模拟操作。
+///
+/// 字段说明:
+/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
 
 abstract class _$AppClipboardManager extends $AsyncNotifier<void> {
   FutureOr<void> build();

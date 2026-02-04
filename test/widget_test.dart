@@ -7,7 +7,7 @@
 
 import 'package:flutter_test/flutter_test.dart';
 
-// import 'package:clipboard/main.dart';
+// import 'package:haliclip/main.dart';
 
 void main() {
   testWidgets('Counter increments smoke test', (WidgetTester tester) async {

@@ -1,14 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// macOS 风格的设置组容器，包含标题和圆角白底背景
+/// macOS 风格的设置组容器。
+///
+/// 为一组相关的设置项提供带有标题、圆角背景和内部分割线的统一样式。
+///
+/// 字段说明:
+/// [children] 内部排列的设置行列表。
+/// [title] 可选的组标题文字。
 class MacosSettingsGroup extends StatelessWidget {
-  /// 子组件列表
-  final List<Widget> children;
-  /// 组标题
-  final String? title;
-  /// 构造函数
+
   const MacosSettingsGroup({super.key, required this.children, this.title});
+  final List<Widget> children;
+  final String? title;
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +25,12 @@ class MacosSettingsGroup extends StatelessWidget {
             padding: const EdgeInsets.only(left: 12, bottom: 8, top: 4),
             child: Text(
               title!.toUpperCase(),
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500, color: isDark ? Colors.white30 : Colors.black38, letterSpacing: 0.5),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white30 : Colors.black38,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         Container(
@@ -30,9 +39,19 @@ class MacosSettingsGroup extends StatelessWidget {
             color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
             borderRadius: BorderRadius.circular(10),
             boxShadow: [
-              if (!isDark) BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 1))
+              if (!isDark)
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                ),
             ],
-            border: Border.all(color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05), width: 0.5),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.05)
+                  : Colors.black.withOpacity(0.05),
+              width: 0.5,
+            ),
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
@@ -43,35 +62,53 @@ class MacosSettingsGroup extends StatelessWidget {
     );
   }
 
-  /// 在组件之间插入分割线
+  /// 在各个子组件之间插入细分割线，并设置左侧缩进。
   List<Widget> _separateWithDividers(List<Widget> widgets, bool isDark) {
     if (widgets.length <= 1) return widgets;
     final List<Widget> result = [];
     for (int i = 0; i < widgets.length; i++) {
       result.add(widgets[i]);
       if (i < widgets.length - 1) {
-        result.add(Divider(height: 0.5, thickness: 0.5, indent: 48, endIndent: 0, color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05)));
+        result.add(
+          Divider(
+            height: 0.5,
+            thickness: 0.5,
+            indent: 48,
+            endIndent: 0,
+            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+          ),
+        );
       }
     }
     return result;
   }
 }
 
-/// macOS 风格的设置行组件
+/// macOS 风格的设置行组件。
+///
+/// 展示图标、标题、副标题，并在右侧放置自定义的操作组件（如 Checkbox 或 Dropdown）。
+///
+/// 字段说明:
+/// [label] 主标题文字。
+/// [subtitle] 可选的说明文字。
+/// [icon] 左侧显示的图标。
+/// [iconColor] 图标容器背景色。
+/// [trailing] 右侧的交互 Widget。
 class MacosSettingsTile extends StatelessWidget {
-  /// 标签文本
-  final String label;
-  /// 副标题
-  final String? subtitle;
-  /// 图标数据
-  final IconData? icon;
-  /// 图标背景颜色
-  final Color? iconColor;
-  /// 右侧尾随组件
-  final Widget trailing;
 
-  /// 构造函数
-  const MacosSettingsTile({super.key, required this.label, this.subtitle, this.icon, this.iconColor, required this.trailing});
+  const MacosSettingsTile({
+    super.key,
+    required this.label,
+    this.subtitle,
+    this.icon,
+    this.iconColor,
+    required this.trailing,
+  });
+  final String label;
+  final String? subtitle;
+  final IconData? icon;
+  final Color? iconColor;
+  final Widget trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -84,7 +121,10 @@ class MacosSettingsTile extends StatelessWidget {
           if (icon != null) ...[
             Container(
               padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: iconColor ?? CupertinoColors.systemBlue, borderRadius: BorderRadius.circular(6)),
+              decoration: BoxDecoration(
+                color: iconColor ?? CupertinoColors.systemBlue,
+                borderRadius: BorderRadius.circular(6),
+              ),
               child: Icon(icon, size: 16, color: Colors.white),
             ),
             const SizedBox(width: 12),
@@ -94,9 +134,24 @@ class MacosSettingsTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(label, style: TextStyle(fontSize: 13, color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87, fontWeight: FontWeight.w400)),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: isDark
+                        ? Colors.white.withOpacity(0.9)
+                        : Colors.black87,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
                 if (subtitle != null)
-                  Text(subtitle!, style: TextStyle(fontSize: 11, color: isDark ? Colors.white38 : Colors.black45)),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.white38 : Colors.black45,
+                    ),
+                  ),
               ],
             ),
           ),
