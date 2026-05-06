@@ -11,7 +11,7 @@ part of 'hotkey_manager_provider.dart';
 /// 全局热键管理器。
 ///
 /// 负责在系统底层注册快捷键，以便在任何应用程序中都能通过特定按键组合
-/// 快速唤起或切换 HaliClip 的剪贴板历史主窗口。
+/// 快速唤起或切换 Maccy 的剪贴板历史主窗口。
 
 @ProviderFor(AppHotKeyManager)
 final appHotKeyManagerProvider = AppHotKeyManagerProvider._();
@@ -19,13 +19,13 @@ final appHotKeyManagerProvider = AppHotKeyManagerProvider._();
 /// 全局热键管理器。
 ///
 /// 负责在系统底层注册快捷键，以便在任何应用程序中都能通过特定按键组合
-/// 快速唤起或切换 HaliClip 的剪贴板历史主窗口。
+/// 快速唤起或切换 Maccy 的剪贴板历史主窗口。
 final class AppHotKeyManagerProvider
     extends $AsyncNotifierProvider<AppHotKeyManager, void> {
   /// 全局热键管理器。
   ///
   /// 负责在系统底层注册快捷键，以便在任何应用程序中都能通过特定按键组合
-  /// 快速唤起或切换 HaliClip 的剪贴板历史主窗口。
+  /// 快速唤起或切换 Maccy 的剪贴板历史主窗口。
   AppHotKeyManagerProvider._()
     : super(
         from: null,
@@ -50,7 +50,7 @@ String _$appHotKeyManagerHash() => r'e02fde52d4618e066f36984b15775c0472d3c751';
 /// 全局热键管理器。
 ///
 /// 负责在系统底层注册快捷键，以便在任何应用程序中都能通过特定按键组合
-/// 快速唤起或切换 HaliClip 的剪贴板历史主窗口。
+/// 快速唤起或切换 Maccy 的剪贴板历史主窗口。
 
 abstract class _$AppHotKeyManager extends $AsyncNotifier<void> {
   FutureOr<void> build();

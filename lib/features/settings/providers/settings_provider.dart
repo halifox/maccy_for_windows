@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:haliclip/core/models/hotkey_config.dart';
+import 'package:maccy/core/models/hotkey_config.dart';
 
 /// 共享首选项 Provider。
 ///

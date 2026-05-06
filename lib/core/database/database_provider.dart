@@ -1,5 +1,5 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:haliclip/core/database/database.dart';
+import 'package:maccy/core/database/database.dart';
 
 part 'database_provider.g.dart';
 

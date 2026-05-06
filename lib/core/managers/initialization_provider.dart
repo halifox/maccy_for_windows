@@ -1,11 +1,11 @@
-import 'package:haliclip/core/managers/tray_manager_provider.dart';
-import 'package:haliclip/core/managers/window_manager_provider.dart';
-import 'package:haliclip/core/managers/launch_manager_provider.dart';
+import 'package:maccy/core/managers/tray_manager_provider.dart';
+import 'package:maccy/core/managers/window_manager_provider.dart';
+import 'package:maccy/core/managers/launch_manager_provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:haliclip/core/managers/clipboard_manager_provider.dart';
-import 'package:haliclip/core/managers/hotkey_manager_provider.dart';
+import 'package:maccy/core/managers/clipboard_manager_provider.dart';
+import 'package:maccy/core/managers/hotkey_manager_provider.dart';
 
 part 'initialization_provider.g.dart';
 

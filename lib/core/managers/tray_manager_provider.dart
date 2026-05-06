@@ -4,7 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:tray_manager/tray_manager.dart';
 
-import 'package:haliclip/core/managers/window_manager_provider.dart';
+import 'package:maccy/core/managers/window_manager_provider.dart';
 
 part 'tray_manager_provider.g.dart';
 
@@ -30,7 +30,7 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
     }
 
     await trayManager.setIcon(iconPath, isTemplate: true);
-    await trayManager.setToolTip('HaliClip');
+    await trayManager.setToolTip('Maccy');
     trayManager.addListener(this);
 
     ref.onDispose(() {

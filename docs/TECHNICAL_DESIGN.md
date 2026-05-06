@@ -1,4 +1,4 @@
-# 技术设计文档 - HaliClip Architecture
+# 技术设计文档 - Maccy Architecture
 
 ## 1. 技术栈选型
 - **框架**: Flutter (Desktop)

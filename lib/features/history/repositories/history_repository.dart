@@ -1,8 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:haliclip/core/database/database.dart';
-import 'package:haliclip/core/database/database_provider.dart';
+import 'package:maccy/core/database/database.dart';
+import 'package:maccy/core/database/database_provider.dart';
 
 part 'history_repository.g.dart';
 

@@ -1,10 +1,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:haliclip/features/settings/ui/widgets/macos_settings_widgets.dart';
+import 'package:maccy/features/settings/ui/widgets/macos_settings_widgets.dart';
 
 /// 设置：忽略列表选项卡。
 ///
-/// 用于配置剪贴板监控的黑名单，此处设置的应用程序或内容模式将不会被 HaliClip 捕获。
+/// 用于配置剪贴板监控的黑名单，此处设置的应用程序或内容模式将不会被 Maccy 捕获。
 class IgnoreTab extends ConsumerWidget {
   const IgnoreTab({super.key});
 

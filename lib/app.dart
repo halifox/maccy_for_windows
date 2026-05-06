@@ -1,11 +1,11 @@
-import 'package:haliclip/core/managers/initialization_provider.dart';
+import 'package:maccy/core/managers/initialization_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import 'package:haliclip/features/history/ui/history_page.dart';
-import 'package:haliclip/features/settings/providers/settings_provider.dart';
-import 'package:haliclip/features/settings/ui/settings_page.dart';
+import 'package:maccy/features/history/ui/history_page.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
+import 'package:maccy/features/settings/ui/settings_page.dart';
 
 /// 根导航器 Key。
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
@@ -26,12 +26,12 @@ final router = GoRouter(
   ],
 );
 
-/// HaliClip 应用程序主类。
+/// Maccy 应用程序主类。
 ///
 /// 作为整个应用的入口 Widget，负责监听应用启动状态（startup）和主题模式（themeMode），
 /// 并根据状态渲染主应用、闪屏页或错误页。
-class HaliClipApp extends HookConsumerWidget {
-  const HaliClipApp({super.key});
+class MaccyApp extends HookConsumerWidget {
+  const MaccyApp({super.key});
 
   /// 构建应用 UI。
   ///
@@ -43,7 +43,7 @@ class HaliClipApp extends HookConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     return startup.when(
       data: (_) => MaterialApp.router(
-        title: 'HaliClip',
+        title: 'Maccy',
         debugShowCheckedModeBanner: false,
         themeMode: switch (themeMode) {
           'light' => ThemeMode.light,
@@ -110,7 +110,7 @@ class SplashScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Text(
-                '正在初始化 HaliClip...',
+                '正在初始化 Maccy...',
                 style: Theme.of(
                   context,
                 ).textTheme.bodyMedium?.copyWith(color: Colors.grey),

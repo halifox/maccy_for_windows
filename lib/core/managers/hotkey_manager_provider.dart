@@ -1,17 +1,17 @@
-import 'package:haliclip/core/models/hotkey_config.dart';
-import 'package:haliclip/features/settings/providers/settings_provider.dart';
+import 'package:maccy/core/models/hotkey_config.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'package:haliclip/core/managers/window_manager_provider.dart';
+import 'package:maccy/core/managers/window_manager_provider.dart';
 
 part 'hotkey_manager_provider.g.dart';
 
 /// 全局热键管理器。
 ///
 /// 负责在系统底层注册快捷键，以便在任何应用程序中都能通过特定按键组合
-/// 快速唤起或切换 HaliClip 的剪贴板历史主窗口。
+/// 快速唤起或切换 Maccy 的剪贴板历史主窗口。
 @Riverpod(keepAlive: true)
 class AppHotKeyManager extends _$AppHotKeyManager {
   /// 初始化热键管理器。

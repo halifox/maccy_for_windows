@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:haliclip/app.dart';
-import 'package:haliclip/features/history/providers/history_providers.dart';
-import 'package:haliclip/features/settings/providers/settings_provider.dart';
+import 'package:maccy/app.dart';
+import 'package:maccy/features/history/providers/history_providers.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';

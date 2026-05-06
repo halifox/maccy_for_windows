@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:haliclip/features/settings/providers/settings_provider.dart';
-import 'package:haliclip/features/settings/ui/widgets/macos_settings_widgets.dart';
-import 'package:haliclip/features/settings/ui/widgets/number_stepper.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
+import 'package:maccy/features/settings/ui/widgets/macos_settings_widgets.dart';
+import 'package:maccy/features/settings/ui/widgets/number_stepper.dart';
 
 /// 设置：外观选项页。
 ///

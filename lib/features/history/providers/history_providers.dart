@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:haliclip/core/database/database.dart';
-import 'package:haliclip/core/managers/clipboard_manager_provider.dart';
-import 'package:haliclip/core/managers/window_manager_provider.dart';
-import 'package:haliclip/features/history/repositories/history_repository.dart';
-import 'package:haliclip/features/settings/providers/settings_provider.dart';
+import 'package:maccy/core/database/database.dart';
+import 'package:maccy/core/managers/clipboard_manager_provider.dart';
+import 'package:maccy/core/managers/window_manager_provider.dart';
+import 'package:maccy/features/history/repositories/history_repository.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 

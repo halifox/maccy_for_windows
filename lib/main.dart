@@ -1,12 +1,12 @@
 import 'dart:ui';
 
-import 'package:haliclip/core/managers/window_manager_provider.dart';
-import 'package:haliclip/features/settings/providers/settings_provider.dart';
+import 'package:maccy/core/managers/window_manager_provider.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:haliclip/app.dart';
+import 'package:maccy/app.dart';
 
 /// 应用程序入口函数。
 ///
@@ -34,7 +34,7 @@ void main(List<String> args) async {
   runApp(
     ProviderScope(
       overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
-      child: const HaliClipApp(),
+      child: const MaccyApp(),
     ),
   );
 }

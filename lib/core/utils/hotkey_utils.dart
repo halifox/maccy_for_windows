@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:haliclip/core/models/hotkey_config.dart';
+import 'package:maccy/core/models/hotkey_config.dart';
 
 /// 快捷键工具类。
 ///
