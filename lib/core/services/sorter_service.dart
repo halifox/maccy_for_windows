@@ -40,19 +40,19 @@ class SorterService {
   ///
   /// [items] 待排序的历史记录列表
   /// [strategy] 排序策略（可选，默认使用配置中的策略）
-  List<db.ClipboardEntry> sort(
-    List<db.ClipboardEntry> items, {
+  List<db.HistoryItem> sort(
+    List<db.HistoryItem> items, {
     SortStrategy? strategy,
   }) {
     final sortStrategy = strategy ?? _getCurrentStrategy();
     final pinPosition = _getPinPosition();
 
     // 分离固定项和未固定项
-    final pinnedItems = items.where((item) => item.isPinned).toList();
-    final unpinnedItems = items.where((item) => !item.isPinned).toList();
+    final pinnedItems = items.where((item) => item.pin != null).toList();
+    final unpinnedItems = items.where((item) => item.pin == null).toList();
 
-    // 对固定项按 pinOrder 排序
-    pinnedItems.sort((a, b) => (a.pinOrder ?? 0).compareTo(b.pinOrder ?? 0));
+    // 对固定项按 pin 字符排序
+    pinnedItems.sort((a, b) => (a.pin ?? '').compareTo(b.pin ?? ''));
 
     // 对未固定项按策略排序
     _sortByStrategy(unpinnedItems, sortStrategy);
@@ -66,7 +66,7 @@ class SorterService {
   }
 
   /// 按策略排序列表
-  void _sortByStrategy(List<db.ClipboardEntry> items, SortStrategy strategy) {
+  void _sortByStrategy(List<db.HistoryItem> items, SortStrategy strategy) {
     switch (strategy) {
       case SortStrategy.lastCopiedAt:
         items.sort((a, b) => b.lastCopiedAt.compareTo(a.lastCopiedAt));
@@ -78,7 +78,7 @@ class SorterService {
 
       case SortStrategy.numberOfCopies:
         items.sort((a, b) {
-          final copiesCompare = b.copyCount.compareTo(a.copyCount);
+          final copiesCompare = b.numberOfCopies.compareTo(a.numberOfCopies);
           // 如果复制次数相同，按最后复制时间排序
           if (copiesCompare == 0) {
             return b.lastCopiedAt.compareTo(a.lastCopiedAt);

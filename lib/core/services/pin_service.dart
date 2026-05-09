@@ -40,8 +40,8 @@ class PinService {
   /// 切换固定状态
   ///
   /// 如果项目已固定，则取消固定；否则分配快捷键并固定。
-  Future<void> togglePin(ClipboardEntry item) async {
-    if (item.isPinned) {
+  Future<void> togglePin(HistoryItem item) async {
+    if (item.pin != null) {
       await unpin(item);
     } else {
       await pin(item);
@@ -51,81 +51,62 @@ class PinService {
   /// 固定项目
   ///
   /// 自动分配可用的 pinOrder
-  Future<void> pin(ClipboardEntry item) async {
-    final order = await _findAvailableOrder();
-    if (order == null) {
+  Future<void> pin(HistoryItem item) async {
+    final pinKey = await _findAvailablePin();
+    if (pinKey == null) {
       throw Exception('没有可用的固定位置（最多 21 个固定项）');
     }
 
-    await _repository.updatePinStatus(item.id, true, order);
+    await _repository.togglePin(item.id);
   }
 
   /// 取消固定
-  Future<void> unpin(ClipboardEntry item) async {
-    await _repository.updatePinStatus(item.id, false, null);
+  Future<void> unpin(HistoryItem item) async {
+    await _repository.togglePin(item.id);
   }
 
   /// 为项目分配特定的快捷键
   ///
   /// 如果快捷键已被占用，会先释放原有项目的固定状态
-  Future<void> pinWithKey(ClipboardEntry item, String key) async {
+  Future<void> pinWithKey(HistoryItem item, String key) async {
     if (!availableKeys.contains(key)) {
       throw ArgumentError('无效的快捷键: $key');
     }
 
-    final order = keyToOrder[key]!;
-
     // 检查是否已被占用
-    final existing = await _repository.getItemByPinOrder(order);
+    final existing = await _repository.getItemByPin(key);
     if (existing != null && existing.id != item.id) {
       await unpin(existing);
     }
 
-    await _repository.updatePinStatus(item.id, true, order);
+    await _repository.togglePin(item.id);
   }
 
-  /// 查找可用的 pinOrder
-  Future<int?> _findAvailableOrder() async {
-    final pinnedItems = await _repository.getPinnedItems();
-    final usedOrders = pinnedItems
-        .map((item) => item.pinOrder)
-        .where((order) => order != null)
-        .toSet();
-
-    for (var i = 0; i < availableKeys.length; i++) {
-      if (!usedOrders.contains(i)) {
-        return i;
-      }
-    }
-
-    return null;
+  /// 查找可用的 pin 字符
+  Future<String?> _findAvailablePin() async {
+    return _repository.getNextAvailablePin();
   }
 
   /// 获取所有固定项
-  Future<List<ClipboardEntry>> getPinnedItems() async {
+  Future<List<HistoryItem>> getPinnedItems() async {
     return _repository.getPinnedItems();
   }
 
   /// 获取指定快捷键对应的项目
-  Future<ClipboardEntry?> getItemByKey(String key) async {
+  Future<HistoryItem?> getItemByKey(String key) async {
     if (!availableKeys.contains(key)) return null;
-    final order = keyToOrder[key];
-    if (order == null) return null;
-    return _repository.getItemByPinOrder(order);
+    return _repository.getItemByPin(key);
   }
 
   /// 获取项目的快捷键
-  String? getKeyForItem(ClipboardEntry item) {
-    if (!item.isPinned || item.pinOrder == null) return null;
-    return orderToKey[item.pinOrder];
+  String? getKeyForItem(HistoryItem item) {
+    return item.pin;
   }
 
   /// 检查快捷键是否可用
   Future<bool> isKeyAvailable(String key) async {
     if (!availableKeys.contains(key)) return false;
-    final order = keyToOrder[key];
-    if (order == null) return false;
-    final item = await _repository.getItemByPinOrder(order);
+    final item = await _repository.getItemByPin(key);
     return item == null;
   }
 

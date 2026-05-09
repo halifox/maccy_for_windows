@@ -1,23 +1,18 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:clipboard_watcher/clipboard_watcher.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:maccy/core/database/database_provider.dart';
 import 'package:maccy/core/services/clipboard_filter_service.dart';
 import 'package:maccy/core/services/foreground_app_service.dart';
 import 'package:maccy/core/services/rich_text_service.dart';
 import 'package:maccy/features/history/repositories/history_repository.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:stream_transform/stream_transform.dart';
 import 'package:super_clipboard/super_clipboard.dart';
-import 'package:window_manager/window_manager.dart';
 
 part 'clipboard_manager_provider.g.dart';
 
@@ -66,33 +61,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     debugPrint('[ClipboardManager] 服务已启动');
   }
 
-  /// 检查是否拥有 macOS 辅助功能权限。
-  ///
-  /// 模拟粘贴功能在 macOS 上需要该权限才能注入按键事件。
-  ///
-  /// 返回 [bool] 是否拥有权限。
-  Future<bool> checkAccessibilityPermissions() async {
-    if (!Platform.isMacOS) return true;
-    try {
-      final result = await Process.run('osascript', [
-        '-e',
-        'tell application "System Events" to return UI elements enabled',
-      ]);
-      return result.stdout.trim() == 'true';
-    } catch (e) {
-      debugPrint('[ClipboardManager] 检查权限异常: $e');
-      return false;
-    }
-  }
-
-  /// 打开系统设置以请求 macOS 辅助功能权限。
-  Future<void> requestAccessibilityPermissions() async {
-    if (!Platform.isMacOS) return;
-    await Process.run('open', [
-      'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility',
-    ]);
-  }
-
   /// 模拟系统粘贴操作。
   ///
   /// 根据当前平台，通过 Native 管道（CGEvent 或 SendInput）发送粘贴快捷键指令，
@@ -101,34 +69,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     final autoPaste = ref.read(autoPasteProvider);
     if (!autoPaste) return;
 
-    if (Platform.isMacOS) {
-      final hasPermission = await checkAccessibilityPermissions();
-      if (!hasPermission) {
-        debugPrint('[ClipboardManager] 粘贴失败: 缺少 macOS 辅助功能权限');
-        return;
-      }
-
-      try {
-        const platform = MethodChannel('com.hali.clip/native_utils');
-        await platform.invokeMethod('restoreAndPaste');
-      } catch (e) {
-        debugPrint('[ClipboardManager] macOS 模拟粘贴失败: $e');
-      }
-    } else if (Platform.isWindows) {
-      // 使用 Win32 SendInput API 模拟粘贴
-      try {
-        // 先隐藏窗口，恢复之前的活跃窗口
-        await windowManager.hide();
-
-        // 等待窗口完全隐藏并焦点切换
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-
-        // 执行粘贴
-        await _simulateWindowsPaste();
-      } catch (e) {
-        debugPrint('[ClipboardManager] Windows 模拟粘贴失败: $e');
-      }
-    }
+    await _simulateWindowsPaste();
   }
 
   /// 系统剪贴板内容变化时的回调。
@@ -151,22 +92,20 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
 
     // 2. 获取前台应用名称
     String? appName;
-    if (Platform.isWindows) {
-      appName = ForegroundAppService.getForegroundAppName();
-      debugPrint('[ClipboardManager] 来源应用: $appName');
+    appName = ForegroundAppService.getForegroundAppName();
+    debugPrint('[ClipboardManager] 来源应用: $appName');
 
-      // 3. 应用过滤检查
-      final ignoredApps = ref.read(ignoredAppsProvider);
-      final isWhitelistMode = ref.read(ignoreAllAppsExceptListedProvider);
+    // 3. 应用过滤检查
+    final ignoredApps = ref.read(ignoredAppsProvider);
+    final isWhitelistMode = ref.read(ignoreAllAppsExceptListedProvider);
 
-      if (ClipboardFilterService.shouldIgnoreApp(
-        appName,
-        ignoredApps: ignoredApps,
-        isWhitelistMode: isWhitelistMode,
-      )) {
-        debugPrint('[ClipboardManager] 应用被过滤: $appName');
-        return;
-      }
+    if (ClipboardFilterService.shouldIgnoreApp(
+      appName,
+      ignoredApps: ignoredApps,
+      isWhitelistMode: isWhitelistMode,
+    )) {
+      debugPrint('[ClipboardManager] 应用被过滤: $appName');
+      return;
     }
 
     // 4. 读取剪贴板内容
@@ -207,19 +146,17 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       }
     }
 
-    // 5.3 RTF 格式（Windows）
-    if (Platform.isWindows) {
-      try {
-        final rtf = RichTextService.readRtfFromClipboard();
-        if (rtf != null && rtf.isNotEmpty) {
-          contents.add(HistoryItemContentData(
-            type: 'text/rtf',
-            value: Uint8List.fromList(utf8.encode(rtf)),
-          ));
-        }
-      } catch (e) {
-        debugPrint('[ClipboardManager] 读取 RTF 失败: $e');
+    // 5.3 RTF 格式
+    try {
+      final rtf = RichTextService.readRtfFromClipboard();
+      if (rtf != null && rtf.isNotEmpty) {
+        contents.add(HistoryItemContentData(
+          type: 'text/rtf',
+          value: Uint8List.fromList(utf8.encode(rtf)),
+        ));
       }
+    } catch (e) {
+      debugPrint('[ClipboardManager] 读取 RTF 失败: $e');
     }
 
     // 5.4 图片格式
@@ -289,9 +226,9 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
   }
 
   /// 读取图片数据。
-  Future<Uint8List?> _readImageData(ClipboardReader reader, DataFormat<Object> format) async {
+  Future<Uint8List?> _readImageData(ClipboardReader reader, SimpleFileFormat format) async {
     Uint8List? imageData;
-    await reader.getFile(format, (file) async {
+    reader.getFile(format, (file) async {
       final stream = file.getStream();
       final chunks = <int>[];
       await for (final chunk in stream) {
@@ -323,7 +260,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       final showSpecialSymbols = ref.read(showSpecialCharsProvider);
       if (showSpecialSymbols) {
         // 替换前导空格
-        title = title.replaceAllMapped(RegExp(r'^ +'), (m) => '·' * m.group(0)!.length);
+        title = title.replaceAllMapped(RegExp('^ +'), (m) => '·' * m.group(0)!.length);
         // 替换尾随空格
         title = title.replaceAllMapped(RegExp(r' +$'), (m) => '·' * m.group(0)!.length);
         // 替换换行和制表符

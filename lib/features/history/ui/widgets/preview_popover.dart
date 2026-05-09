@@ -67,7 +67,7 @@ class PreviewPopover extends ConsumerWidget {
                   // 检查是否有图片
                   final imageContent = contents.firstWhere(
                     (c) => c.type.startsWith('image/'),
-                    orElse: () => HistoryItemContent(id: 0, itemId: 0, type: '', value: null),
+                    orElse: () => const HistoryItemContent(id: 0, itemId: 0, type: '', value: null),
                   );
 
                   if (imageContent.value != null) {

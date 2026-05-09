@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -311,10 +310,10 @@ class HistoryRepository {
 
 /// 内容数据类（用于传递多格式数据）。
 class HistoryItemContentData {
+  HistoryItemContentData({required this.type, this.value});
+
   final String type;
   final Uint8List? value;
-
-  HistoryItemContentData({required this.type, this.value});
 }
 
 /// 提供全局的历史记录数据仓库实例。

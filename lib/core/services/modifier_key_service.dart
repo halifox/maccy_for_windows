@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:win32/win32.dart';
 
 /// 修饰键枚举。
@@ -36,10 +35,6 @@ class ModifierKeyService {
     void Function()? onAllModifiersReleased,
     void Function(Set<ModifierKey>)? onModifierStateChanged,
   }) {
-    if (!Platform.isWindows) {
-      return;
-    }
-
     if (_isMonitoring) {
       return;
     }
@@ -65,10 +60,6 @@ class ModifierKeyService {
 
   /// 检查修饰键状态。
   void _checkModifierKeys() {
-    if (!Platform.isWindows) {
-      return;
-    }
-
     // GetAsyncKeyState 返回值：高位为 1 表示当前按下
     final ctrlState = GetAsyncKeyState(VK_CONTROL);
     final shiftState = GetAsyncKeyState(VK_SHIFT);

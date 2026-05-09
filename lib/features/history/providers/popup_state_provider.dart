@@ -111,7 +111,7 @@ class ModifierKeysState extends _$ModifierKeysState {
   Set<LogicalKeyboardKey> build() => {};
 
   /// 更新修饰键状态。
-  void update(RawKeyEvent event) {
+  void update(KeyEvent event) {
     final modifiers = <LogicalKeyboardKey>{};
 
     if (HardwareKeyboard.instance.isAltPressed) {

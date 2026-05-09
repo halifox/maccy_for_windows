@@ -1,6 +1,3 @@
-import 'dart:io';
-
-import 'package:maccy/core/managers/clipboard_manager_provider.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -124,41 +121,6 @@ class GeneralTab extends ConsumerWidget {
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (Platform.isMacOS)
-                      FutureBuilder<bool>(
-                        future: ref
-                            .read(appClipboardManagerProvider.notifier)
-                            .checkAccessibilityPermissions(),
-                        builder: (context, snapshot) {
-                          if (snapshot.data == false) {
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8.0),
-                              child: CupertinoButton(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                color: CupertinoColors.systemRed.withValues(
-                                  alpha: 0.1,
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                                onPressed: () => ref
-                                    .read(appClipboardManagerProvider.notifier)
-                                    .requestAccessibilityPermissions(),
-                                minimumSize: Size.zero,
-                                child: const Text(
-                                  'Grant Access',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: CupertinoColors.systemRed,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        },
-                      ),
                     CupertinoCheckbox(
                       value: ref.watch(autoPasteProvider),
                       onChanged: (v) =>
@@ -235,23 +197,21 @@ class _HotkeySelector extends ConsumerWidget {
       );
     }
 
-    final isMac = Platform.isMacOS;
-
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            buildModifier(isMac ? '⌘' : 'Win', 'meta'),
-            buildModifier(isMac ? '⌥' : 'Alt', 'alt'),
+            buildModifier('Win', 'meta'),
+            buildModifier('Alt', 'alt'),
           ],
         ),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            buildModifier(isMac ? '⌃' : 'Ctrl', 'control'),
-            buildModifier(isMac ? '⇧' : 'Shift', 'shift'),
+            buildModifier('Ctrl', 'control'),
+            buildModifier('Shift', 'shift'),
           ],
         ),
         const SizedBox(width: 8),

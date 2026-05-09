@@ -1,5 +1,3 @@
-import 'dart:io';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 
@@ -46,7 +44,6 @@ class PopupPositionService {
         return _calculateLastPosition(windowSize, lastPosition, screenIndex);
 
       case PopupPosition.cursor:
-      default:
         return _calculateCursorPosition(windowSize);
     }
   }
@@ -98,7 +95,7 @@ class PopupPositionService {
       // Windows 任务栏通常在底部，状态栏图标在右下角
       // 将弹窗放在屏幕右上角
       final x = screenSize.width - windowSize.width - 10;
-      final y = 50.0; // 距离顶部 50px
+      const y = 50.0; // 距离顶部 50px
 
       return Offset(x, y);
     } catch (e) {

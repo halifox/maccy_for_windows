@@ -57,27 +57,12 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 11;
 
-  /// 获取数据库迁移策略。
-  ///
-  /// 负责处理表创建及不同版本间的增量更新逻辑。
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (m) async {
         await m.createAll();
       },
-      onUpgrade: (m, from, to) async {
-        // 版本 11：完全重构为 Maccy 双表结构
-        if (from < 11) {
-          // 删除旧表
-          await m.deleteTable('clipboard_entries');
-
-          // 创建新表
-          await m.createTable(historyItems);
-          await m.createTable(historyItemContents);
-        }
-      },
-      beforeOpen: (details) async {},
     );
   }
 

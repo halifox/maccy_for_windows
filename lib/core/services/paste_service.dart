@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:maccy/core/database/database.dart' as db;
 
 /// 粘贴模式枚举
@@ -25,7 +23,7 @@ class PasteService {
   ///
   /// [item] 要粘贴的历史记录项
   /// [mode] 粘贴模式
-  Future<void> execute(db.ClipboardEntry item, PasteMode mode) async {
+  Future<void> execute(db.HistoryItem item, PasteMode mode) async {
     // 1. 写入剪贴板（使用现有的 PasteService.simulatePaste）
     // TODO: 实现完整的剪贴板写入逻辑
 
@@ -39,8 +37,6 @@ class PasteService {
   ///
   /// 使用 Windows API 发送键盘事件
   Future<void> _simulatePaste() async {
-    if (!Platform.isWindows) return;
-
     // 短暂延迟，确保剪贴板写入完成
     await Future<void>.delayed(const Duration(milliseconds: 50));
 

@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:maccy/core/database/database.dart';
@@ -198,18 +197,9 @@ class HistoryController extends _$HistoryController {
     await repository.deleteAllEntries();
 
     if (clearSystem) {
-      if (Platform.isWindows) {
-        const script =
-            '[Windows.ApplicationModel.DataTransfer.Clipboard, Windows.ApplicationModel.DataTransfer, ContentType=WindowsRuntime]::ClearHistory()';
-        await Process.run('powershell', ['-Command', script]);
-      } else if (Platform.isMacOS) {
-        await Process.run('sh', ['-c', 'pbcopy < /dev/null']);
-      } else if (Platform.isLinux) {
-        await Process.run('sh', [
-          '-c',
-          'xclip -selection clipboard /dev/null || xsel --clipboard --clear',
-        ]);
-      }
+      const script =
+          '[Windows.ApplicationModel.DataTransfer.Clipboard, Windows.ApplicationModel.DataTransfer, ContentType=WindowsRuntime]::ClearHistory()';
+      await Process.run('powershell', ['-Command', script]);
     }
   }
 
@@ -244,11 +234,6 @@ class HistoryController extends _$HistoryController {
   ///
   /// [event] 捕获到的原始键盘事件。
   void handleKeyEvent(KeyEvent event) {
-    // 更新修饰键状态
-    if (event is RawKeyEvent) {
-      ref.read(modifierKeysStateProvider.notifier).update(event);
-    }
-
     // 处理 flagsChanged 事件（修饰键释放）
     if (event is KeyUpEvent) {
       final modifierKeys = ref.read(modifierKeysStateProvider);

@@ -1,5 +1,4 @@
 import 'dart:ffi';
-import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
@@ -14,8 +13,6 @@ class AppIdentifierService {
   /// 返回应用的可执行文件名（不含 .exe 扩展名）
   /// 例如: "chrome", "notepad", "code"
   String? getForegroundAppIdentifier() {
-    if (!Platform.isWindows) return null;
-
     try {
       // 获取前台窗口句柄
       final hwnd = GetForegroundWindow();
@@ -61,8 +58,6 @@ class AppIdentifierService {
 
   /// 获取前台应用的完整路径
   String? getForegroundAppPath() {
-    if (!Platform.isWindows) return null;
-
     try {
       final hwnd = GetForegroundWindow();
       if (hwnd == 0) return null;
@@ -101,8 +96,6 @@ class AppIdentifierService {
 
   /// 获取前台窗口标题
   String? getForegroundWindowTitle() {
-    if (!Platform.isWindows) return null;
-
     try {
       final hwnd = GetForegroundWindow();
       if (hwnd == 0) return null;

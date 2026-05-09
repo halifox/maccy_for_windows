@@ -27,7 +27,7 @@ class SearchResult {
   });
 
   /// 匹配的历史记录项
-  final db.ClipboardEntry item;
+  final db.HistoryItem item;
 
   /// 匹配分数（0.0-1.0，越高越匹配）
   final double score;
@@ -58,7 +58,7 @@ class AdvancedSearchService {
   /// [mode] 搜索模式
   List<SearchResult> search(
     String query,
-    List<db.ClipboardEntry> items,
+    List<db.HistoryItem> items,
     SearchMode mode,
   ) {
     if (query.isEmpty) {
@@ -82,12 +82,12 @@ class AdvancedSearchService {
   /// 精确匹配搜索
   ///
   /// 不区分大小写，查找包含关键词的项目
-  List<SearchResult> _exactSearch(String query, List<db.ClipboardEntry> items) {
+  List<SearchResult> _exactSearch(String query, List<db.HistoryItem> items) {
     final lowerQuery = query.toLowerCase();
     final results = <SearchResult>[];
 
     for (final item in items) {
-      final title = item.content;
+      final title = item.title;
       final lowerTitle = title.toLowerCase();
       if (lowerTitle.contains(lowerQuery)) {
         final ranges = _findExactMatchRanges(lowerTitle, lowerQuery);
@@ -106,12 +106,12 @@ class AdvancedSearchService {
   ///
   /// 使用 Fuzzy 算法，允许字符顺序不完全匹配
   /// 对应 Maccy 的 Fuse.js 实现（threshold=0.7）
-  List<SearchResult> _fuzzySearch(String query, List<db.ClipboardEntry> items) {
+  List<SearchResult> _fuzzySearch(String query, List<db.HistoryItem> items) {
     // 限制搜索文本长度（性能优化）
     final searchableItems = items.map((item) {
-      final title = item.content.length > 5000
-          ? item.content.substring(0, 5000)
-          : item.content;
+      final title = item.title.length > 5000
+          ? item.title.substring(0, 5000)
+          : item.title;
       return _SearchableItem(item, title);
     }).toList();
 
@@ -152,13 +152,13 @@ class AdvancedSearchService {
   }
 
   /// 正则表达式搜索
-  List<SearchResult> _regexpSearch(String query, List<db.ClipboardEntry> items) {
+  List<SearchResult> _regexpSearch(String query, List<db.HistoryItem> items) {
     try {
       final regex = RegExp(query, caseSensitive: false);
       final results = <SearchResult>[];
 
       for (final item in items) {
-        final match = regex.firstMatch(item.content);
+        final match = regex.firstMatch(item.title);
         if (match != null) {
           final ranges = [MatchRange(match.start, match.end)];
           results.add(SearchResult(
@@ -179,7 +179,7 @@ class AdvancedSearchService {
   /// 混合模式搜索
   ///
   /// 依次尝试 exact → regexp → fuzzy，返回第一个有结果的模式
-  List<SearchResult> _mixedSearch(String query, List<db.ClipboardEntry> items) {
+  List<SearchResult> _mixedSearch(String query, List<db.HistoryItem> items) {
     // 1. 尝试精确匹配
     var results = _exactSearch(query, items);
     if (results.isNotEmpty) return results;
@@ -213,6 +213,6 @@ class AdvancedSearchService {
 class _SearchableItem {
   _SearchableItem(this.item, this.title);
 
-  final db.ClipboardEntry item;
+  final db.HistoryItem item;
   final String title;
 }

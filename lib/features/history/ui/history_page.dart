@@ -288,10 +288,7 @@ class _Debouncer {
 /// 字段说明:
 /// [index] 条目在列表中的索引。
 /// [item] 完整的剪贴板条目数据。
-/// [type] 条目类型。
-/// [content] 原始剪贴板文本。
 /// [shortcut] 可用的快捷键文本（如 ⌘1）。
-/// [isPinned] 是否置顶。
 /// [selectionColor] 选中状态背景色。
 /// [onTap] 点击（选择）回调。
 /// [onHover] 悬停（导航聚焦）回调。
@@ -301,10 +298,7 @@ class _HistoryRow extends HookConsumerWidget {
   const _HistoryRow({
     required this.index,
     required this.item,
-    required this.type,
-    required this.content,
     this.shortcut,
-    required this.isPinned,
     required this.selectionColor,
     required this.onTap,
     required this.onHover,
