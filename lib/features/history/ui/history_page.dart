@@ -223,22 +223,22 @@ class _HistoryHeader extends HookConsumerWidget {
 
     return Container(
       padding: const EdgeInsets.all(MaccyUIConstants.searchFieldPadding),
-      child: CupertinoSearchTextField(
+      child: CupertinoTextField(
         controller: searchController,
         focusNode: searchFocusNode,
         autofocus: true,
         placeholder: 'Search...',
-        itemSize: MaccyUIConstants.searchFieldIconSize,
+        // itemSize: MaccyUIConstants.searchFieldIconSize,
         padding: const EdgeInsetsDirectional.fromSTEB(
           MaccyUIConstants.searchFieldInternalHorizontalPadding,
           MaccyUIConstants.searchFieldInternalVerticalPadding,
           MaccyUIConstants.searchFieldInternalHorizontalPadding,
           MaccyUIConstants.searchFieldInternalVerticalPadding,
         ),
-        borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
-        backgroundColor: isDark
-            ? Colors.white10
-            : Colors.black.withValues(alpha: 0.06),
+        // borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
+        // backgroundColor: isDark
+        //     ? Colors.white10
+        //     : Colors.black.withValues(alpha: 0.06),
         style: TextStyle(
           fontSize: MaccyUIConstants.searchFieldFontSize,
           color: isDark ? Colors.white : Colors.black,
