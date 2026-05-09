@@ -38,7 +38,7 @@ class TextFormatter {
 
     // 前导空格 → ·
     formatted = formatted.replaceAllMapped(
-      RegExp(r'^( +)'),
+      RegExp('^( +)'),
       (match) => '·' * match.group(1)!.length,
     );
 

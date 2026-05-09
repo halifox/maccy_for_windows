@@ -9,7 +9,6 @@ import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
 import 'package:maccy/core/services/clipboard_filter_service.dart';
 import 'package:maccy/core/services/foreground_app_service.dart';
-import 'package:maccy/core/services/paste_service.dart';
 import 'package:maccy/core/services/rich_text_service.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:path/path.dart' as p;
@@ -37,7 +36,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
   /// 设置是否为自身更新操作。
   ///
   /// 当应用自身修改剪贴板时，应将此标志设为 true，以避免监听器重复处理。
-  void setSelfUpdate(bool value) {
+  set isSelfUpdate(bool value) {
     _isSelfUpdate = value;
   }
 
@@ -149,13 +148,10 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         await windowManager.hide();
 
         // 等待窗口完全隐藏并焦点切换
-        await Future.delayed(const Duration(milliseconds: 100));
+        await Future<void>.delayed(const Duration(milliseconds: 100));
 
         // 执行粘贴
-        final success = await PasteService.simulatePasteDelayed(delayMs: 50);
-        if (!success) {
-          debugPrint('[ClipboardManager] Windows 粘贴失败');
-        }
+        await _simulateWindowsPaste();
       } catch (e) {
         debugPrint('[ClipboardManager] Windows 模拟粘贴失败: $e');
       }
@@ -365,7 +361,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         // 2. 将数据流直接对接给 sink
         await sink.addStream(dataStream);
       } catch (e) {
-        print('写入失败: $e');
+        debugPrint('写入失败: $e');
       } finally {
         // 3. 必须关闭 sink 确保缓冲区数据全部刷入硬盘
         await sink.close();
@@ -373,5 +369,15 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     }
 
     await upsertClipboardEntry(filePath, 'image', appName);
+  }
+
+  /// Windows 平台模拟粘贴操作
+  Future<void> _simulateWindowsPaste() async {
+    try {
+      const platform = MethodChannel('com.hali.clip/native_utils');
+      await platform.invokeMethod('simulatePaste');
+    } catch (e) {
+      debugPrint('[ClipboardManager] Windows 粘贴失败: $e');
+    }
   }
 }

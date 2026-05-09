@@ -79,7 +79,7 @@ static let horizontalPadding: CGFloat = 5
 height: 24
 borderRadius: BorderRadius.circular(6)
 padding: const EdgeInsets.all(5)
-color: isSelected ? selectionColor.withOpacity(0.8) : Colors.transparent
+color: isSelected ? selectionColor.withValues(alpha: 0.8) : Colors.transparent
 ```
 
 ## Visual Effects Comparison

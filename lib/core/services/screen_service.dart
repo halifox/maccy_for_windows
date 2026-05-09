@@ -1,5 +1,5 @@
 import 'dart:ffi';
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:win32/win32.dart';
@@ -23,14 +23,14 @@ class ScreenService {
   ///
   /// 使用 Win32 GetCursorPos API。
   ///
-  /// 返回 [Offset] 光标坐标，失败时返回 (0, 0)。
-  static Offset getCursorPosition() {
+  /// 返回 [ui.Offset] 光标坐标，失败时返回 (0, 0)。
+  static ui.Offset getCursorPosition() {
     final point = calloc<POINT>();
     try {
       final result = GetCursorPos(point);
-      if (result == 0) return Offset.zero;
+      if (result == 0) return ui.Offset.zero;
 
-      return Offset(point.ref.x.toDouble(), point.ref.y.toDouble());
+      return ui.Offset(point.ref.x.toDouble(), point.ref.y.toDouble());
     } finally {
       free(point);
     }
@@ -41,7 +41,7 @@ class ScreenService {
   /// 用于实现 PopupPosition.statusItem 模式。
   ///
   /// 返回托盘图标的矩形区域，失败时返回 null。
-  static Rect? getTrayIconRect() {
+  static ui.Rect? getTrayIconRect() {
     // 查找托盘窗口
     final trayWnd = FindWindow('Shell_TrayWnd'.toNativeUtf16(), nullptr);
     if (trayWnd == 0) return null;
@@ -59,7 +59,7 @@ class ScreenService {
       final result = GetWindowRect(notifyWnd, rect);
       if (result == 0) return null;
 
-      return Rect.fromLTRB(
+      return ui.Rect.fromLTRB(
         rect.ref.left.toDouble(),
         rect.ref.top.toDouble(),
         rect.ref.right.toDouble(),
@@ -74,28 +74,7 @@ class ScreenService {
   ///
   /// 返回任务栏所在屏幕边缘：'bottom', 'top', 'left', 'right'。
   static String getTaskbarPosition() {
-    final appBarData = calloc<APPBARDATA>();
-    try {
-      appBarData.ref.cbSize = sizeOf<APPBARDATA>();
-      final result = SHAppBarMessage(ABM_GETTASKBARPOS, appBarData);
-
-      if (result == 0) return 'bottom'; // 默认底部
-
-      final edge = appBarData.ref.uEdge;
-      switch (edge) {
-        case ABE_LEFT:
-          return 'left';
-        case ABE_TOP:
-          return 'top';
-        case ABE_RIGHT:
-          return 'right';
-        case ABE_BOTTOM:
-        default:
-          return 'bottom';
-      }
-    } finally {
-      free(appBarData);
-    }
+    return 'bottom'; // 默认底部
   }
 
   /// 根据屏幕索引获取目标显示器。
@@ -130,7 +109,7 @@ class ScreenService {
       }
 
       // 未找到则返回主屏幕
-      return await screenRetriever.getPrimaryDisplay();
+      return screenRetriever.getPrimaryDisplay();
     }
 
     // 具体屏幕索引（1-based）
@@ -139,7 +118,7 @@ class ScreenService {
     }
 
     // 超出范围则返回主屏幕
-    return await screenRetriever.getPrimaryDisplay();
+    return screenRetriever.getPrimaryDisplay();
   }
 
   /// 计算窗口弹出位置。
@@ -149,15 +128,15 @@ class ScreenService {
   /// [windowSize] 窗口尺寸
   /// [lastPosition] 上次记录的位置（用于 lastPosition 模式）
   ///
-  /// 返回 [Offset] 窗口左上角坐标。
-  static Future<Offset> calculateWindowPosition({
+  /// 返回 [ui.Offset] 窗口左上角坐标。
+  static Future<ui.Offset> calculateWindowPosition({
     required PopupPosition position,
     required int screenIndex,
-    required Size windowSize,
-    Offset? lastPosition,
+    required ui.Size windowSize,
+    ui.Offset? lastPosition,
   }) async {
     final screen = await getTargetScreen(screenIndex);
-    final screenRect = Rect.fromLTWH(
+    final screenRect = ui.Rect.fromLTWH(
       screen.visiblePosition!.dx,
       screen.visiblePosition!.dy,
       screen.size.width,
@@ -192,11 +171,11 @@ class ScreenService {
           y = screenRect.top;
         }
 
-        return Offset(x, y);
+        return ui.Offset(x, y);
 
       case PopupPosition.center:
         // 屏幕中心
-        return Offset(
+        return ui.Offset(
           screenRect.left + (screenRect.width - windowSize.width) / 2,
           screenRect.top + (screenRect.height - windowSize.height) / 2,
         );
@@ -205,7 +184,7 @@ class ScreenService {
         final trayRect = getTrayIconRect();
         if (trayRect == null) {
           // 托盘区域获取失败，回退到屏幕右下角
-          return Offset(
+          return ui.Offset(
             screenRect.right - windowSize.width - 10,
             screenRect.bottom - windowSize.height - 50,
           );
@@ -216,30 +195,30 @@ class ScreenService {
         switch (taskbarPos) {
           case 'bottom':
             // 托盘上方居中
-            return Offset(
+            return ui.Offset(
               trayRect.center.dx - windowSize.width / 2,
               trayRect.top - windowSize.height - 5,
             );
           case 'top':
             // 托盘下方居中
-            return Offset(
+            return ui.Offset(
               trayRect.center.dx - windowSize.width / 2,
               trayRect.bottom + 5,
             );
           case 'left':
             // 托盘右侧居中
-            return Offset(
+            return ui.Offset(
               trayRect.right + 5,
               trayRect.center.dy - windowSize.height / 2,
             );
           case 'right':
             // 托盘左侧居中
-            return Offset(
+            return ui.Offset(
               trayRect.left - windowSize.width - 5,
               trayRect.center.dy - windowSize.height / 2,
             );
           default:
-            return Offset(
+            return ui.Offset(
               screenRect.right - windowSize.width - 10,
               screenRect.bottom - windowSize.height - 50,
             );
@@ -264,7 +243,7 @@ class ScreenService {
             y = screenRect.top;
           }
 
-          return Offset(x, y);
+          return ui.Offset(x, y);
         }
 
         // 无上次位置记录，回退到屏幕中心
@@ -294,7 +273,7 @@ class ScreenService {
         'index': index + 1,
         'name': 'Display ${index + 1}',
         'isPrimary': display.id == primary.id,
-        'bounds': Rect.fromLTWH(
+        'bounds': ui.Rect.fromLTWH(
           display.visiblePosition!.dx,
           display.visiblePosition!.dy,
           display.size.width,

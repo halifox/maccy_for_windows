@@ -18,8 +18,8 @@ class AppHotKeyConfig {
   /// [json] 包含快捷键信息的映射。
   factory AppHotKeyConfig.fromJson(Map<String, dynamic> json) {
     return AppHotKeyConfig(
-      modifiers: List<String>.from(json['modifiers'] ?? []),
-      key: json['key'] ?? 'V',
+      modifiers: List<String>.from(json['modifiers'] as Iterable? ?? []),
+      key: json['key'] as String? ?? 'V',
     );
   }
 
@@ -33,7 +33,7 @@ class AppHotKeyConfig {
       if (rawJson.isEmpty) {
         return const AppHotKeyConfig(modifiers: ['alt'], key: 'V');
       }
-      return AppHotKeyConfig.fromJson(jsonDecode(rawJson));
+      return AppHotKeyConfig.fromJson(jsonDecode(rawJson) as Map<String, dynamic>);
     } catch (_) {
       return const AppHotKeyConfig(modifiers: ['alt'], key: 'V');
     }

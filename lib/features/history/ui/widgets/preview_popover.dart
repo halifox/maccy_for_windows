@@ -28,8 +28,8 @@ class PreviewPopover extends ConsumerWidget {
       ),
       decoration: BoxDecoration(
         color: isDark
-            ? const Color(0xFF2C2C2C).withOpacity(0.95)
-            : const Color(0xFFF5F5F5).withOpacity(0.95),
+            ? const Color(0xFF2C2C2C).withValues(alpha: 0.95)
+            : const Color(0xFFF5F5F5).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isDark ? Colors.white12 : Colors.black12,
@@ -37,7 +37,7 @@ class PreviewPopover extends ConsumerWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.3),
+            color: Colors.black.withValues(alpha: 0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -57,7 +57,7 @@ class PreviewPopover extends ConsumerWidget {
                   child: Image.file(
                     File(item.content),
                     fit: BoxFit.contain,
-                    errorBuilder: (_, __, ___) => const Icon(
+                    errorBuilder: (_, _, _) => const Icon(
                       Icons.broken_image,
                       size: 64,
                     ),

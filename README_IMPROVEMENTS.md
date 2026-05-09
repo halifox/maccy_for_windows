@@ -52,19 +52,19 @@ Every measurement now matches Maccy's source code exactly:
 **Background Colors**:
 ```dart
 // Dark Mode
-Color(0xFF1E1E1E).withOpacity(0.85)  // Was: #2C2C2C @ 98%
+Color(0xFF1E1E1E).withValues(alpha: 0.85)  // Was: #2C2C2C @ 98%
 
 // Light Mode  
-Color(0xFFF5F5F5).withOpacity(0.85)  // Was: #EBEBEB @ 98%
+Color(0xFFF5F5F5).withValues(alpha: 0.85)  // Was: #EBEBEB @ 98%
 ```
 
 **Selection Highlight** (matches `Color.accentColor.opacity(0.8)`):
 ```dart
 // Dark Mode
-Color(0xFF0A84FF).withOpacity(0.8)  // macOS system blue
+Color(0xFF0A84FF).withValues(alpha: 0.8)  // macOS system blue
 
 // Light Mode
-Color(0xFF007AFF).withOpacity(0.8)  // macOS system blue
+Color(0xFF007AFF).withValues(alpha: 0.8)  // macOS system blue
 ```
 
 **Source Reference**: `Maccy/Views/ListItemView.swift:74`

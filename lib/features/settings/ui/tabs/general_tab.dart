@@ -73,8 +73,8 @@ class GeneralTab extends ConsumerWidget {
                     vertical: 4,
                   ),
                   color: isDark
-                      ? Colors.white.withOpacity(0.1)
-                      : Colors.black.withOpacity(0.05),
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : Colors.black.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(6),
                   onPressed: () {},
                   minimumSize: Size.zero,
@@ -196,18 +196,14 @@ class _HotkeySelector extends ConsumerWidget {
     final config = ref.watch(hotkeyOpenProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    /**
-     * 更新热键配置并同步至持久化存储。
-     */
+    /// 更新热键配置并同步至持久化存储。
     void update(List<String> newMods, String newKey) {
       ref
           .read(hotkeyOpenProvider.notifier)
           .set(AppHotKeyConfig(modifiers: newMods, key: newKey));
     }
 
-    /**
-     * 构建单个修饰键的复选框行。
-     */
+    /// 构建单个修饰键的复选框行。
     Widget buildModifier(String label, String value) {
       final selected = config.modifiers.contains(value);
       return Row(
@@ -323,15 +319,15 @@ class MacosPopupMenu<T> extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             side: BorderSide(
               color: isDark
-                  ? Colors.white.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.1),
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : Colors.black.withValues(alpha: 0.1),
               width: 0.5,
             ),
           ),
         ),
         elevation: const WidgetStatePropertyAll(16),
         shadowColor: WidgetStatePropertyAll(
-          Colors.black.withOpacity(isDark ? 0.5 : 0.2),
+          Colors.black.withValues(alpha: isDark ? 0.5 : 0.2),
         ),
         padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
       ),
@@ -345,13 +341,13 @@ class MacosPopupMenu<T> extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: isDark
-                  ? Colors.white.withOpacity(0.06)
-                  : Colors.black.withOpacity(0.04),
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.1)
-                    : Colors.black.withOpacity(0.1),
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.black.withValues(alpha: 0.1),
                 width: 0.5,
               ),
             ),
@@ -363,7 +359,7 @@ class MacosPopupMenu<T> extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     color: isDark
-                        ? Colors.white.withOpacity(0.9)
+                        ? Colors.white.withValues(alpha: 0.9)
                         : Colors.black87,
                     fontWeight: FontWeight.w400,
                   ),
@@ -397,7 +393,7 @@ class MacosPopupMenu<T> extends StatelessWidget {
                   states.contains(WidgetState.hovered) ||
                       states.contains(WidgetState.pressed)
                   ? Colors.white
-                  : (isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
+                  : (isDark ? Colors.white.withValues(alpha: 0.9) : Colors.black87),
             ),
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),

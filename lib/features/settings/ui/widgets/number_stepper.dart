@@ -32,11 +32,11 @@ class NumberStepper extends HookWidget {
   Widget build(BuildContext context) {
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
     final color = isDark
-        ? Colors.white.withOpacity(0.06)
-        : Colors.black.withOpacity(0.04);
+        ? Colors.white.withValues(alpha: 0.06)
+        : Colors.black.withValues(alpha: 0.04);
     final borderColor = isDark
-        ? Colors.white.withOpacity(0.1)
-        : Colors.black.withOpacity(0.1);
+        ? Colors.white.withValues(alpha: 0.1)
+        : Colors.black.withValues(alpha: 0.1);
     final controller = useTextEditingController(text: value.toString());
     final focusNode = useFocusNode();
 
@@ -47,11 +47,9 @@ class NumberStepper extends HookWidget {
       return null;
     }, [value]);
 
-    /**
-     * 校验文本输入并提交。
-     * 
-     * 若输入非数字或超出边界，将自动恢复为旧值。
-     */
+    /// 校验文本输入并提交。
+    ///
+    /// 若输入非数字或超出边界，将自动恢复为旧值。
     void validateAndSubmit(String text) {
       final newValue = int.tryParse(text);
       if (newValue != null && newValue >= min && newValue <= max) {

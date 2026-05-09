@@ -25,10 +25,10 @@ enum PopupPosition {
 ///
 /// 负责根据不同的定位模式计算窗口应该出现的位置，支持多屏幕环境。
 class WindowPositionService {
-  final SharedPreferences _prefs;
-  final Size _windowSize;
 
   WindowPositionService(this._prefs, this._windowSize);
+  final SharedPreferences _prefs;
+  final Size _windowSize;
 
   /// 根据定位模式和屏幕索引计算窗口位置。
   ///
@@ -234,7 +234,7 @@ class WindowPositionService {
       }
 
       // 如果没有找到包含参考点的屏幕，返回主屏幕
-      return await screenRetriever.getPrimaryDisplay();
+      return screenRetriever.getPrimaryDisplay();
     }
 
     // screenIndex >= 1: 具体屏幕编号
@@ -243,6 +243,6 @@ class WindowPositionService {
     }
 
     // 超出范围，返回主屏幕
-    return await screenRetriever.getPrimaryDisplay();
+    return screenRetriever.getPrimaryDisplay();
   }
 }

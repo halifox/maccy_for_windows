@@ -39,7 +39,7 @@ class AppHotKeyManager extends _$AppHotKeyManager {
   /// 监听设置中的快捷键配置变化，并实时更新系统级热键注册。
   @override
   FutureOr<void> build() async {
-    _setupHotkey();
+    await _setupHotkey();
     ref.listen(hotkeyOpenProvider, (previous, next) {
       _setupHotkey();
     });
@@ -52,10 +52,8 @@ class AppHotKeyManager extends _$AppHotKeyManager {
 
   /// 设置并注册系统热键。
   ///
-  /// 首先注销已有的所有热键以防冲突，然后根据 [config] 注册。
+  /// 首先注销已有的所有热键以防冲突，然后根据配置注册。
   /// 仅当配置中包含至少一个修饰键时才进行注册，避免误触。
-  ///
-  /// [config] 快捷键配置对象。
   Future<void> _setupHotkey() async {
     await hotKeyManager.unregisterAll();
     final AppHotKeyConfig config = ref.read(hotkeyOpenProvider);
@@ -88,7 +86,7 @@ class AppHotKeyManager extends _$AppHotKeyManager {
   /// - cycle: 按住修饰键连续按主键循环选择
   void _handleHotkeyPressed() {
     final windowManager = ref.read(appWindowManagerProvider.notifier);
-    final isVisible = windowManager._isShowing;
+    final isVisible = windowManager.isShowing;
 
     if (!isVisible) {
       // 窗口未显示，打开窗口并进入 opening 状态

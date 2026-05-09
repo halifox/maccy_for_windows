@@ -16,8 +16,8 @@ final sharedPrefsProvider = Provider<SharedPreferences>((ref) {
 
 /// 自动持久化的 Notifier 基类。
 ///
-/// 封装了对 SharedPreferences 的读写操作，当 [state] 改变时自动同步至本地磁盘。
-/// 支持 String, int, bool, double, List<String> 等基本数据类型。
+/// 封装了对 SharedPreferences 的读写操作，当 state 改变时自动同步至本地磁盘。
+/// 支持 String, int, bool, double, List&lt;String&gt; 等基本数据类型。
 ///
 /// 字段说明:
 /// [key] 持久化存储对应的唯一键名。
@@ -89,7 +89,7 @@ class JsonPersistentNotifier<T> extends PersistentNotifier<T> {
     final rawJson = _prefs.getString(key);
     if (rawJson == null || rawJson.isEmpty) return null;
     try {
-      return fromJson(jsonDecode(rawJson));
+      return fromJson(jsonDecode(rawJson) as Map<String, dynamic>);
     } catch (_) {
       return null;
     }
@@ -243,7 +243,7 @@ final showRecentCopyInMenuBarProvider = pref<bool>(
 );
 
 /// 是否显示搜索框
-final showSearchProvider = pref<bool>('showSearch', true);
+final showSearchProvider = pref<String>('showSearch', 'always');
 
 /// 搜索框的可见性策略（always: 总是显示, onType: 输入时显示, never: 从不显示）
 final searchVisibilityProvider = pref<String>('searchVisibility', 'always');

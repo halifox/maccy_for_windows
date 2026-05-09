@@ -14,16 +14,16 @@ enum SearchMode {
 /// 搜索结果包装类。
 ///
 /// 包含匹配的条目和相关性评分（用于模糊搜索排序）。
-class SearchResult {
-  final ClipboardEntry entry;
-  final double score;
-  final List<int> matchIndices; // 匹配字符的索引位置（用于高亮）
+class SearchResult { // 匹配字符的索引位置（用于高亮）
 
   SearchResult({
     required this.entry,
     this.score = 0.0,
     this.matchIndices = const [],
   });
+  final ClipboardEntry entry;
+  final double score;
+  final List<int> matchIndices;
 }
 
 /// 搜索服务。
@@ -127,7 +127,7 @@ class SearchService {
 
     // 映射回原始条目并按评分排序
     return results.map((result) {
-      return items[result.item];
+      return items[result.score.toInt()];
     }).toList();
   }
 

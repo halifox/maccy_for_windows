@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:maccy/features/settings/ui/widgets/macos_settings_widgets.dart';
-import 'package:maccy/features/settings/ui/widgets/number_stepper.dart';
 
 /// 设置：高级选项页。
 ///
@@ -36,20 +35,20 @@ class AdvancedTab extends ConsumerWidget {
                       ),
                       decoration: BoxDecoration(
                         color: isDark
-                            ? Colors.white.withOpacity(0.05)
-                            : Colors.black.withOpacity(0.03),
+                            ? Colors.white.withValues(alpha: 0.05)
+                            : Colors.black.withValues(alpha: 0.03),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                           color: isDark
-                              ? Colors.white.withOpacity(0.1)
-                              : Colors.black.withOpacity(0.1),
+                              ? Colors.white.withValues(alpha: 0.1)
+                              : Colors.black.withValues(alpha: 0.1),
                         ),
                       ),
                       child: Text(
                         '${ref.watch(clipboardCheckIntervalProvider).toStringAsFixed(1)}s',
                         style: TextStyle(
                           fontSize: 13,
-                          color: isDark ? Colors.white87 : Colors.black87,
+                          color: isDark ? Colors.white.withValues(alpha: 0.87) : Colors.black.withValues(alpha: 0.87),
                         ),
                       ),
                     ),
@@ -59,7 +58,6 @@ class AdvancedTab extends ConsumerWidget {
                       children: [
                         CupertinoButton(
                           padding: EdgeInsets.zero,
-                          minSize: 20,
                           onPressed: () {
                             final current = ref.read(clipboardCheckIntervalProvider);
                             if (current < 5.0) {
@@ -67,7 +65,7 @@ class AdvancedTab extends ConsumerWidget {
                                   .read(clipboardCheckIntervalProvider.notifier)
                                   .set((current + 0.1).clamp(0.1, 5.0));
                             }
-                          },
+                          }, minimumSize: const Size(20, 20),
                           child: Icon(
                             CupertinoIcons.chevron_up,
                             size: 12,
@@ -76,7 +74,6 @@ class AdvancedTab extends ConsumerWidget {
                         ),
                         CupertinoButton(
                           padding: EdgeInsets.zero,
-                          minSize: 20,
                           onPressed: () {
                             final current = ref.read(clipboardCheckIntervalProvider);
                             if (current > 0.1) {
@@ -84,7 +81,7 @@ class AdvancedTab extends ConsumerWidget {
                                   .read(clipboardCheckIntervalProvider.notifier)
                                   .set((current - 0.1).clamp(0.1, 5.0));
                             }
-                          },
+                          }, minimumSize: const Size(20, 20),
                           child: Icon(
                             CupertinoIcons.chevron_down,
                             size: 12,

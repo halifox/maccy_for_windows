@@ -42,7 +42,7 @@ class PasteService {
     if (!Platform.isWindows) return;
 
     // 短暂延迟，确保剪贴板写入完成
-    await Future.delayed(const Duration(milliseconds: 50));
+    await Future<void>.delayed(const Duration(milliseconds: 50));
 
     // 使用现有的 PasteService 静态方法
     // 这个方法已经在项目中实现

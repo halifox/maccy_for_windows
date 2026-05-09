@@ -186,7 +186,7 @@ class _SidebarItem extends StatelessWidget {
                 color: isSelected
                     ? Colors.white
                     : (isDark
-                          ? Colors.white.withOpacity(0.85)
+                          ? Colors.white.withValues(alpha: 0.85)
                           : Colors.black87),
               ),
             ),

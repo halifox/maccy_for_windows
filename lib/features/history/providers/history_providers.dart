@@ -20,7 +20,7 @@ class HistorySearchQuery extends _$HistorySearchQuery {
   String build() => '';
 
   /// 更新搜索内容。
-  void set(String query) => state = query;
+  set value(String query) => state = query;
 }
 
 /// 历史记录选中项索引 Notifier。
@@ -32,7 +32,7 @@ class HistorySelectedIndex extends _$HistorySelectedIndex {
   int build() => 0;
 
   /// 设置选中的索引。
-  void set(int index) => state = index;
+  set value(int index) => state = index;
 
   /// 通过函数式更新器改变索引状态。
   void update(int Function(int) updater) => state = updater(state);
@@ -100,10 +100,10 @@ class HistoryController extends _$HistoryController {
       itemWriter.add(Formats.fileUri(Uri.file(item.content)));
     }
     itemWriter.add(Formats.plainText(item.content));
-    clipboardManager.setSelfUpdate(true);
+    clipboardManager.isSelfUpdate = true;
     await clipboard.write([itemWriter]);
     await clipboardManager.simulatePaste();
-    clipboardManager.setSelfUpdate(false);
+    clipboardManager.isSelfUpdate = false;
   }
 
   /// 选择下一项（用于循环模式）。
@@ -120,7 +120,7 @@ class HistoryController extends _$HistoryController {
       nextIndex = cycle ? 0 : history.length - 1;
     }
 
-    ref.read(historySelectedIndexProvider.notifier).set(nextIndex);
+    ref.read(historySelectedIndexProvider.notifier).value = nextIndex;
   }
 
   /// 选择上一项（用于循环模式）。
@@ -137,7 +137,7 @@ class HistoryController extends _$HistoryController {
       prevIndex = cycle ? history.length - 1 : 0;
     }
 
-    ref.read(historySelectedIndexProvider.notifier).set(prevIndex);
+    ref.read(historySelectedIndexProvider.notifier).value = prevIndex;
   }
 
   /// 删除指定的历史记录条目。

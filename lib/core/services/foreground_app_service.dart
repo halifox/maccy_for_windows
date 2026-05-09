@@ -42,20 +42,20 @@ class ForegroundAppService {
       if (hProcess == 0) return null;
 
       try {
-        final exePath = calloc<WCHAR>(MAX_PATH);
+        final exePath = calloc<Uint16>(MAX_PATH);
         try {
           final size = calloc<DWORD>();
           try {
             size.value = MAX_PATH;
 
             // 查询进程完整路径
-            final result = QueryFullProcessImageName(hProcess, 0, exePath, size);
+            final result = QueryFullProcessImageName(hProcess, 0, exePath.cast(), size);
             if (result == 0) return null;
 
-            final path = exePath.toDartString();
+            final path = exePath.cast<Utf16>().toDartString();
 
             // 提取文件名：C:\Program Files\App\app.exe -> app
-            final fileName = path.split('\\').last;
+            final fileName = path.split(r'\').last;
             return fileName.toLowerCase().replaceAll('.exe', '');
           } finally {
             free(size);
@@ -80,12 +80,12 @@ class ForegroundAppService {
     final hwnd = GetForegroundWindow();
     if (hwnd == 0) return null;
 
-    final titleBuffer = calloc<WCHAR>(256);
+    final titleBuffer = calloc<Uint16>(256);
     try {
-      final length = GetWindowText(hwnd, titleBuffer, 256);
+      final length = GetWindowText(hwnd, titleBuffer.cast(), 256);
       if (length == 0) return null;
 
-      return titleBuffer.toDartString();
+      return titleBuffer.cast<Utf16>().toDartString();
     } finally {
       free(titleBuffer);
     }

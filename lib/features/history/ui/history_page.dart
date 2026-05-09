@@ -30,14 +30,14 @@ class HistoryPage extends HookConsumerWidget {
     // Match Maccy's exact background colors with transparency
     final bgColor = useMemoized(
       () => isDark
-          ? const Color(0xFF1E1E1E).withOpacity(0.85)
-          : const Color(0xFFF5F5F5).withOpacity(0.85),
+          ? const Color(0xFF1E1E1E).withValues(alpha: 0.85)
+          : const Color(0xFFF5F5F5).withValues(alpha: 0.85),
       [isDark],
     );
     // Match Maccy's accent color with 0.8 opacity
     final highlightColor = isDark
-        ? const Color(0xFF0A84FF).withOpacity(0.8)
-        : const Color(0xFF007AFF).withOpacity(0.8);
+        ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+        : const Color(0xFF007AFF).withValues(alpha: 0.8);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -50,7 +50,7 @@ class HistoryPage extends HookConsumerWidget {
             color: bgColor,
             borderRadius: BorderRadius.circular(6), // Match Maccy's 6px radius
             border: Border.all(
-              color: isDark ? Colors.black.withOpacity(0.5) : Colors.black12,
+              color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
               width: 0.5,
             ),
           ),
@@ -82,7 +82,7 @@ class HistoryPage extends HookConsumerWidget {
                                 .selectItem(index),
                             onHover: () => ref
                                 .read(historySelectedIndexProvider.notifier)
-                                .set(index),
+                                .value = index,
                             onPin: () => ref
                                 .read(historyControllerProvider.notifier)
                                 .togglePin(index),
@@ -142,7 +142,7 @@ class _FooterMenu extends ConsumerWidget {
           onTap: () =>
               ref.read(historyControllerProvider.notifier).clearHistory(),
           onHover: () =>
-              ref.read(historySelectedIndexProvider.notifier).set(totalItems),
+              ref.read(historySelectedIndexProvider.notifier).value = totalItems,
         ),
         _MenuRow(
           index: totalItems + 1,
@@ -154,7 +154,7 @@ class _FooterMenu extends ConsumerWidget {
           },
           onHover: () => ref
               .read(historySelectedIndexProvider.notifier)
-              .set(totalItems + 1),
+              .value = totalItems + 1,
         ),
         _MenuRow(
           index: totalItems + 2,
@@ -164,7 +164,7 @@ class _FooterMenu extends ConsumerWidget {
           onTap: () => ref.read(historyControllerProvider.notifier).quitApp(),
           onHover: () => ref
               .read(historySelectedIndexProvider.notifier)
-              .set(totalItems + 2),
+              .value = totalItems + 2,
         ),
         const SizedBox(height: 4),
       ],
@@ -186,7 +186,7 @@ class _HistoryHeader extends HookConsumerWidget {
     final searchFocusNode = useFocusNode();
     final debouncer = useMemoized(() => _Debouncer(milliseconds: 150));
 
-    ref.listen(historyFocusRequestProvider, (_, __) {
+    ref.listen(historyFocusRequestProvider, (_, _) {
       searchFocusNode.requestFocus();
     });
 
@@ -220,7 +220,7 @@ class _HistoryHeader extends HookConsumerWidget {
         borderRadius: BorderRadius.circular(4), // Match Maccy's corner radius
         backgroundColor: isDark
             ? Colors.white10
-            : Colors.black.withOpacity(0.06),
+            : Colors.black.withValues(alpha: 0.06),
         style: TextStyle(
           fontSize: 12,
           color: isDark ? Colors.white : Colors.black,
@@ -228,8 +228,8 @@ class _HistoryHeader extends HookConsumerWidget {
         ),
         onChanged: (value) {
           debouncer.run(() {
-            ref.read(historySearchQueryProvider.notifier).set(value);
-            ref.read(historySelectedIndexProvider.notifier).set(0);
+            ref.read(historySearchQueryProvider.notifier).value = value;
+            ref.read(historySelectedIndexProvider.notifier).value = 0;
           });
         },
       ),
@@ -401,7 +401,7 @@ class _HistoryRow extends HookConsumerWidget {
           File(content),
           fit: BoxFit.contain,
           height: ref.read(imageHeightProvider).toDouble(),
-          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 32),
+          errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 32),
         ),
       );
     } else if (type == 'file') {

@@ -128,9 +128,9 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.text_insert,
                 iconColor: CupertinoColors.systemIndigo,
                 trailing: CupertinoCheckbox(
-                  value: ref.watch(showClipboardNearIconProvider),
+                  value: ref.watch(showAppIconProvider),
                   onChanged: (v) => ref
-                      .read(showClipboardNearIconProvider.notifier)
+                      .read(showAppIconProvider.notifier)
                       .set(v ?? false),
                 ),
               ),
@@ -141,14 +141,14 @@ class AppearanceTab extends ConsumerWidget {
                 subtitle: 'When to display the search input',
                 icon: CupertinoIcons.search,
                 iconColor: CupertinoColors.systemBlue,
-                currentValue: ref.watch(showSearchBoxProvider),
+                currentValue: ref.watch(showSearchProvider),
                 options: {
                   'always': 'Always',
                   'typing': 'When Typing',
                   'never': 'Never',
                 },
                 onSelected: (v) =>
-                    ref.read(showSearchBoxProvider.notifier).set(v),
+                    ref.read(showSearchProvider.notifier).set(v),
               ),
               MacosSettingsTile(
                 label: 'Source App Name',
@@ -156,9 +156,9 @@ class AppearanceTab extends ConsumerWidget {
                 icon: CupertinoIcons.info_circle,
                 iconColor: CupertinoColors.systemGrey,
                 trailing: CupertinoCheckbox(
-                  value: ref.watch(showAppNameProvider),
+                  value: ref.watch(showAppIconProvider),
                   onChanged: (v) =>
-                      ref.read(showAppNameProvider.notifier).set(v ?? false),
+                      ref.read(showAppIconProvider.notifier).set(v ?? false),
                 ),
               ),
               MacosSettingsTile(
@@ -220,15 +220,15 @@ class AppearanceTab extends ConsumerWidget {
               borderRadius: BorderRadius.circular(10),
               side: BorderSide(
                 color: isDark
-                    ? Colors.white.withOpacity(0.15)
-                    : Colors.black.withOpacity(0.1),
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : Colors.black.withValues(alpha: 0.1),
                 width: 0.5,
               ),
             ),
           ),
           elevation: const WidgetStatePropertyAll(16),
           shadowColor: WidgetStatePropertyAll(
-            Colors.black.withOpacity(isDark ? 0.5 : 0.2),
+            Colors.black.withValues(alpha: isDark ? 0.5 : 0.2),
           ),
           padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
         ),
@@ -242,13 +242,13 @@ class AppearanceTab extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: isDark
-                    ? Colors.white.withOpacity(0.06)
-                    : Colors.black.withOpacity(0.04),
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                   color: isDark
-                      ? Colors.white.withOpacity(0.1)
-                      : Colors.black.withOpacity(0.1),
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : Colors.black.withValues(alpha: 0.1),
                   width: 0.5,
                 ),
               ),
@@ -260,7 +260,7 @@ class AppearanceTab extends ConsumerWidget {
                     style: TextStyle(
                       fontSize: 13,
                       color: isDark
-                          ? Colors.white.withOpacity(0.9)
+                          ? Colors.white.withValues(alpha: 0.9)
                           : Colors.black87,
                     ),
                   ),
@@ -315,7 +315,7 @@ class AppearanceTab extends ConsumerWidget {
               states.contains(WidgetState.hovered) ||
                   states.contains(WidgetState.pressed)
               ? Colors.white
-              : (isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
+              : (isDark ? Colors.white.withValues(alpha: 0.9) : Colors.black87),
         ),
         shape: WidgetStatePropertyAll(
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
@@ -363,15 +363,15 @@ class AppearanceTab extends ConsumerWidget {
             borderRadius: BorderRadius.circular(10),
             side: BorderSide(
               color: isDark
-                  ? Colors.white.withOpacity(0.15)
-                  : Colors.black.withOpacity(0.1),
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : Colors.black.withValues(alpha: 0.1),
               width: 0.5,
             ),
           ),
         ),
         elevation: const WidgetStatePropertyAll(16),
         shadowColor: WidgetStatePropertyAll(
-          Colors.black.withOpacity(isDark ? 0.5 : 0.2),
+          Colors.black.withValues(alpha: isDark ? 0.5 : 0.2),
         ),
         padding: const WidgetStatePropertyAll(EdgeInsets.all(6)),
       ),
@@ -385,13 +385,13 @@ class AppearanceTab extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: isDark
-                  ? Colors.white.withOpacity(0.06)
-                  : Colors.black.withOpacity(0.04),
+                  ? Colors.white.withValues(alpha: 0.06)
+                  : Colors.black.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.1)
-                    : Colors.black.withOpacity(0.1),
+                    ? Colors.white.withValues(alpha: 0.1)
+                    : Colors.black.withValues(alpha: 0.1),
                 width: 0.5,
               ),
             ),
@@ -402,7 +402,7 @@ class AppearanceTab extends ConsumerWidget {
                   icons[current] ?? CupertinoIcons.doc_on_clipboard,
                   size: 14,
                   color: isDark
-                      ? Colors.white.withOpacity(0.9)
+                      ? Colors.white.withValues(alpha: 0.9)
                       : Colors.black87,
                 ),
                 const SizedBox(width: 8),
@@ -433,7 +433,7 @@ class AppearanceTab extends ConsumerWidget {
                   states.contains(WidgetState.hovered) ||
                       states.contains(WidgetState.pressed)
                   ? Colors.white
-                  : (isDark ? Colors.white.withOpacity(0.9) : Colors.black87),
+                  : (isDark ? Colors.white.withValues(alpha: 0.9) : Colors.black87),
             ),
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),

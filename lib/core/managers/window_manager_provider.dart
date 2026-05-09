@@ -7,9 +7,7 @@ import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
 part 'window_manager_provider.g.dart';
@@ -38,6 +36,9 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
   DateTime? _lastHideTime;
   final Size _windowSize = const Size(450, 450);
 
+  /// 获取窗口是否正在显示。
+  bool get isShowing => _isShowing;
+
   /// 初始化窗口管理器。
   ///
   /// 注册窗口事件监听器，用于响应失焦隐藏等操作。
@@ -52,7 +53,7 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
 
   /// 插件预初始化静态方法。
   ///
-  /// 在 [main] 函数中调用，负责底层 window_manager 插件的初始化、无边框阴影设置
+  /// 在 main 函数中调用，负责底层 window_manager 插件的初始化、无边框阴影设置
   /// 以及窗口的初始隐藏状态配置。
   static Future<void> init() async {
     await windowManager.ensureInitialized();
@@ -88,9 +89,9 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
       return;
     }
     if (_isShowing) {
-      hideHistory();
+      await hideHistory();
     } else {
-      showHistory(source: source);
+      await showHistory(source: source);
     }
   }
 
@@ -145,8 +146,8 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     await windowManager.focus();
     _isShowing = true;
 
-    ref.read(historySearchQueryProvider.notifier).set('');
-    ref.read(historySelectedIndexProvider.notifier).set(0);
+    ref.read(historySearchQueryProvider.notifier).value = '';
+    ref.read(historySelectedIndexProvider.notifier).value = 0;
     ref.read(historyFocusRequestProvider.notifier).request();
     debugPrint('[WindowManager] 历史记录窗口已显示');
   }

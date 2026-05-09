@@ -25,8 +25,8 @@ class IgnoreTab extends HookConsumerWidget {
           margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
             color: isDark
-                ? Colors.white.withOpacity(0.05)
-                : Colors.black.withOpacity(0.03),
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.03),
             borderRadius: BorderRadius.circular(8),
           ),
           child: CupertinoSlidingSegmentedControl<int>(
@@ -129,13 +129,13 @@ class _ApplicationsTab extends HookConsumerWidget {
                             ),
                             decoration: BoxDecoration(
                               color: isDark
-                                  ? Colors.white.withOpacity(0.05)
-                                  : Colors.black.withOpacity(0.03),
+                                  ? Colors.white.withValues(alpha: 0.05)
+                                  : Colors.black.withValues(alpha: 0.03),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: isDark
-                                    ? Colors.white.withOpacity(0.1)
-                                    : Colors.black.withOpacity(0.1),
+                                    ? Colors.white.withValues(alpha: 0.1)
+                                    : Colors.black.withValues(alpha: 0.1),
                               ),
                             ),
                           ),
@@ -267,13 +267,13 @@ class _PasteboardTypesTab extends HookConsumerWidget {
                             ),
                             decoration: BoxDecoration(
                               color: isDark
-                                  ? Colors.white.withOpacity(0.05)
-                                  : Colors.black.withOpacity(0.03),
+                                  ? Colors.white.withValues(alpha: 0.05)
+                                  : Colors.black.withValues(alpha: 0.03),
                               borderRadius: BorderRadius.circular(6),
                               border: Border.all(
                                 color: isDark
-                                    ? Colors.white.withOpacity(0.1)
-                                    : Colors.black.withOpacity(0.1),
+                                    ? Colors.white.withValues(alpha: 0.1)
+                                    : Colors.black.withValues(alpha: 0.1),
                               ),
                             ),
                           ),
@@ -409,15 +409,15 @@ class _RegexTab extends HookConsumerWidget {
                                 ),
                                 decoration: BoxDecoration(
                                   color: isDark
-                                      ? Colors.white.withOpacity(0.05)
-                                      : Colors.black.withOpacity(0.03),
+                                      ? Colors.white.withValues(alpha: 0.05)
+                                      : Colors.black.withValues(alpha: 0.03),
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: errorText.value != null
                                         ? CupertinoColors.systemRed
                                         : (isDark
-                                            ? Colors.white.withOpacity(0.1)
-                                            : Colors.black.withOpacity(0.1)),
+                                            ? Colors.white.withValues(alpha: 0.1)
+                                            : Colors.black.withValues(alpha: 0.1)),
                                   ),
                                 ),
                                 onChanged: (_) => errorText.value = null,
@@ -530,7 +530,7 @@ class _RegexTab extends HookConsumerWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '• ^\\d{4}-\\d{4}-\\d{4}-\\d{4}\$ - Credit card numbers',
+                  r'• ^\d{4}-\d{4}-\d{4}-\d{4}$ - Credit card numbers',
                   style: TextStyle(
                     fontSize: 11,
                     fontFamily: 'Courier New',
@@ -546,7 +546,7 @@ class _RegexTab extends HookConsumerWidget {
                   ),
                 ),
                 Text(
-                  '• ^[A-Z0-9]{32}\$ - API keys (32 chars)',
+                  r'• ^[A-Z0-9]{32}$ - API keys (32 chars)',
                   style: TextStyle(
                     fontSize: 11,
                     fontFamily: 'Courier New',
@@ -583,13 +583,13 @@ class _ListItem extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: isDark
-            ? Colors.white.withOpacity(0.03)
-            : Colors.black.withOpacity(0.02),
+            ? Colors.white.withValues(alpha: 0.03)
+            : Colors.black.withValues(alpha: 0.02),
         borderRadius: BorderRadius.circular(6),
         border: Border.all(
           color: isDark
-              ? Colors.white.withOpacity(0.05)
-              : Colors.black.withOpacity(0.05),
+              ? Colors.white.withValues(alpha: 0.05)
+              : Colors.black.withValues(alpha: 0.05),
         ),
       ),
       child: Row(
@@ -600,20 +600,19 @@ class _ListItem extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontFamily: isMonospace ? 'Courier New' : null,
-                color: isDark ? Colors.white87 : Colors.black87,
+                color: isDark ? Colors.white.withValues(alpha: 0.87) : Colors.black.withValues(alpha: 0.87),
               ),
             ),
           ),
           CupertinoButton(
             padding: EdgeInsets.zero,
-            minSize: 24,
-            onPressed: onDelete,
+            onPressed: onDelete, minimumSize: const Size(24, 24),
             child: Icon(
               CupertinoIcons.xmark_circle_fill,
               size: 18,
               color: isDark
-                  ? Colors.white.withOpacity(0.3)
-                  : Colors.black.withOpacity(0.3),
+                  ? Colors.white.withValues(alpha: 0.3)
+                  : Colors.black.withValues(alpha: 0.3),
             ),
           ),
         ],

@@ -41,15 +41,15 @@ class MacosSettingsGroup extends StatelessWidget {
             boxShadow: [
               if (!isDark)
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
+                  color: Colors.black.withValues(alpha: 0.03),
                   blurRadius: 4,
                   offset: const Offset(0, 1),
                 ),
             ],
             border: Border.all(
               color: isDark
-                  ? Colors.white.withOpacity(0.05)
-                  : Colors.black.withOpacity(0.05),
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.black.withValues(alpha: 0.05),
               width: 0.5,
             ),
           ),
@@ -75,7 +75,7 @@ class MacosSettingsGroup extends StatelessWidget {
             thickness: 0.5,
             indent: 48,
             endIndent: 0,
-            color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+            color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
           ),
         );
       }
@@ -139,7 +139,7 @@ class MacosSettingsTile extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 13,
                     color: isDark
-                        ? Colors.white.withOpacity(0.9)
+                        ? Colors.white.withValues(alpha: 0.9)
                         : Colors.black87,
                     fontWeight: FontWeight.w400,
                   ),
