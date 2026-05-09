@@ -1,6 +1,7 @@
 import 'dart:ffi';
 import 'dart:ui' as ui;
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:win32/win32.dart';
 
@@ -23,14 +24,35 @@ class ScreenService {
   ///
   /// 使用 Win32 GetCursorPos API。
   ///
-  /// 返回 [ui.Offset] 光标坐标，失败时返回 (0, 0)。
+  /// 返回 [ui.Offset] 光标坐标（逻辑坐标），失败时返回 (0, 0)。
   static ui.Offset getCursorPosition() {
     final point = calloc<POINT>();
     try {
       final result = GetCursorPos(point);
       if (result == 0) return ui.Offset.zero;
 
-      return ui.Offset(point.ref.x.toDouble(), point.ref.y.toDouble());
+      // GetCursorPos 返回的是物理像素坐标，需要转换为逻辑坐标
+      // 获取光标所在位置的 DPI
+      final hMonitor = MonitorFromPoint(point.ref, MONITOR_DEFAULTTONEAREST);
+      var dpiX = calloc<UINT>();
+      var dpiY = calloc<UINT>();
+
+      try {
+        // 尝试获取监视器的 DPI
+        final hr = GetDpiForMonitor(hMonitor, 0, dpiX, dpiY); // 0 = MDT_EFFECTIVE_DPI
+        final scaleFactor = hr == 0 ? dpiX.value / 96.0 : 1.0;
+
+        final logicalPos = ui.Offset(
+          point.ref.x.toDouble() / scaleFactor,
+          point.ref.y.toDouble() / scaleFactor,
+        );
+
+        debugPrint('[ScreenService] 光标物理坐标: (${point.ref.x}, ${point.ref.y}), DPI: ${dpiX.value}, 缩放: $scaleFactor, 逻辑坐标: $logicalPos');
+        return logicalPos;
+      } finally {
+        free(dpiX);
+        free(dpiY);
+      }
     } finally {
       free(point);
     }
@@ -40,11 +62,17 @@ class ScreenService {
   ///
   /// 用于实现 PopupPosition.statusItem 模式。
   ///
-  /// 返回托盘图标的矩形区域，失败时返回 null。
+  /// 返回托盘图标的矩形区域（已转换为逻辑坐标），失败时返回 null。
   static ui.Rect? getTrayIconRect() {
+    debugPrint('[ScreenService] ========== 获取托盘图标位置 ==========');
+
     // 查找托盘窗口
     final trayWnd = FindWindow('Shell_TrayWnd'.toNativeUtf16(), nullptr);
-    if (trayWnd == 0) return null;
+    debugPrint('[ScreenService] Shell_TrayWnd 句柄: $trayWnd');
+    if (trayWnd == 0) {
+      debugPrint('[ScreenService] ❌ 未找到 Shell_TrayWnd');
+      return null;
+    }
 
     final notifyWnd = FindWindowEx(
       trayWnd,
@@ -52,19 +80,36 @@ class ScreenService {
       'TrayNotifyWnd'.toNativeUtf16(),
       nullptr,
     );
-    if (notifyWnd == 0) return null;
+    debugPrint('[ScreenService] TrayNotifyWnd 句柄: $notifyWnd');
+    if (notifyWnd == 0) {
+      debugPrint('[ScreenService] ❌ 未找到 TrayNotifyWnd');
+      return null;
+    }
 
     final rect = calloc<RECT>();
     try {
       final result = GetWindowRect(notifyWnd, rect);
-      if (result == 0) return null;
+      debugPrint('[ScreenService] GetWindowRect 返回值: $result');
+      if (result == 0) {
+        debugPrint('[ScreenService] ❌ GetWindowRect 失败');
+        return null;
+      }
 
-      return ui.Rect.fromLTRB(
-        rect.ref.left.toDouble(),
-        rect.ref.top.toDouble(),
-        rect.ref.right.toDouble(),
-        rect.ref.bottom.toDouble(),
+      // Win32 API 返回的是物理像素坐标，需要转换为逻辑坐标
+      // 获取 DPI 缩放比例
+      final dpi = GetDpiForWindow(notifyWnd);
+      final scaleFactor = dpi / 96.0; // 96 DPI 是 100% 缩放
+      debugPrint('[ScreenService] 窗口 DPI: $dpi, 缩放比例: $scaleFactor');
+
+      final trayRect = ui.Rect.fromLTRB(
+        rect.ref.left.toDouble() / scaleFactor,
+        rect.ref.top.toDouble() / scaleFactor,
+        rect.ref.right.toDouble() / scaleFactor,
+        rect.ref.bottom.toDouble() / scaleFactor,
       );
+      debugPrint('[ScreenService] 物理坐标: (${rect.ref.left}, ${rect.ref.top}, ${rect.ref.right}, ${rect.ref.bottom})');
+      debugPrint('[ScreenService] ✓ 逻辑坐标托盘区域: $trayRect');
+      return trayRect;
     } finally {
       free(rect);
     }
@@ -135,17 +180,28 @@ class ScreenService {
     required ui.Size windowSize,
     ui.Offset? lastPosition,
   }) async {
+    debugPrint('[ScreenService] ========== 计算窗口位置 ==========');
+    debugPrint('[ScreenService] 位置模式: $position');
+    debugPrint('[ScreenService] 屏幕索引: $screenIndex');
+    debugPrint('[ScreenService] 窗口尺寸: $windowSize');
+    debugPrint('[ScreenService] 上次位置: $lastPosition');
+
     final screen = await getTargetScreen(screenIndex);
+    debugPrint('[ScreenService] 目标屏幕: ${screen.size}');
+
     final screenRect = ui.Rect.fromLTWH(
       screen.visiblePosition!.dx,
       screen.visiblePosition!.dy,
       screen.size.width,
       screen.size.height,
     );
+    debugPrint('[ScreenService] 屏幕可见区域: $screenRect');
 
     switch (position) {
       case PopupPosition.cursor:
+        debugPrint('[ScreenService] 使用光标位置模式');
         final cursorPos = getCursorPosition();
+        debugPrint('[ScreenService] 光标位置: $cursorPos');
 
         // 光标下方 10px，确保不超出屏幕边界
         var x = cursorPos.dx;
@@ -171,61 +227,86 @@ class ScreenService {
           y = screenRect.top;
         }
 
-        return ui.Offset(x, y);
+        final result = ui.Offset(x, y);
+        debugPrint('[ScreenService] ✓ 计算结果: $result');
+        return result;
 
       case PopupPosition.center:
+        debugPrint('[ScreenService] 使用屏幕中心模式');
         // 屏幕中心
-        return ui.Offset(
+        final result = ui.Offset(
           screenRect.left + (screenRect.width - windowSize.width) / 2,
           screenRect.top + (screenRect.height - windowSize.height) / 2,
         );
+        debugPrint('[ScreenService] ✓ 计算结果: $result');
+        return result;
 
       case PopupPosition.statusItem:
+        debugPrint('[ScreenService] 使用托盘图标模式');
         final trayRect = getTrayIconRect();
         if (trayRect == null) {
+          debugPrint('[ScreenService] ⚠️ 托盘区域获取失败，回退到屏幕右下角');
           // 托盘区域获取失败，回退到屏幕右下角
-          return ui.Offset(
+          final fallback = ui.Offset(
             screenRect.right - windowSize.width - 10,
             screenRect.bottom - windowSize.height - 50,
           );
+          debugPrint('[ScreenService] 回退位置: $fallback');
+          return fallback;
         }
 
         final taskbarPos = getTaskbarPosition();
+        debugPrint('[ScreenService] 任务栏位置: $taskbarPos');
 
+        ui.Offset result;
         switch (taskbarPos) {
           case 'bottom':
             // 托盘上方居中
-            return ui.Offset(
+            result = ui.Offset(
               trayRect.center.dx - windowSize.width / 2,
               trayRect.top - windowSize.height - 5,
             );
+            debugPrint('[ScreenService] 托盘上方居中: $result');
+            break;
           case 'top':
             // 托盘下方居中
-            return ui.Offset(
+            result = ui.Offset(
               trayRect.center.dx - windowSize.width / 2,
               trayRect.bottom + 5,
             );
+            debugPrint('[ScreenService] 托盘下方居中: $result');
+            break;
           case 'left':
             // 托盘右侧居中
-            return ui.Offset(
+            result = ui.Offset(
               trayRect.right + 5,
               trayRect.center.dy - windowSize.height / 2,
             );
+            debugPrint('[ScreenService] 托盘右侧居中: $result');
+            break;
           case 'right':
             // 托盘左侧居中
-            return ui.Offset(
+            result = ui.Offset(
               trayRect.left - windowSize.width - 5,
               trayRect.center.dy - windowSize.height / 2,
             );
+            debugPrint('[ScreenService] 托盘左侧居中: $result');
+            break;
           default:
-            return ui.Offset(
+            result = ui.Offset(
               screenRect.right - windowSize.width - 10,
               screenRect.bottom - windowSize.height - 50,
             );
+            debugPrint('[ScreenService] 默认位置: $result');
+            break;
         }
+        debugPrint('[ScreenService] ✓ 计算结果: $result');
+        return result;
 
       case PopupPosition.lastPosition:
+        debugPrint('[ScreenService] 使用上次位置模式');
         if (lastPosition != null) {
+          debugPrint('[ScreenService] 上次位置存在: $lastPosition');
           // 确保上次位置仍在屏幕范围内
           var x = lastPosition.dx;
           var y = lastPosition.dy;
@@ -243,9 +324,12 @@ class ScreenService {
             y = screenRect.top;
           }
 
-          return ui.Offset(x, y);
+          final result = ui.Offset(x, y);
+          debugPrint('[ScreenService] ✓ 计算结果: $result');
+          return result;
         }
 
+        debugPrint('[ScreenService] 无上次位置记录，回退到屏幕中心');
         // 无上次位置记录，回退到屏幕中心
         return calculateWindowPosition(
           position: PopupPosition.center,

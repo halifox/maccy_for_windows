@@ -83,16 +83,30 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
   Future<void> toggleHistory({
     TriggerSource source = TriggerSource.hotkey,
   }) async {
+    debugPrint('[WindowManager] ========== toggleHistory 被调用 ==========');
+    debugPrint('[WindowManager] 触发源: $source');
+    debugPrint('[WindowManager] 当前窗口状态 _isShowing: $_isShowing');
+    debugPrint('[WindowManager] 上次隐藏时间 _lastHideTime: $_lastHideTime');
+
     final now = DateTime.now();
-    if (_lastHideTime != null &&
-        now.difference(_lastHideTime!) < const Duration(milliseconds: 200)) {
-      return;
+    if (_lastHideTime != null) {
+      final timeSinceHide = now.difference(_lastHideTime!);
+      debugPrint('[WindowManager] 距离上次隐藏已过: ${timeSinceHide.inMilliseconds}ms');
+
+      if (timeSinceHide < const Duration(milliseconds: 200)) {
+        debugPrint('[WindowManager] ⚠️ 防抖触发：距离上次隐藏不足200ms，忽略本次请求');
+        return;
+      }
     }
+
     if (_isShowing) {
+      debugPrint('[WindowManager] 窗口当前显示中，准备隐藏');
       await hideHistory();
     } else {
+      debugPrint('[WindowManager] 窗口当前隐藏中，准备显示');
       await showHistory(source: source);
     }
+    debugPrint('[WindowManager] toggleHistory 执行完成');
   }
 
   /// 显示剪贴板历史窗口。
@@ -103,30 +117,47 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
   Future<void> showHistory({
     TriggerSource source = TriggerSource.hotkey,
   }) async {
+    debugPrint('[WindowManager] ========== showHistory 开始执行 ==========');
+    debugPrint('[WindowManager] 显示来源: $source');
+
     if (Platform.isMacOS || Platform.isWindows) {
       try {
+        debugPrint('[WindowManager] 尝试记录活跃应用...');
         const platform = MethodChannel('com.hali.clip/native_utils');
         await platform.invokeMethod('recordActiveApp');
+        debugPrint('[WindowManager] ✓ 活跃应用记录成功');
       } catch (e) {
-        debugPrint('[WindowManager] 记录活跃应用失败: $e');
+        debugPrint('[WindowManager] ❌ 记录活跃应用失败: $e');
       }
     }
 
+    debugPrint('[WindowManager] 执行路由跳转到 /clipboard');
     router.go('/clipboard');
+
+    debugPrint('[WindowManager] 设置窗口大小: $_windowSize');
     await windowManager.setSize(_windowSize);
 
     // 使用 ScreenService 计算窗口位置
     final Offset position;
     if (source == TriggerSource.tray) {
+      debugPrint('[WindowManager] 计算托盘位置...');
+      final screenIndex = ref.read(popupScreenProvider);
+      debugPrint('[WindowManager] 屏幕索引: $screenIndex');
+
       position = await ScreenService.calculateWindowPosition(
         position: PopupPosition.statusItem,
-        screenIndex: ref.read(popupScreenProvider),
+        screenIndex: screenIndex,
         windowSize: _windowSize,
       );
+      debugPrint('[WindowManager] ✓ 托盘位置计算完成: $position');
     } else {
+      debugPrint('[WindowManager] 计算快捷键触发位置...');
       final positionMode = _parsePopupPosition(ref.read(popupPositionProvider));
+      debugPrint('[WindowManager] 位置模式: $positionMode');
+
       final prefs = ref.read(sharedPrefsProvider);
       final lastPosition = _getLastPosition(prefs);
+      debugPrint('[WindowManager] 上次位置: $lastPosition');
 
       position = await ScreenService.calculateWindowPosition(
         position: positionMode,
@@ -134,22 +165,33 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
         windowSize: _windowSize,
         lastPosition: lastPosition,
       );
+      debugPrint('[WindowManager] ✓ 位置计算完成: $position');
 
       // 保存位置（用于 lastPosition 模式）
       if (positionMode == PopupPosition.lastPosition) {
         await _saveLastPosition(prefs, position);
+        debugPrint('[WindowManager] ✓ 位置已保存');
       }
     }
 
+    debugPrint('[WindowManager] 设置窗口位置: $position');
     await windowManager.setPosition(position);
-    await windowManager.show();
-    await windowManager.focus();
-    _isShowing = true;
 
+    debugPrint('[WindowManager] 显示窗口...');
+    await windowManager.show();
+
+    debugPrint('[WindowManager] 聚焦窗口...');
+    await windowManager.focus();
+
+    _isShowing = true;
+    debugPrint('[WindowManager] ✓ _isShowing 已设置为 true');
+
+    debugPrint('[WindowManager] 重置搜索状态...');
     ref.read(historySearchQueryProvider.notifier).value = '';
     ref.read(historySelectedIndexProvider.notifier).value = 0;
     ref.read(historyFocusRequestProvider.notifier).request();
-    debugPrint('[WindowManager] 历史记录窗口已显示');
+
+    debugPrint('[WindowManager] ========== 历史记录窗口显示完成 ==========');
   }
 
   /// 解析字符串配置为 PopupPosition 枚举。
@@ -188,10 +230,18 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
 
   /// 隐藏当前主窗口并记录时间戳。
   Future<void> hideHistory() async {
+    debugPrint('[WindowManager] ========== hideHistory 开始执行 ==========');
+    debugPrint('[WindowManager] 当前 _isShowing: $_isShowing');
+
     router.go('/clipboard');
     await windowManager.hide();
     _isShowing = false;
     _lastHideTime = DateTime.now();
+
+    debugPrint('[WindowManager] ✓ 窗口已隐藏');
+    debugPrint('[WindowManager] _isShowing 已设置为 false');
+    debugPrint('[WindowManager] _lastHideTime 已更新: $_lastHideTime');
+    debugPrint('[WindowManager] ========== hideHistory 执行完成 ==========');
   }
 
   /// 显示应用程序的设置界面。
@@ -209,10 +259,13 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
 
   /// 窗口失去焦点时的监听回调。
   ///
-  /// 用于实现“点击别处自动隐藏”的剪贴板工具常见行为。
+  /// 用于实现”点击别处自动隐藏”的剪贴板工具常见行为。
   @override
   void onWindowBlur() {
-    debugPrint('[WindowManager] 窗口失去焦点，执行自动隐藏');
+    debugPrint('[WindowManager] ========== 窗口失去焦点事件触发 ==========');
+    debugPrint('[WindowManager] 时间: ${DateTime.now()}');
+    debugPrint('[WindowManager] 当前 _isShowing: $_isShowing');
+    debugPrint('[WindowManager] 执行自动隐藏');
     hideHistory();
   }
 
