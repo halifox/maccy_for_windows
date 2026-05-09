@@ -11,6 +11,7 @@ import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/core/utils/text_formatter.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
 import 'package:maccy/features/history/ui/widgets/preview_popover.dart';
+import 'package:maccy/features/history/ui/widgets/keyboard_shortcut_widget.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -221,37 +222,80 @@ class _HistoryHeader extends HookConsumerWidget {
       }
     });
 
-    return Container(
+    return Padding(
       padding: const EdgeInsets.all(MaccyUIConstants.searchFieldPadding),
-      child: CupertinoTextField(
-        controller: searchController,
-        focusNode: searchFocusNode,
-        autofocus: true,
-        placeholder: 'Search...',
-        // itemSize: MaccyUIConstants.searchFieldIconSize,
-        padding: const EdgeInsetsDirectional.fromSTEB(
-          MaccyUIConstants.searchFieldInternalHorizontalPadding,
-          MaccyUIConstants.searchFieldInternalVerticalPadding,
-          MaccyUIConstants.searchFieldInternalHorizontalPadding,
-          MaccyUIConstants.searchFieldInternalVerticalPadding,
+      child: Container(
+        height: MaccyUIConstants.searchFieldHeight,
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withOpacity(0.1)
+              : Colors.black.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
         ),
-        // borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
-        // backgroundColor: isDark
-        //     ? Colors.white10
-        //     : Colors.black.withValues(alpha: 0.06),
-        style: TextStyle(
-          fontSize: MaccyUIConstants.searchFieldFontSize,
-          color: isDark ? Colors.white : Colors.black,
-          fontFamily: Platform.isWindows
-              ? MaccyUIConstants.systemFontFamilyWindows
-              : MaccyUIConstants.systemFontFamily,
+        child: Row(
+          children: [
+            // 搜索图标
+            Padding(
+              padding: const EdgeInsets.only(
+                left: MaccyUIConstants.searchFieldInternalHorizontalPadding,
+              ),
+              child: Icon(
+                Icons.search,
+                size: MaccyUIConstants.searchFieldIconSize,
+                color: (isDark ? Colors.white : Colors.black)
+                    .withOpacity(MaccyUIConstants.searchFieldIconOpacity),
+              ),
+            ),
+            // 输入框
+            Expanded(
+              child: TextField(
+                controller: searchController,
+                focusNode: searchFocusNode,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search...',
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: MaccyUIConstants.searchFieldInternalHorizontalPadding,
+                  ),
+                ),
+                style: TextStyle(
+                  fontSize: MaccyUIConstants.searchFieldFontSize,
+                  color: isDark ? Colors.white : Colors.black,
+                  fontFamily: Platform.isWindows
+                      ? MaccyUIConstants.systemFontFamilyWindows
+                      : MaccyUIConstants.systemFontFamily,
+                ),
+                onChanged: (value) {
+                  debouncer.run(() {
+                    ref.read(historySearchQueryProvider.notifier).value = value;
+                    ref.read(historySelectedIndexProvider.notifier).value = 0;
+                  });
+                },
+              ),
+            ),
+            // 清除按钮
+            if (searchQuery.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  searchController.clear();
+                  ref.read(historySearchQueryProvider.notifier).value = '';
+                  ref.read(historySelectedIndexProvider.notifier).value = 0;
+                },
+                child: Padding(
+                  padding: const EdgeInsets.only(
+                    right: MaccyUIConstants.searchFieldInternalHorizontalPadding,
+                  ),
+                  child: Icon(
+                    Icons.cancel,
+                    size: MaccyUIConstants.searchFieldIconSize,
+                    color: (isDark ? Colors.white : Colors.black)
+                        .withOpacity(MaccyUIConstants.searchFieldClearButtonOpacity),
+                  ),
+                ),
+              ),
+          ],
         ),
-        onChanged: (value) {
-          debouncer.run(() {
-            ref.read(historySearchQueryProvider.notifier).value = value;
-            ref.read(historySelectedIndexProvider.notifier).value = 0;
-          });
-        },
       ),
     );
   }
@@ -356,44 +400,28 @@ class _HistoryRow extends HookConsumerWidget {
                 horizontal: MaccyUIConstants.contentLeadingPadding,
                 vertical: 0,
               ),
-              color: isSelected ? selectionColor : Colors.transparent,
+              decoration: BoxDecoration(
+                color: isSelected ? selectionColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+              ),
               child: Row(
                 children: [
-                  if (item.pin != null)
-                    const Icon(Icons.push_pin, size: 10, color: Colors.blueAccent),
                   Expanded(
-                    child: Padding(
-                      padding: EdgeInsets.only(left: item.pin != null ? 4 : 0),
-                      child: buildContent(ref, isSelected, isDark),
-                    ),
+                    child: buildContent(ref, isSelected, isDark),
                   ),
-                  if (isSelected) ...[
-                    _HoverIcon(
-                      icon: item.pin != null ? Icons.push_pin : Icons.push_pin_outlined,
-                      onTap: onPin,
-                      hoverColor: Colors.white,
-                    ),
-                    const SizedBox(width: 8),
-                    _HoverIcon(
-                      icon: Icons.delete_outline,
-                      onTap: onDelete,
-                      hoverColor: Colors.redAccent,
-                    ),
-                    const SizedBox(width: 8),
-                  ],
                   if (shortcut != null)
-                    Text(
-                      '⌘$shortcut',
-                      style: TextStyle(
-                        fontSize: MaccyUIConstants.shortcutFontSize,
-                        fontFamily: Platform.isWindows
-                            ? MaccyUIConstants.systemFontFamilyWindows
-                            : MaccyUIConstants.systemFontFamily,
-                        color: isSelected
-                            ? Colors.white70
-                            : (isDark ? Colors.white24 : Colors.black26),
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        right: MaccyUIConstants.shortcutTrailingPadding,
                       ),
-                    ),
+                      child: KeyboardShortcutWidget(
+                        shortcut: '⌘$shortcut',
+                        isSelected: isSelected,
+                        isDark: isDark,
+                      ),
+                    )
+                  else
+                    const SizedBox(width: MaccyUIConstants.shortcutPlaceholderWidth),
                 ],
               ),
             ),
@@ -530,44 +558,6 @@ class _TextContent extends HookConsumerWidget {
   }
 }
 
-/// 带有悬停变色效果的图标组件。
-///
-/// 字段说明:
-/// [icon] 图标数据。
-/// [onTap] 点击回调。
-/// [hoverColor] 鼠标悬停时的颜色。
-/// [baseColor] 正常状态下的颜色。
-class _HoverIcon extends HookWidget {
-  const _HoverIcon({
-    required this.icon,
-    required this.onTap,
-    this.hoverColor = Colors.white,
-  });
-
-  final IconData icon;
-  final VoidCallback onTap;
-  final Color hoverColor;
-  final Color baseColor = Colors.white70;
-
-  @override
-  Widget build(BuildContext context) {
-    final isHovered = useState(false);
-    return MouseRegion(
-      onEnter: (_) => isHovered.value = true,
-      onExit: (_) => isHovered.value = false,
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: Icon(
-          icon,
-          size: 14,
-          color: isHovered.value ? hoverColor : baseColor,
-        ),
-      ),
-    );
-  }
-}
-
 /// 菜单行组件（用于底部菜单）。
 ///
 /// 字段说明:
@@ -609,7 +599,10 @@ class _MenuRow extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(
             horizontal: MaccyUIConstants.contentLeadingPadding,
           ),
-          color: isSelected ? selectionColor : Colors.transparent,
+          decoration: BoxDecoration(
+            color: isSelected ? selectionColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+          ),
           child: Row(
             children: [
               Expanded(
@@ -627,18 +620,18 @@ class _MenuRow extends ConsumerWidget {
                 ),
               ),
               if (shortcut != null)
-                Text(
-                  shortcut!,
-                  style: TextStyle(
-                    fontSize: MaccyUIConstants.shortcutFontSize,
-                    fontFamily: Platform.isWindows
-                        ? MaccyUIConstants.systemFontFamilyWindows
-                        : MaccyUIConstants.systemFontFamily,
-                    color: isSelected
-                        ? Colors.white70
-                        : (isDark ? Colors.white24 : Colors.black26),
+                Padding(
+                  padding: const EdgeInsets.only(
+                    right: MaccyUIConstants.shortcutTrailingPadding,
                   ),
-                ),
+                  child: KeyboardShortcutWidget(
+                    shortcut: shortcut!,
+                    isSelected: isSelected,
+                    isDark: isDark,
+                  ),
+                )
+              else
+                const SizedBox(width: MaccyUIConstants.shortcutPlaceholderWidth),
             ],
           ),
         ),

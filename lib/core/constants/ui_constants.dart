@@ -20,11 +20,11 @@ class MaccyUIConstants {
   /// 水平分隔符内边距
   static const double horizontalSeparatorPadding = 6.0;
 
-  /// 圆角半径（macOS 26+: 6, 旧版: 4）
-  static const double cornerRadius = 6.0;
+  /// 圆角半径（Maccy v2.6.1 标准）
+  static const double cornerRadius = 4.0;
 
-  /// 列表项高度（macOS 26+: 24, 旧版: 22）
-  static const double itemHeight = 24.0;
+  /// 列表项高度（Maccy v2.6.1 标准）
+  static const double itemHeight = 22.0;
 
   /// 默认窗口宽度
   static const double defaultWindowWidth = 450.0;
@@ -66,6 +66,18 @@ class MaccyUIConstants {
   /// 快捷键占位宽度（无快捷键时）
   static const double shortcutPlaceholderWidth = 50.0;
 
+  /// 快捷键修饰符宽度
+  static const double shortcutModifiersWidth = 55.0;
+
+  /// 快捷键字符宽度
+  static const double shortcutCharacterWidth = 12.0;
+
+  /// 快捷键间距
+  static const double shortcutSpacing = 1.0;
+
+  /// 快捷键总宽度（55 + 1 + 12 - 1）
+  static const double shortcutTotalWidth = 67.0;
+
   // ============================================================================
   // HistoryListView 尺寸常量（来自 HistoryListView.swift）
   // ============================================================================
@@ -89,6 +101,9 @@ class MaccyUIConstants {
   /// 悬停背景色透明度（用于修复 macOS 26 悬停问题）
   static const double hoverBackgroundOpacity = 0.001;
 
+  /// 快捷键文本透明度
+  static const double shortcutOpacity = 0.7;
+
   // ============================================================================
   // 字体常量
   // ============================================================================
@@ -97,10 +112,10 @@ class MaccyUIConstants {
   static const double primaryFontSize = 13.0;
 
   /// 快捷键文本字体大小
-  static const double shortcutFontSize = 12.0;
+  static const double shortcutFontSize = 13.0;
 
   /// 搜索框文本字体大小
-  static const double searchFieldFontSize = 12.0;
+  static const double searchFieldFontSize = 13.0;
 
   /// 系统字体名称（macOS）
   static const String systemFontFamily = '.AppleSystemUIFont';
@@ -135,8 +150,14 @@ class MaccyUIConstants {
   // 搜索框常量
   // ============================================================================
 
+  /// 搜索框高度
+  static const double searchFieldHeight = 23.0;
+
+  /// 搜索框圆角半径
+  static const double searchFieldCornerRadius = 5.0;
+
   /// 搜索框内边距
-  static const double searchFieldPadding = 5.0;
+  static const double searchFieldPadding = 10.0;
 
   /// 搜索框内部垂直边距
   static const double searchFieldInternalVerticalPadding = 4.0;
@@ -144,9 +165,12 @@ class MaccyUIConstants {
   /// 搜索框内部水平边距
   static const double searchFieldInternalHorizontalPadding = 5.0;
 
-  /// 搜索框圆角半径
-  static const double searchFieldCornerRadius = 4.0;
-
   /// 搜索框图标大小
-  static const double searchFieldIconSize = 12.0;
+  static const double searchFieldIconSize = 11.0;
+
+  /// 搜索框图标透明度
+  static const double searchFieldIconOpacity = 0.8;
+
+  /// 搜索框清除按钮透明度
+  static const double searchFieldClearButtonOpacity = 0.9;
 }
