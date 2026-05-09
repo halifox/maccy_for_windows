@@ -93,6 +93,65 @@ class $ClipboardEntriesTable extends ClipboardEntries
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _copyCountMeta = const VerificationMeta(
+    'copyCount',
+  );
+  @override
+  late final GeneratedColumn<int> copyCount = GeneratedColumn<int>(
+    'copy_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _firstCopiedAtMeta = const VerificationMeta(
+    'firstCopiedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> firstCopiedAt =
+      GeneratedColumn<DateTime>(
+        'first_copied_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+        defaultValue: currentDateAndTime,
+      );
+  static const VerificationMeta _lastCopiedAtMeta = const VerificationMeta(
+    'lastCopiedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> lastCopiedAt = GeneratedColumn<DateTime>(
+    'last_copied_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _htmlContentMeta = const VerificationMeta(
+    'htmlContent',
+  );
+  @override
+  late final GeneratedColumn<String> htmlContent = GeneratedColumn<String>(
+    'html_content',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _rtfContentMeta = const VerificationMeta(
+    'rtfContent',
+  );
+  @override
+  late final GeneratedColumn<String> rtfContent = GeneratedColumn<String>(
+    'rtf_content',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -102,6 +161,11 @@ class $ClipboardEntriesTable extends ClipboardEntries
     isPinned,
     pinOrder,
     appName,
+    copyCount,
+    firstCopiedAt,
+    lastCopiedAt,
+    htmlContent,
+    rtfContent,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -156,6 +220,45 @@ class $ClipboardEntriesTable extends ClipboardEntries
         appName.isAcceptableOrUnknown(data['app_name']!, _appNameMeta),
       );
     }
+    if (data.containsKey('copy_count')) {
+      context.handle(
+        _copyCountMeta,
+        copyCount.isAcceptableOrUnknown(data['copy_count']!, _copyCountMeta),
+      );
+    }
+    if (data.containsKey('first_copied_at')) {
+      context.handle(
+        _firstCopiedAtMeta,
+        firstCopiedAt.isAcceptableOrUnknown(
+          data['first_copied_at']!,
+          _firstCopiedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_copied_at')) {
+      context.handle(
+        _lastCopiedAtMeta,
+        lastCopiedAt.isAcceptableOrUnknown(
+          data['last_copied_at']!,
+          _lastCopiedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('html_content')) {
+      context.handle(
+        _htmlContentMeta,
+        htmlContent.isAcceptableOrUnknown(
+          data['html_content']!,
+          _htmlContentMeta,
+        ),
+      );
+    }
+    if (data.containsKey('rtf_content')) {
+      context.handle(
+        _rtfContentMeta,
+        rtfContent.isAcceptableOrUnknown(data['rtf_content']!, _rtfContentMeta),
+      );
+    }
     return context;
   }
 
@@ -193,6 +296,26 @@ class $ClipboardEntriesTable extends ClipboardEntries
         DriftSqlType.string,
         data['${effectivePrefix}app_name'],
       ),
+      copyCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}copy_count'],
+      )!,
+      firstCopiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}first_copied_at'],
+      )!,
+      lastCopiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_copied_at'],
+      )!,
+      htmlContent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}html_content'],
+      ),
+      rtfContent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rtf_content'],
+      ),
     );
   }
 
@@ -210,6 +333,11 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
   final bool isPinned;
   final int? pinOrder;
   final String? appName;
+  final int copyCount;
+  final DateTime firstCopiedAt;
+  final DateTime lastCopiedAt;
+  final String? htmlContent;
+  final String? rtfContent;
   const ClipboardEntry({
     required this.id,
     required this.content,
@@ -218,6 +346,11 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     required this.isPinned,
     this.pinOrder,
     this.appName,
+    required this.copyCount,
+    required this.firstCopiedAt,
+    required this.lastCopiedAt,
+    this.htmlContent,
+    this.rtfContent,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -232,6 +365,15 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     }
     if (!nullToAbsent || appName != null) {
       map['app_name'] = Variable<String>(appName);
+    }
+    map['copy_count'] = Variable<int>(copyCount);
+    map['first_copied_at'] = Variable<DateTime>(firstCopiedAt);
+    map['last_copied_at'] = Variable<DateTime>(lastCopiedAt);
+    if (!nullToAbsent || htmlContent != null) {
+      map['html_content'] = Variable<String>(htmlContent);
+    }
+    if (!nullToAbsent || rtfContent != null) {
+      map['rtf_content'] = Variable<String>(rtfContent);
     }
     return map;
   }
@@ -249,6 +391,15 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       appName: appName == null && nullToAbsent
           ? const Value.absent()
           : Value(appName),
+      copyCount: Value(copyCount),
+      firstCopiedAt: Value(firstCopiedAt),
+      lastCopiedAt: Value(lastCopiedAt),
+      htmlContent: htmlContent == null && nullToAbsent
+          ? const Value.absent()
+          : Value(htmlContent),
+      rtfContent: rtfContent == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rtfContent),
     );
   }
 
@@ -265,6 +416,11 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       pinOrder: serializer.fromJson<int?>(json['pinOrder']),
       appName: serializer.fromJson<String?>(json['appName']),
+      copyCount: serializer.fromJson<int>(json['copyCount']),
+      firstCopiedAt: serializer.fromJson<DateTime>(json['firstCopiedAt']),
+      lastCopiedAt: serializer.fromJson<DateTime>(json['lastCopiedAt']),
+      htmlContent: serializer.fromJson<String?>(json['htmlContent']),
+      rtfContent: serializer.fromJson<String?>(json['rtfContent']),
     );
   }
   @override
@@ -278,6 +434,11 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       'isPinned': serializer.toJson<bool>(isPinned),
       'pinOrder': serializer.toJson<int?>(pinOrder),
       'appName': serializer.toJson<String?>(appName),
+      'copyCount': serializer.toJson<int>(copyCount),
+      'firstCopiedAt': serializer.toJson<DateTime>(firstCopiedAt),
+      'lastCopiedAt': serializer.toJson<DateTime>(lastCopiedAt),
+      'htmlContent': serializer.toJson<String?>(htmlContent),
+      'rtfContent': serializer.toJson<String?>(rtfContent),
     };
   }
 
@@ -289,6 +450,11 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     bool? isPinned,
     Value<int?> pinOrder = const Value.absent(),
     Value<String?> appName = const Value.absent(),
+    int? copyCount,
+    DateTime? firstCopiedAt,
+    DateTime? lastCopiedAt,
+    Value<String?> htmlContent = const Value.absent(),
+    Value<String?> rtfContent = const Value.absent(),
   }) => ClipboardEntry(
     id: id ?? this.id,
     content: content ?? this.content,
@@ -297,6 +463,11 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     isPinned: isPinned ?? this.isPinned,
     pinOrder: pinOrder.present ? pinOrder.value : this.pinOrder,
     appName: appName.present ? appName.value : this.appName,
+    copyCount: copyCount ?? this.copyCount,
+    firstCopiedAt: firstCopiedAt ?? this.firstCopiedAt,
+    lastCopiedAt: lastCopiedAt ?? this.lastCopiedAt,
+    htmlContent: htmlContent.present ? htmlContent.value : this.htmlContent,
+    rtfContent: rtfContent.present ? rtfContent.value : this.rtfContent,
   );
   ClipboardEntry copyWithCompanion(ClipboardEntriesCompanion data) {
     return ClipboardEntry(
@@ -307,6 +478,19 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
       pinOrder: data.pinOrder.present ? data.pinOrder.value : this.pinOrder,
       appName: data.appName.present ? data.appName.value : this.appName,
+      copyCount: data.copyCount.present ? data.copyCount.value : this.copyCount,
+      firstCopiedAt: data.firstCopiedAt.present
+          ? data.firstCopiedAt.value
+          : this.firstCopiedAt,
+      lastCopiedAt: data.lastCopiedAt.present
+          ? data.lastCopiedAt.value
+          : this.lastCopiedAt,
+      htmlContent: data.htmlContent.present
+          ? data.htmlContent.value
+          : this.htmlContent,
+      rtfContent: data.rtfContent.present
+          ? data.rtfContent.value
+          : this.rtfContent,
     );
   }
 
@@ -319,14 +503,31 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
           ..write('createdAt: $createdAt, ')
           ..write('isPinned: $isPinned, ')
           ..write('pinOrder: $pinOrder, ')
-          ..write('appName: $appName')
+          ..write('appName: $appName, ')
+          ..write('copyCount: $copyCount, ')
+          ..write('firstCopiedAt: $firstCopiedAt, ')
+          ..write('lastCopiedAt: $lastCopiedAt, ')
+          ..write('htmlContent: $htmlContent, ')
+          ..write('rtfContent: $rtfContent')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, content, type, createdAt, isPinned, pinOrder, appName);
+  int get hashCode => Object.hash(
+    id,
+    content,
+    type,
+    createdAt,
+    isPinned,
+    pinOrder,
+    appName,
+    copyCount,
+    firstCopiedAt,
+    lastCopiedAt,
+    htmlContent,
+    rtfContent,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -337,7 +538,12 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
           other.createdAt == this.createdAt &&
           other.isPinned == this.isPinned &&
           other.pinOrder == this.pinOrder &&
-          other.appName == this.appName);
+          other.appName == this.appName &&
+          other.copyCount == this.copyCount &&
+          other.firstCopiedAt == this.firstCopiedAt &&
+          other.lastCopiedAt == this.lastCopiedAt &&
+          other.htmlContent == this.htmlContent &&
+          other.rtfContent == this.rtfContent);
 }
 
 class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
@@ -348,6 +554,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
   final Value<bool> isPinned;
   final Value<int?> pinOrder;
   final Value<String?> appName;
+  final Value<int> copyCount;
+  final Value<DateTime> firstCopiedAt;
+  final Value<DateTime> lastCopiedAt;
+  final Value<String?> htmlContent;
+  final Value<String?> rtfContent;
   const ClipboardEntriesCompanion({
     this.id = const Value.absent(),
     this.content = const Value.absent(),
@@ -356,6 +567,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     this.isPinned = const Value.absent(),
     this.pinOrder = const Value.absent(),
     this.appName = const Value.absent(),
+    this.copyCount = const Value.absent(),
+    this.firstCopiedAt = const Value.absent(),
+    this.lastCopiedAt = const Value.absent(),
+    this.htmlContent = const Value.absent(),
+    this.rtfContent = const Value.absent(),
   });
   ClipboardEntriesCompanion.insert({
     this.id = const Value.absent(),
@@ -365,6 +581,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     this.isPinned = const Value.absent(),
     this.pinOrder = const Value.absent(),
     this.appName = const Value.absent(),
+    this.copyCount = const Value.absent(),
+    this.firstCopiedAt = const Value.absent(),
+    this.lastCopiedAt = const Value.absent(),
+    this.htmlContent = const Value.absent(),
+    this.rtfContent = const Value.absent(),
   }) : content = Value(content);
   static Insertable<ClipboardEntry> custom({
     Expression<int>? id,
@@ -374,6 +595,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     Expression<bool>? isPinned,
     Expression<int>? pinOrder,
     Expression<String>? appName,
+    Expression<int>? copyCount,
+    Expression<DateTime>? firstCopiedAt,
+    Expression<DateTime>? lastCopiedAt,
+    Expression<String>? htmlContent,
+    Expression<String>? rtfContent,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -383,6 +609,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
       if (isPinned != null) 'is_pinned': isPinned,
       if (pinOrder != null) 'pin_order': pinOrder,
       if (appName != null) 'app_name': appName,
+      if (copyCount != null) 'copy_count': copyCount,
+      if (firstCopiedAt != null) 'first_copied_at': firstCopiedAt,
+      if (lastCopiedAt != null) 'last_copied_at': lastCopiedAt,
+      if (htmlContent != null) 'html_content': htmlContent,
+      if (rtfContent != null) 'rtf_content': rtfContent,
     });
   }
 
@@ -394,6 +625,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     Value<bool>? isPinned,
     Value<int?>? pinOrder,
     Value<String?>? appName,
+    Value<int>? copyCount,
+    Value<DateTime>? firstCopiedAt,
+    Value<DateTime>? lastCopiedAt,
+    Value<String?>? htmlContent,
+    Value<String?>? rtfContent,
   }) {
     return ClipboardEntriesCompanion(
       id: id ?? this.id,
@@ -403,6 +639,11 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
       isPinned: isPinned ?? this.isPinned,
       pinOrder: pinOrder ?? this.pinOrder,
       appName: appName ?? this.appName,
+      copyCount: copyCount ?? this.copyCount,
+      firstCopiedAt: firstCopiedAt ?? this.firstCopiedAt,
+      lastCopiedAt: lastCopiedAt ?? this.lastCopiedAt,
+      htmlContent: htmlContent ?? this.htmlContent,
+      rtfContent: rtfContent ?? this.rtfContent,
     );
   }
 
@@ -430,6 +671,21 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     if (appName.present) {
       map['app_name'] = Variable<String>(appName.value);
     }
+    if (copyCount.present) {
+      map['copy_count'] = Variable<int>(copyCount.value);
+    }
+    if (firstCopiedAt.present) {
+      map['first_copied_at'] = Variable<DateTime>(firstCopiedAt.value);
+    }
+    if (lastCopiedAt.present) {
+      map['last_copied_at'] = Variable<DateTime>(lastCopiedAt.value);
+    }
+    if (htmlContent.present) {
+      map['html_content'] = Variable<String>(htmlContent.value);
+    }
+    if (rtfContent.present) {
+      map['rtf_content'] = Variable<String>(rtfContent.value);
+    }
     return map;
   }
 
@@ -442,7 +698,12 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
           ..write('createdAt: $createdAt, ')
           ..write('isPinned: $isPinned, ')
           ..write('pinOrder: $pinOrder, ')
-          ..write('appName: $appName')
+          ..write('appName: $appName, ')
+          ..write('copyCount: $copyCount, ')
+          ..write('firstCopiedAt: $firstCopiedAt, ')
+          ..write('lastCopiedAt: $lastCopiedAt, ')
+          ..write('htmlContent: $htmlContent, ')
+          ..write('rtfContent: $rtfContent')
           ..write(')'))
         .toString();
   }
@@ -470,6 +731,11 @@ typedef $$ClipboardEntriesTableCreateCompanionBuilder =
       Value<bool> isPinned,
       Value<int?> pinOrder,
       Value<String?> appName,
+      Value<int> copyCount,
+      Value<DateTime> firstCopiedAt,
+      Value<DateTime> lastCopiedAt,
+      Value<String?> htmlContent,
+      Value<String?> rtfContent,
     });
 typedef $$ClipboardEntriesTableUpdateCompanionBuilder =
     ClipboardEntriesCompanion Function({
@@ -480,6 +746,11 @@ typedef $$ClipboardEntriesTableUpdateCompanionBuilder =
       Value<bool> isPinned,
       Value<int?> pinOrder,
       Value<String?> appName,
+      Value<int> copyCount,
+      Value<DateTime> firstCopiedAt,
+      Value<DateTime> lastCopiedAt,
+      Value<String?> htmlContent,
+      Value<String?> rtfContent,
     });
 
 class $$ClipboardEntriesTableFilterComposer
@@ -523,6 +794,31 @@ class $$ClipboardEntriesTableFilterComposer
 
   ColumnFilters<String> get appName => $composableBuilder(
     column: $table.appName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get copyCount => $composableBuilder(
+    column: $table.copyCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get firstCopiedAt => $composableBuilder(
+    column: $table.firstCopiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastCopiedAt => $composableBuilder(
+    column: $table.lastCopiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get htmlContent => $composableBuilder(
+    column: $table.htmlContent,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get rtfContent => $composableBuilder(
+    column: $table.rtfContent,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -570,6 +866,31 @@ class $$ClipboardEntriesTableOrderingComposer
     column: $table.appName,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get copyCount => $composableBuilder(
+    column: $table.copyCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get firstCopiedAt => $composableBuilder(
+    column: $table.firstCopiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastCopiedAt => $composableBuilder(
+    column: $table.lastCopiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get htmlContent => $composableBuilder(
+    column: $table.htmlContent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get rtfContent => $composableBuilder(
+    column: $table.rtfContent,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ClipboardEntriesTableAnnotationComposer
@@ -601,6 +922,29 @@ class $$ClipboardEntriesTableAnnotationComposer
 
   GeneratedColumn<String> get appName =>
       $composableBuilder(column: $table.appName, builder: (column) => column);
+
+  GeneratedColumn<int> get copyCount =>
+      $composableBuilder(column: $table.copyCount, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get firstCopiedAt => $composableBuilder(
+    column: $table.firstCopiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get lastCopiedAt => $composableBuilder(
+    column: $table.lastCopiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get htmlContent => $composableBuilder(
+    column: $table.htmlContent,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get rtfContent => $composableBuilder(
+    column: $table.rtfContent,
+    builder: (column) => column,
+  );
 }
 
 class $$ClipboardEntriesTableTableManager
@@ -647,6 +991,11 @@ class $$ClipboardEntriesTableTableManager
                 Value<bool> isPinned = const Value.absent(),
                 Value<int?> pinOrder = const Value.absent(),
                 Value<String?> appName = const Value.absent(),
+                Value<int> copyCount = const Value.absent(),
+                Value<DateTime> firstCopiedAt = const Value.absent(),
+                Value<DateTime> lastCopiedAt = const Value.absent(),
+                Value<String?> htmlContent = const Value.absent(),
+                Value<String?> rtfContent = const Value.absent(),
               }) => ClipboardEntriesCompanion(
                 id: id,
                 content: content,
@@ -655,6 +1004,11 @@ class $$ClipboardEntriesTableTableManager
                 isPinned: isPinned,
                 pinOrder: pinOrder,
                 appName: appName,
+                copyCount: copyCount,
+                firstCopiedAt: firstCopiedAt,
+                lastCopiedAt: lastCopiedAt,
+                htmlContent: htmlContent,
+                rtfContent: rtfContent,
               ),
           createCompanionCallback:
               ({
@@ -665,6 +1019,11 @@ class $$ClipboardEntriesTableTableManager
                 Value<bool> isPinned = const Value.absent(),
                 Value<int?> pinOrder = const Value.absent(),
                 Value<String?> appName = const Value.absent(),
+                Value<int> copyCount = const Value.absent(),
+                Value<DateTime> firstCopiedAt = const Value.absent(),
+                Value<DateTime> lastCopiedAt = const Value.absent(),
+                Value<String?> htmlContent = const Value.absent(),
+                Value<String?> rtfContent = const Value.absent(),
               }) => ClipboardEntriesCompanion.insert(
                 id: id,
                 content: content,
@@ -673,6 +1032,11 @@ class $$ClipboardEntriesTableTableManager
                 isPinned: isPinned,
                 pinOrder: pinOrder,
                 appName: appName,
+                copyCount: copyCount,
+                firstCopiedAt: firstCopiedAt,
+                lastCopiedAt: lastCopiedAt,
+                htmlContent: htmlContent,
+                rtfContent: rtfContent,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

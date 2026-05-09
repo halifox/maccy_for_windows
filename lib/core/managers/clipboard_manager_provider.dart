@@ -7,8 +7,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
+import 'package:maccy/core/services/clipboard_filter_service.dart';
 import 'package:maccy/core/services/foreground_app_service.dart';
 import 'package:maccy/core/services/paste_service.dart';
+import 'package:maccy/core/services/rich_text_service.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -172,8 +174,32 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
 
   Future<void> _processClipboardChange() async {
     debugPrint('Processing Clipboard Change');
-    final isPaused = ref.read(isPausedProvider);
+
+    // 1. 检查是否暂停监听
+    final isPaused = ref.read(ignoreEventsProvider);
     if (isPaused) return;
+
+    // 2. 获取前台应用名称（Windows）
+    String? appName;
+    if (Platform.isWindows) {
+      appName = ForegroundAppService.getForegroundAppName();
+      debugPrint('[ClipboardManager] 来源应用: $appName');
+
+      // 3. 应用过滤检查
+      final ignoredApps = ref.read(ignoredAppsProvider);
+      final isWhitelistMode = ref.read(ignoreAllAppsExceptListedProvider);
+
+      if (ClipboardFilterService.shouldIgnoreApp(
+        appName,
+        ignoredApps: ignoredApps,
+        isWhitelistMode: isWhitelistMode,
+      )) {
+        debugPrint('[ClipboardManager] 应用被过滤: $appName');
+        return;
+      }
+    }
+
+    // 4. 检查内容类型设置
     final saveText = ref.read(saveTextProvider);
     final saveImage = ref.read(saveImagesProvider);
     final saveFile = ref.read(saveFilesProvider);
@@ -186,19 +212,22 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         .toList();
     debugPrint(formats.toString());
 
+    // 5. 处理文件类型
     if (reader.canProvide(Formats.fileUri)) {
       if (!saveFile) return;
       reader.getValue(Formats.fileUri, (fileUri) {
         if (fileUri != null) {
-          upsertClipboardEntry(fileUri.toFilePath(), 'file');
+          upsertClipboardEntry(fileUri.toFilePath(), 'file', appName);
         }
       });
       return;
     }
+
+    // 6. 处理图片类型
     if (!reader.canProvide(Formats.fileUri) && reader.canProvide(Formats.png)) {
       if (!saveImage) return;
       reader.getFile(Formats.png, (file) {
-        saveStreamToFile(file.getStream(), 'png');
+        saveStreamToFile(file.getStream(), 'png', appName);
       });
       return;
     }
@@ -206,7 +235,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         reader.canProvide(Formats.jpeg)) {
       if (!saveImage) return;
       reader.getFile(Formats.jpeg, (file) {
-        saveStreamToFile(file.getStream(), 'jpeg');
+        saveStreamToFile(file.getStream(), 'jpeg', appName);
       });
       return;
     }
@@ -214,48 +243,98 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         reader.canProvide(Formats.webp)) {
       if (!saveImage) return;
       reader.getFile(Formats.webp, (file) {
-        saveStreamToFile(file.getStream(), 'webp');
+        saveStreamToFile(file.getStream(), 'webp', appName);
       });
       return;
     }
+
+    // 7. 处理文本类型
     if (reader.canProvide(Formats.plainText)) {
       if (!saveText) return;
       reader.getValue(Formats.plainText, (text) {
         if (text != null) {
-          upsertClipboardEntry(text, 'text');
+          // 8. 正则表达式过滤
+          final regexPatterns = ref.read(ignoreRegexpProvider);
+          if (ClipboardFilterService.shouldIgnoreContent(text, regexPatterns)) {
+            debugPrint('[ClipboardManager] 内容被正则过滤');
+            return;
+          }
+
+          // 9. 读取富文本格式（仅 Windows）
+          String? htmlContent;
+          String? rtfContent;
+          if (Platform.isWindows) {
+            try {
+              htmlContent = RichTextService.readHtmlFromClipboard();
+              rtfContent = RichTextService.readRtfFromClipboard();
+              if (htmlContent != null) {
+                debugPrint('[ClipboardManager] 检测到 HTML 格式');
+              }
+              if (rtfContent != null) {
+                debugPrint('[ClipboardManager] 检测到 RTF 格式');
+              }
+            } catch (e) {
+              debugPrint('[ClipboardManager] 读取富文本失败: $e');
+            }
+          }
+
+          upsertClipboardEntry(
+            text,
+            'text',
+            appName,
+            htmlContent: htmlContent,
+            rtfContent: rtfContent,
+          );
         }
       });
     }
   }
 
-  Future<void> upsertClipboardEntry(String content, String type) async {
+  Future<void> upsertClipboardEntry(
+    String content,
+    String type,
+    String? appName, {
+    String? htmlContent,
+    String? rtfContent,
+  }) async {
     final db = ref.read(appDatabaseProvider);
 
-    // 获取来源应用名称（仅 Windows 平台）
-    String? appName;
-    if (Platform.isWindows) {
-      appName = ForegroundAppService.getForegroundAppName();
-      debugPrint('[ClipboardManager] 来源应用: $appName');
-    }
+    // 检查是否已存在
+    final existing = await (db.select(db.clipboardEntries)
+          ..where((t) => t.content.equals(content)))
+        .getSingleOrNull();
 
-    await db
-        .into(db.clipboardEntries)
-        .insert(
-          ClipboardEntriesCompanion.insert(
-            content: content,
-            type: Value(type),
-            createdAt: Value(DateTime.now()),
-            appName: Value(appName),
-          ),
-          onConflict: DoUpdate(
-            (old) => ClipboardEntriesCompanion(
-              createdAt: Value(DateTime.now()),
+    if (existing != null) {
+      // 已存在，更新复制次数和时间
+      await (db.update(db.clipboardEntries)
+            ..where((t) => t.id.equals(existing.id)))
+          .write(
+        ClipboardEntriesCompanion(
+          copyCount: Value(existing.copyCount + 1),
+          lastCopiedAt: Value(DateTime.now()),
+          appName: Value(appName),
+          htmlContent: Value(htmlContent),
+          rtfContent: Value(rtfContent),
+        ),
+      );
+      debugPrint('[ClipboardManager] 更新已存在条目，复制次数: ${existing.copyCount + 1}');
+    } else {
+      // 新条目，插入
+      await db.into(db.clipboardEntries).insert(
+            ClipboardEntriesCompanion.insert(
+              content: content,
               type: Value(type),
+              createdAt: Value(DateTime.now()),
               appName: Value(appName),
+              copyCount: const Value(1),
+              firstCopiedAt: Value(DateTime.now()),
+              lastCopiedAt: Value(DateTime.now()),
+              htmlContent: Value(htmlContent),
+              rtfContent: Value(rtfContent),
             ),
-            target: [db.clipboardEntries.content],
-          ),
-        );
+          );
+      debugPrint('[ClipboardManager] 插入新条目');
+    }
   }
 
   /// 处理并持久化文本/HTML/URI 类型的剪贴板条目。
@@ -264,6 +343,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
   Future<void> saveStreamToFile(
     Stream<Uint8List> dataStream,
     String extension,
+    String? appName,
   ) async {
     // 保存到本地文件
     final appDir = await getApplicationDocumentsDirectory();
@@ -292,6 +372,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       }
     }
 
-    await upsertClipboardEntry(filePath, 'image');
+    await upsertClipboardEntry(filePath, 'image', appName);
   }
 }

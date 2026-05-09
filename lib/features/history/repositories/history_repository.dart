@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
 import 'package:maccy/core/services/search_service.dart';
+import 'package:maccy/features/settings/providers/settings_provider.dart';
 
 part 'history_repository.g.dart';
 
@@ -13,15 +14,17 @@ part 'history_repository.g.dart';
 ///
 /// 字段说明:
 /// [_db] 注入的数据库实例。
+/// [_ref] Riverpod 引用，用于读取配置。
 class HistoryRepository {
 
-  HistoryRepository(this._db);
+  HistoryRepository(this._db, this._ref);
   final AppDatabase _db;
+  final Ref _ref;
 
   /// 监听并观察数据库中的剪贴板条目。
   ///
   /// 返回一个流，当数据库数据发生变化时自动推送最新的条目列表。支持根据 [query] 进行过滤。
-  /// 排序权重依次为：置顶状态 > 置顶排序权重 > 创建时间。
+  /// 排序规则：置顶状态 > 用户选择的排序模式（lastCopiedAt/firstCopiedAt/numberOfCopies）。
   ///
   /// [query] 搜索关键词。
   /// [searchMode] 搜索模式（exact, regex, mixed, fuzzy）。
@@ -31,14 +34,41 @@ class HistoryRepository {
     String searchMode = 'exact',
     required int limit,
   }) {
-    // 先获取所有条目（按排序规则）
-    final select = _db.select(_db.clipboardEntries)
-      ..orderBy([
+    final sortBy = _ref.read(sortByProvider);
+    final pinPosition = _ref.read(pinPositionProvider);
+
+    // 构建查询
+    final select = _db.select(_db.clipboardEntries);
+
+    // 构建排序规则
+    select.orderBy([
+      // 1. 置顶项目排序（根据配置在顶部或底部）
+      if (pinPosition == 'top')
         (t) => OrderingTerm.desc(t.isPinned),
-        (t) => OrderingTerm.desc(t.pinOrder),
-        (t) => OrderingTerm.desc(t.createdAt),
-      ])
-      ..limit(limit);
+
+      // 2. 置顶项目内部排序
+      (t) => OrderingTerm.desc(t.pinOrder),
+
+      // 3. 主排序规则
+      (t) {
+        switch (sortBy) {
+          case 'lastCopiedAt':
+            return OrderingTerm.desc(t.lastCopiedAt);
+          case 'firstCopiedAt':
+            return OrderingTerm.asc(t.firstCopiedAt);
+          case 'numberOfCopies':
+            return OrderingTerm.desc(t.copyCount);
+          default:
+            return OrderingTerm.desc(t.createdAt);
+        }
+      },
+
+      // 4. 置顶项目在底部时的排序
+      if (pinPosition == 'bottom')
+        (t) => OrderingTerm.asc(t.isPinned),
+    ]);
+
+    select.limit(limit);
 
     // 如果没有搜索关键词，直接返回
     if (query == null || query.isEmpty) {
@@ -101,6 +131,39 @@ class HistoryRepository {
         );
   }
 
+  /// 获取所有固定项。
+  ///
+  /// 按 pinOrder 升序排列。
+  Future<List<ClipboardEntry>> getPinnedItems() async {
+    return (_db.select(_db.clipboardEntries)
+      ..where((t) => t.isPinned.equals(true))
+      ..orderBy([(t) => OrderingTerm.asc(t.pinOrder)]))
+      .get();
+  }
+
+  /// 根据 pinOrder 获取项目。
+  ///
+  /// [order] 固定顺序（0-20）。
+  Future<ClipboardEntry?> getItemByPinOrder(int order) async {
+    return (_db.select(_db.clipboardEntries)
+      ..where((t) => t.pinOrder.equals(order)))
+      .getSingleOrNull();
+  }
+
+  /// 更新固定状态。
+  ///
+  /// [id] 项目 ID。
+  /// [isPinned] 是否固定。
+  /// [pinOrder] 固定顺序（0-20），如果 isPinned 为 false 则为 null。
+  Future<void> updatePinStatus(int id, bool isPinned, int? pinOrder) async {
+    await (_db.update(_db.clipboardEntries)
+      ..where((t) => t.id.equals(id)))
+      .write(ClipboardEntriesCompanion(
+        isPinned: Value(isPinned),
+        pinOrder: Value(pinOrder),
+      ));
+  }
+
   /// 切换指定条目的置顶状态。
   ///
   /// 若设为置顶，则自动计算新的排序权重（max + 1）；若取消置顶，则清空权重。
@@ -147,5 +210,5 @@ class HistoryRepository {
 @riverpod
 HistoryRepository historyRepository(Ref ref) {
   final db = ref.watch(appDatabaseProvider);
-  return HistoryRepository(db);
+  return HistoryRepository(db, ref);
 }

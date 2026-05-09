@@ -4,6 +4,13 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 import 'package:win32/win32.dart';
 
+/// 修饰键枚举。
+enum ModifierKey {
+  ctrl,
+  shift,
+  alt,
+}
+
 /// 修饰键监听服务。
 ///
 /// 使用 Windows GetAsyncKeyState API 轮询检测修饰键（Ctrl, Shift, Alt）的按下和释放状态。
@@ -20,13 +27,6 @@ class ModifierKeyService {
   // 回调函数
   void Function()? _onAllModifiersReleased;
   void Function(Set<ModifierKey>)? _onModifierStateChanged;
-
-  /// 修饰键枚举。
-  enum ModifierKey {
-    ctrl,
-    shift,
-    alt,
-  }
 
   /// 开始监听修饰键状态。
   ///

@@ -16,6 +16,11 @@ part 'database.g.dart';
 /// [isPinned] 是否置顶标记，默认为 false。
 /// [pinOrder] 置顶排序权重，数值越大排序越靠前。
 /// [appName] 来源应用程序名称（可选）。
+/// [copyCount] 复制次数统计，默认为 1。
+/// [firstCopiedAt] 首次复制时间，默认为当前系统时间。
+/// [lastCopiedAt] 最后复制时间，默认为当前系统时间。
+/// [htmlContent] HTML 格式内容（可选）。
+/// [rtfContent] RTF 格式内容（可选）。
 class ClipboardEntries extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get content => text().unique()();
@@ -24,6 +29,11 @@ class ClipboardEntries extends Table {
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
   IntColumn get pinOrder => integer().nullable()();
   TextColumn get appName => text().nullable()();
+  IntColumn get copyCount => integer().withDefault(const Constant(1))();
+  DateTimeColumn get firstCopiedAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get lastCopiedAt => dateTime().withDefault(currentDateAndTime)();
+  TextColumn get htmlContent => text().nullable()();
+  TextColumn get rtfContent => text().nullable()();
 }
 
 /// 应用程序数据库类。
@@ -38,7 +48,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   /// 获取数据库迁移策略。
   ///
@@ -71,6 +81,19 @@ class AppDatabase extends _$AppDatabase {
         if (from < 8) {
           try {
             await m.addColumn(clipboardEntries, clipboardEntries.appName);
+          } catch (_) {}
+        }
+        if (from < 9) {
+          try {
+            await m.addColumn(clipboardEntries, clipboardEntries.copyCount);
+            await m.addColumn(clipboardEntries, clipboardEntries.firstCopiedAt);
+            await m.addColumn(clipboardEntries, clipboardEntries.lastCopiedAt);
+          } catch (_) {}
+        }
+        if (from < 10) {
+          try {
+            await m.addColumn(clipboardEntries, clipboardEntries.htmlContent);
+            await m.addColumn(clipboardEntries, clipboardEntries.rtfContent);
           } catch (_) {}
         }
       },

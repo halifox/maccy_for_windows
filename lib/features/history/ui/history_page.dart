@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/window_manager_provider.dart';
+import 'package:maccy/core/utils/text_formatter.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
 import 'package:maccy/features/history/ui/widgets/preview_popover.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
@@ -448,12 +449,25 @@ class _TextContent extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final highlightMode = ref.watch(highlightMatchProvider);
     final searchQuery = ref.watch(historySearchQueryProvider);
+    final showSpecialChars = ref.watch(showSpecialCharsProvider);
 
     final displayContent = useMemoized(() {
-      String text = content;
+      // 使用 TextFormatter 格式化特殊字符
+      String text = TextFormatter.formatForDisplay(
+        content,
+        showSpecialChars: showSpecialChars,
+      );
+
+      // 限制长度
       if (text.length > 1000) text = text.substring(0, 1000);
-      return text.trim().replaceAll('\n', ' ');
-    }, [content]);
+
+      // 如果不显示特殊字符，将换行替换为空格以便单行显示
+      if (!showSpecialChars) {
+        text = text.replaceAll('\n', ' ');
+      }
+
+      return text;
+    }, [content, showSpecialChars]);
 
     final spans = useMemoized(() {
       final baseStyle = TextStyle(

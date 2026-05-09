@@ -58,4 +58,4 @@ final class HistoryRepositoryProvider
   }
 }
 
-String _$historyRepositoryHash() => r'20d70258125df82473e1a54098c06a708df9a650';
+String _$historyRepositoryHash() => r'7b44523387a24f6af77bf1423ee609b1d2f85382';
