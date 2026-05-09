@@ -13,8 +13,7 @@ part of 'clipboard_manager_provider.dart';
 /// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
 /// 以及跨平台的自动粘贴模拟操作。
 ///
-/// 字段说明:
-/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
+/// 实现 Maccy 的多格式内容存储逻辑。
 
 @ProviderFor(AppClipboardManager)
 final appClipboardManagerProvider = AppClipboardManagerProvider._();
@@ -24,8 +23,7 @@ final appClipboardManagerProvider = AppClipboardManagerProvider._();
 /// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
 /// 以及跨平台的自动粘贴模拟操作。
 ///
-/// 字段说明:
-/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
+/// 实现 Maccy 的多格式内容存储逻辑。
 final class AppClipboardManagerProvider
     extends $AsyncNotifierProvider<AppClipboardManager, void> {
   /// 剪贴板管理器。
@@ -33,8 +31,7 @@ final class AppClipboardManagerProvider
   /// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
   /// 以及跨平台的自动粘贴模拟操作。
   ///
-  /// 字段说明:
-  /// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
+  /// 实现 Maccy 的多格式内容存储逻辑。
   AppClipboardManagerProvider._()
     : super(
         from: null,
@@ -55,15 +52,14 @@ final class AppClipboardManagerProvider
 }
 
 String _$appClipboardManagerHash() =>
-    r'41c189cdd908050b2a373fafd117c0c78074f829';
+    r'63a0321fc9eadd549e863da9e7d5541c0061fc43';
 
 /// 剪贴板管理器。
 ///
 /// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
 /// 以及跨平台的自动粘贴模拟操作。
 ///
-/// 字段说明:
-/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
+/// 实现 Maccy 的多格式内容存储逻辑。
 
 abstract class _$AppClipboardManager extends $AsyncNotifier<void> {
   FutureOr<void> build();

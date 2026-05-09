@@ -60,7 +60,7 @@ final class AppWindowManagerProvider
   AppWindowManager create() => AppWindowManager();
 }
 
-String _$appWindowManagerHash() => r'736288bc3538ff5f4cde171f5109f0ae2edffec1';
+String _$appWindowManagerHash() => r'2f241c7b684813f2fd1fc960842770c9cd1b5bf1';
 
 /// 窗口管理器。
 ///

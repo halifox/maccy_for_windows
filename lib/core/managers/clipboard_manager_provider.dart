@@ -1,15 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:clipboard_watcher/clipboard_watcher.dart';
-import 'package:drift/drift.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
-import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
 import 'package:maccy/core/services/clipboard_filter_service.dart';
 import 'package:maccy/core/services/foreground_app_service.dart';
 import 'package:maccy/core/services/rich_text_service.dart';
+import 'package:maccy/features/history/repositories/history_repository.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -25,8 +26,7 @@ part 'clipboard_manager_provider.g.dart';
 /// 负责监听系统剪贴板变化、执行数据去重与过滤、持久化条目到数据库、
 /// 以及跨平台的自动粘贴模拟操作。
 ///
-/// 字段说明:
-/// [_cleanupTimer] 定时清理任务的计时器，用于定期执行数据库容量缩减。
+/// 实现 Maccy 的多格式内容存储逻辑。
 @Riverpod(keepAlive: true)
 class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
   Timer? _cleanupTimer;
@@ -48,15 +48,14 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     clipboardWatcher.addListener(this);
     await clipboardWatcher.start();
     _cleanupTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      final limit = ref.read(historyLimitProvider);
-      _pruneHistory(limit);
+      // 清理任务由 repository 的 _limitHistorySize 自动处理
     });
 
     _clipboardUpdateController.stream
         .debounce(const Duration(milliseconds: 200))
         .listen((_) {
-          _processClipboardChange();
-        });
+      _processClipboardChange();
+    });
 
     ref.onDispose(() {
       clipboardWatcher.stop();
@@ -65,32 +64,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       _clipboardUpdateController.close();
     });
     debugPrint('[ClipboardManager] 服务已启动');
-  }
-
-  /// 清理超出限制的历史记录。
-  ///
-  /// 检查当前数据库记录总数，若超过 [limit] 则删除较旧的非置顶记录。
-  ///
-  /// [limit] 允许保留的最大记录条数。
-  Future<void> _pruneHistory(int limit) async {
-    final db = ref.read(appDatabaseProvider);
-    final entriesCount = await db.clipboardEntries.count().getSingle();
-
-    if (entriesCount > limit) {
-      final entriesToKeep =
-          await (db.select(db.clipboardEntries)
-                ..orderBy([(t) => OrderingTerm.desc(t.createdAt)])
-                ..limit(limit))
-              .get();
-
-      if (entriesToKeep.isNotEmpty) {
-        final oldestIdToKeep = entriesToKeep.last.id;
-        await (db.delete(
-          db.clipboardEntries,
-        )..where((t) => t.id.isSmallerThanValue(oldestIdToKeep))).go();
-        debugPrint('[ClipboardManager] 数据库清理完成，保留最新 $limit 条记录');
-      }
-    }
   }
 
   /// 检查是否拥有 macOS 辅助功能权限。
@@ -168,14 +141,15 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     _clipboardUpdateController.add(null);
   }
 
+  /// 处理剪贴板变化（实现 Maccy 的多格式逻辑）。
   Future<void> _processClipboardChange() async {
-    debugPrint('Processing Clipboard Change');
+    debugPrint('[ClipboardManager] 处理剪贴板变化');
 
     // 1. 检查是否暂停监听
     final isPaused = ref.read(ignoreEventsProvider);
     if (isPaused) return;
 
-    // 2. 获取前台应用名称（Windows）
+    // 2. 获取前台应用名称
     String? appName;
     if (Platform.isWindows) {
       appName = ForegroundAppService.getForegroundAppName();
@@ -195,180 +169,179 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       }
     }
 
-    // 4. 检查内容类型设置
-    final saveText = ref.read(saveTextProvider);
-    final saveImage = ref.read(saveImagesProvider);
-    final saveFile = ref.read(saveFilesProvider);
-
+    // 4. 读取剪贴板内容
     final reader = await SystemClipboard.instance?.read();
     if (reader == null) return;
 
-    final formats = Formats.standardFormats
-        .where((element) => reader.canProvide(element))
-        .toList();
-    debugPrint(formats.toString());
+    // 5. 收集所有可用格式的内容（Maccy 的多格式存储）
+    final contents = <HistoryItemContentData>[];
+    String? titleText;
 
-    // 5. 处理文件类型
-    if (reader.canProvide(Formats.fileUri)) {
-      if (!saveFile) return;
-      reader.getValue(Formats.fileUri, (fileUri) {
-        if (fileUri != null) {
-          upsertClipboardEntry(fileUri.toFilePath(), 'file', appName);
-        }
-      });
-      return;
-    }
-
-    // 6. 处理图片类型
-    if (!reader.canProvide(Formats.fileUri) && reader.canProvide(Formats.png)) {
-      if (!saveImage) return;
-      reader.getFile(Formats.png, (file) {
-        saveStreamToFile(file.getStream(), 'png', appName);
-      });
-      return;
-    }
-    if (!reader.canProvide(Formats.fileUri) &&
-        reader.canProvide(Formats.jpeg)) {
-      if (!saveImage) return;
-      reader.getFile(Formats.jpeg, (file) {
-        saveStreamToFile(file.getStream(), 'jpeg', appName);
-      });
-      return;
-    }
-    if (!reader.canProvide(Formats.fileUri) &&
-        reader.canProvide(Formats.webp)) {
-      if (!saveImage) return;
-      reader.getFile(Formats.webp, (file) {
-        saveStreamToFile(file.getStream(), 'webp', appName);
-      });
-      return;
-    }
-
-    // 7. 处理文本类型
+    // 5.1 文本格式
     if (reader.canProvide(Formats.plainText)) {
-      if (!saveText) return;
-      reader.getValue(Formats.plainText, (text) {
-        if (text != null) {
-          // 8. 正则表达式过滤
-          final regexPatterns = ref.read(ignoreRegexpProvider);
-          if (ClipboardFilterService.shouldIgnoreContent(text, regexPatterns)) {
-            debugPrint('[ClipboardManager] 内容被正则过滤');
-            return;
-          }
-
-          // 9. 读取富文本格式（仅 Windows）
-          String? htmlContent;
-          String? rtfContent;
-          if (Platform.isWindows) {
-            try {
-              htmlContent = RichTextService.readHtmlFromClipboard();
-              rtfContent = RichTextService.readRtfFromClipboard();
-              if (htmlContent != null) {
-                debugPrint('[ClipboardManager] 检测到 HTML 格式');
-              }
-              if (rtfContent != null) {
-                debugPrint('[ClipboardManager] 检测到 RTF 格式');
-              }
-            } catch (e) {
-              debugPrint('[ClipboardManager] 读取富文本失败: $e');
-            }
-          }
-
-          upsertClipboardEntry(
-            text,
-            'text',
-            appName,
-            htmlContent: htmlContent,
-            rtfContent: rtfContent,
-          );
+      final text = await reader.readValue(Formats.plainText);
+      if (text != null && text.isNotEmpty) {
+        // 正则表达式过滤
+        final regexPatterns = ref.read(ignoreRegexpProvider);
+        if (ClipboardFilterService.shouldIgnoreContent(text, regexPatterns)) {
+          debugPrint('[ClipboardManager] 内容被正则过滤');
+          return;
         }
-      });
-    }
-  }
 
-  Future<void> upsertClipboardEntry(
-    String content,
-    String type,
-    String? appName, {
-    String? htmlContent,
-    String? rtfContent,
-  }) async {
-    final db = ref.read(appDatabaseProvider);
-
-    // 检查是否已存在
-    final existing = await (db.select(db.clipboardEntries)
-          ..where((t) => t.content.equals(content)))
-        .getSingleOrNull();
-
-    if (existing != null) {
-      // 已存在，更新复制次数和时间
-      await (db.update(db.clipboardEntries)
-            ..where((t) => t.id.equals(existing.id)))
-          .write(
-        ClipboardEntriesCompanion(
-          copyCount: Value(existing.copyCount + 1),
-          lastCopiedAt: Value(DateTime.now()),
-          appName: Value(appName),
-          htmlContent: Value(htmlContent),
-          rtfContent: Value(rtfContent),
-        ),
-      );
-      debugPrint('[ClipboardManager] 更新已存在条目，复制次数: ${existing.copyCount + 1}');
-    } else {
-      // 新条目，插入
-      await db.into(db.clipboardEntries).insert(
-            ClipboardEntriesCompanion.insert(
-              content: content,
-              type: Value(type),
-              createdAt: Value(DateTime.now()),
-              appName: Value(appName),
-              copyCount: const Value(1),
-              firstCopiedAt: Value(DateTime.now()),
-              lastCopiedAt: Value(DateTime.now()),
-              htmlContent: Value(htmlContent),
-              rtfContent: Value(rtfContent),
-            ),
-          );
-      debugPrint('[ClipboardManager] 插入新条目');
-    }
-  }
-
-  /// 处理并持久化文本/HTML/URI 类型的剪贴板条目。
-
-  /// 处理并持久化二进制类型的剪贴板条目。
-  Future<void> saveStreamToFile(
-    Stream<Uint8List> dataStream,
-    String extension,
-    String? appName,
-  ) async {
-    // 保存到本地文件
-    final appDir = await getApplicationDocumentsDirectory();
-    final storageDir = Directory(p.join(appDir.path, 'clipboard_storage'));
-    if (!await storageDir.exists()) {
-      await storageDir.create(recursive: true);
-    }
-
-    final name = '${DateTime.now().millisecondsSinceEpoch}';
-    final fileName = '$name.$extension';
-    final filePath = p.join(storageDir.path, fileName);
-    final file = File(filePath);
-
-    // 如果文件不存在则写入
-    if (!await file.exists()) {
-      final sink = file.openWrite();
-
-      try {
-        // 2. 将数据流直接对接给 sink
-        await sink.addStream(dataStream);
-      } catch (e) {
-        debugPrint('写入失败: $e');
-      } finally {
-        // 3. 必须关闭 sink 确保缓冲区数据全部刷入硬盘
-        await sink.close();
+        contents.add(HistoryItemContentData(
+          type: 'text/plain',
+          value: Uint8List.fromList(utf8.encode(text)),
+        ));
+        titleText = text;
       }
     }
 
-    await upsertClipboardEntry(filePath, 'image', appName);
+    // 5.2 HTML 格式
+    if (reader.canProvide(Formats.htmlText)) {
+      final html = await reader.readValue(Formats.htmlText);
+      if (html != null && html.isNotEmpty) {
+        contents.add(HistoryItemContentData(
+          type: 'text/html',
+          value: Uint8List.fromList(utf8.encode(html)),
+        ));
+      }
+    }
+
+    // 5.3 RTF 格式（Windows）
+    if (Platform.isWindows) {
+      try {
+        final rtf = RichTextService.readRtfFromClipboard();
+        if (rtf != null && rtf.isNotEmpty) {
+          contents.add(HistoryItemContentData(
+            type: 'text/rtf',
+            value: Uint8List.fromList(utf8.encode(rtf)),
+          ));
+        }
+      } catch (e) {
+        debugPrint('[ClipboardManager] 读取 RTF 失败: $e');
+      }
+    }
+
+    // 5.4 图片格式
+    if (reader.canProvide(Formats.png)) {
+      try {
+        final imageData = await _readImageData(reader, Formats.png);
+        if (imageData != null) {
+          contents.add(HistoryItemContentData(
+            type: 'image/png',
+            value: imageData,
+          ));
+          titleText ??= '[图片]';
+        }
+      } catch (e) {
+        debugPrint('[ClipboardManager] 读取 PNG 失败: $e');
+      }
+    } else if (reader.canProvide(Formats.jpeg)) {
+      try {
+        final imageData = await _readImageData(reader, Formats.jpeg);
+        if (imageData != null) {
+          contents.add(HistoryItemContentData(
+            type: 'image/jpeg',
+            value: imageData,
+          ));
+          titleText ??= '[图片]';
+        }
+      } catch (e) {
+        debugPrint('[ClipboardManager] 读取 JPEG 失败: $e');
+      }
+    }
+
+    // 5.5 文件格式
+    if (reader.canProvide(Formats.fileUri)) {
+      try {
+        final fileUri = await reader.readValue(Formats.fileUri);
+        if (fileUri != null) {
+          final filePath = fileUri.toFilePath();
+          contents.add(HistoryItemContentData(
+            type: 'file',
+            value: Uint8List.fromList(utf8.encode(filePath)),
+          ));
+          titleText = filePath;
+        }
+      } catch (e) {
+        debugPrint('[ClipboardManager] 读取文件路径失败: $e');
+      }
+    }
+
+    // 6. 如果没有任何内容，返回
+    if (contents.isEmpty) {
+      debugPrint('[ClipboardManager] 没有可保存的内容');
+      return;
+    }
+
+    // 7. 生成标题
+    final title = _generateTitle(titleText ?? '', contents);
+
+    // 8. 保存到数据库（使用 Maccy 的去重逻辑）
+    final repository = ref.read(historyRepositoryProvider);
+    await repository.addOrUpdateEntry(
+      contents: contents,
+      application: appName,
+      title: title,
+    );
+
+    debugPrint('[ClipboardManager] 已保存 ${contents.length} 种格式的内容');
+  }
+
+  /// 读取图片数据。
+  Future<Uint8List?> _readImageData(ClipboardReader reader, DataFormat<Object> format) async {
+    Uint8List? imageData;
+    await reader.getFile(format, (file) async {
+      final stream = file.getStream();
+      final chunks = <int>[];
+      await for (final chunk in stream) {
+        chunks.addAll(chunk);
+      }
+      imageData = Uint8List.fromList(chunks);
+    });
+    return imageData;
+  }
+
+  /// 生成标题（实现 Maccy 的 generateTitle 逻辑）。
+  String _generateTitle(String primaryText, List<HistoryItemContentData> contents) {
+    // 优先级：文件 > 文本 > 图片
+    final fileContent = contents.firstWhere(
+      (c) => c.type == 'file',
+      orElse: () => HistoryItemContentData(type: '', value: null),
+    );
+
+    if (fileContent.value != null) {
+      final path = utf8.decode(fileContent.value!);
+      return p.basename(path);
+    }
+
+    if (primaryText.isNotEmpty) {
+      // 限制长度为 1000 字符（Maccy 的限制）
+      var title = primaryText.length > 1000 ? primaryText.substring(0, 1000) : primaryText;
+
+      // 特殊符号显示
+      final showSpecialSymbols = ref.read(showSpecialCharsProvider);
+      if (showSpecialSymbols) {
+        // 替换前导空格
+        title = title.replaceAllMapped(RegExp(r'^ +'), (m) => '·' * m.group(0)!.length);
+        // 替换尾随空格
+        title = title.replaceAllMapped(RegExp(r' +$'), (m) => '·' * m.group(0)!.length);
+        // 替换换行和制表符
+        title = title.replaceAll('\n', '⏎').replaceAll('\t', '⇥');
+      } else {
+        title = title.trim();
+      }
+
+      return title;
+    }
+
+    // 图片类型
+    final hasImage = contents.any((c) => c.type.startsWith('image/'));
+    if (hasImage) {
+      return '[图片]';
+    }
+
+    return '[未知内容]';
   }
 
   /// Windows 平台模拟粘贴操作

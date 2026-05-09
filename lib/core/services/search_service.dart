@@ -14,16 +14,15 @@ enum SearchMode {
 /// 搜索结果包装类。
 ///
 /// 包含匹配的条目和相关性评分（用于模糊搜索排序）。
-class SearchResult { // 匹配字符的索引位置（用于高亮）
-
+class SearchResult {
   SearchResult({
     required this.entry,
     this.score = 0.0,
     this.matchIndices = const [],
   });
-  final ClipboardEntry entry;
+  final HistoryItem entry;
   final double score;
-  final List<int> matchIndices;
+  final List<int> matchIndices; // 匹配字符的索引位置（用于高亮）
 }
 
 /// 搜索服务。
@@ -48,46 +47,46 @@ class SearchService {
   /// 值越小匹配越严格，0.0 = 完全匹配，1.0 = 匹配所有。
   static const double fuzzyThreshold = 0.3;
 
-  /// 执行搜索。
+  /// 执行搜索（新版 HistoryItem）。
   ///
   /// [query] 搜索关键词
   /// [items] 待搜索的条目列表
   /// [mode] 搜索模式
   ///
   /// 返回匹配的条目列表（模糊搜索会按相关性排序）。
-  static List<ClipboardEntry> search({
+  static List<HistoryItem> searchHistoryItems({
     required String query,
-    required List<ClipboardEntry> items,
+    required List<HistoryItem> items,
     required SearchMode mode,
   }) {
     if (query.isEmpty) return items;
 
     switch (mode) {
       case SearchMode.exact:
-        return _exactSearch(query, items);
+        return _exactSearchHistoryItems(query, items);
       case SearchMode.fuzzy:
-        return _fuzzySearch(query, items);
+        return _fuzzySearchHistoryItems(query, items);
       case SearchMode.regexp:
-        return _regexpSearch(query, items);
+        return _regexpSearchHistoryItems(query, items);
       case SearchMode.mixed:
-        return _mixedSearch(query, items);
+        return _mixedSearchHistoryItems(query, items);
     }
   }
 
-  /// 精确搜索（不区分大小写）。
+  /// 精确搜索（不区分大小写）- HistoryItem 版本。
   ///
   /// 对应 Maccy 的 simpleSearch(options: .caseInsensitive)。
-  static List<ClipboardEntry> _exactSearch(
+  static List<HistoryItem> _exactSearchHistoryItems(
     String query,
-    List<ClipboardEntry> items,
+    List<HistoryItem> items,
   ) {
     final lowerQuery = query.toLowerCase();
     return items.where((item) {
-      return item.content.toLowerCase().contains(lowerQuery);
+      return item.title.toLowerCase().contains(lowerQuery);
     }).toList();
   }
 
-  /// 模糊搜索。
+  /// 模糊搜索 - HistoryItem 版本。
   ///
   /// 对应 Maccy 的 fuzzySearch，使用 Fuse 算法。
   ///
@@ -95,17 +94,17 @@ class SearchService {
   /// 1. 截断超长文本（> 5000 字符）
   /// 2. 使用 fuzzy 包进行模糊匹配
   /// 3. 按相关性评分排序（分数越低越相关）
-  static List<ClipboardEntry> _fuzzySearch(
+  static List<HistoryItem> _fuzzySearchHistoryItems(
     String query,
-    List<ClipboardEntry> items,
+    List<HistoryItem> items,
   ) {
     // 准备搜索数据
     final searchableItems = items.map((item) {
-      var content = item.content;
-      if (content.length > fuzzySearchLimit) {
-        content = content.substring(0, fuzzySearchLimit);
+      var title = item.title;
+      if (title.length > fuzzySearchLimit) {
+        title = title.substring(0, fuzzySearchLimit);
       }
-      return content;
+      return title;
     }).toList();
 
     // 配置 Fuzzy 搜索
@@ -127,21 +126,22 @@ class SearchService {
 
     // 映射回原始条目并按评分排序
     return results.map((result) {
-      return items[result.score.toInt()];
+      final index = searchableItems.indexOf(result.item);
+      return items[index];
     }).toList();
   }
 
-  /// 正则表达式搜索。
+  /// 正则表达式搜索 - HistoryItem 版本。
   ///
   /// 对应 Maccy 的 simpleSearch(options: .regularExpression)。
-  static List<ClipboardEntry> _regexpSearch(
+  static List<HistoryItem> _regexpSearchHistoryItems(
     String query,
-    List<ClipboardEntry> items,
+    List<HistoryItem> items,
   ) {
     try {
       final regex = RegExp(query, caseSensitive: false);
       return items.where((item) {
-        return regex.hasMatch(item.content);
+        return regex.hasMatch(item.title);
       }).toList();
     } catch (e) {
       // 正则表达式语法错误，返回空结果
@@ -149,7 +149,7 @@ class SearchService {
     }
   }
 
-  /// 混合搜索。
+  /// 混合搜索 - HistoryItem 版本。
   ///
   /// 对应 Maccy 的 mixedSearch。
   ///
@@ -157,20 +157,20 @@ class SearchService {
   /// 1. 先尝试精确匹配（最快）
   /// 2. 若无结果，尝试正则表达式
   /// 3. 若仍无结果，尝试模糊搜索（最慢但最宽松）
-  static List<ClipboardEntry> _mixedSearch(
+  static List<HistoryItem> _mixedSearchHistoryItems(
     String query,
-    List<ClipboardEntry> items,
+    List<HistoryItem> items,
   ) {
     // 1. 精确搜索
-    var results = _exactSearch(query, items);
+    var results = _exactSearchHistoryItems(query, items);
     if (results.isNotEmpty) return results;
 
     // 2. 正则搜索
-    results = _regexpSearch(query, items);
+    results = _regexpSearchHistoryItems(query, items);
     if (results.isNotEmpty) return results;
 
     // 3. 模糊搜索
-    results = _fuzzySearch(query, items);
+    results = _fuzzySearchHistoryItems(query, items);
     return results;
   }
 

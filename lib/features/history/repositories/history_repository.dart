@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:drift/drift.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -16,10 +17,18 @@ part 'history_repository.g.dart';
 /// [_db] 注入的数据库实例。
 /// [_ref] Riverpod 引用，用于读取配置。
 class HistoryRepository {
-
   HistoryRepository(this._db, this._ref);
   final AppDatabase _db;
   final Ref _ref;
+
+  // Maccy 的临时类型列表（不参与去重比较）
+  static const _transientTypes = [
+    'com.apple.pasteboard.modified',
+    'org.p0deje.Maccy.fromMaccy',
+    'com.apple.LinkPresentation.metadata',
+    'com.apple.pasteboard.customPasteboardData',
+    'com.apple.pasteboard.source',
+  ];
 
   /// 监听并观察数据库中的剪贴板条目。
   ///
@@ -29,7 +38,7 @@ class HistoryRepository {
   /// [query] 搜索关键词。
   /// [searchMode] 搜索模式（exact, regex, mixed, fuzzy）。
   /// [limit] 最大返回条数。
-  Stream<List<ClipboardEntry>> watchEntries({
+  Stream<List<HistoryItem>> watchEntries({
     String? query,
     String searchMode = 'exact',
     required int limit,
@@ -38,16 +47,16 @@ class HistoryRepository {
     final pinPosition = _ref.read(pinPositionProvider);
 
     // 构建查询
-    final select = _db.select(_db.clipboardEntries);
+    final select = _db.select(_db.historyItems);
 
     // 构建排序规则
     select.orderBy([
       // 1. 置顶项目排序（根据配置在顶部或底部）
       if (pinPosition == 'top')
-        (t) => OrderingTerm.desc(t.isPinned),
+        (t) => OrderingTerm.desc(t.pin.isNotNull()),
 
-      // 2. 置顶项目内部排序
-      (t) => OrderingTerm.desc(t.pinOrder),
+      // 2. 置顶项目内部按 pin 字符排序
+      (t) => OrderingTerm.asc(t.pin),
 
       // 3. 主排序规则
       (t) {
@@ -57,15 +66,15 @@ class HistoryRepository {
           case 'firstCopiedAt':
             return OrderingTerm.asc(t.firstCopiedAt);
           case 'numberOfCopies':
-            return OrderingTerm.desc(t.copyCount);
+            return OrderingTerm.desc(t.numberOfCopies);
           default:
-            return OrderingTerm.desc(t.createdAt);
+            return OrderingTerm.desc(t.lastCopiedAt);
         }
       },
 
       // 4. 置顶项目在底部时的排序
       if (pinPosition == 'bottom')
-        (t) => OrderingTerm.asc(t.isPinned),
+        (t) => OrderingTerm.asc(t.pin.isNotNull()),
     ]);
 
     select.limit(limit);
@@ -78,7 +87,7 @@ class HistoryRepository {
     // 有搜索关键词时，使用 SearchService 进行内存过滤
     return select.watch().map((entries) {
       final mode = _parseSearchMode(searchMode);
-      return SearchService.search(
+      return SearchService.searchHistoryItems(
         query: query,
         items: entries,
         mode: mode,
@@ -106,104 +115,206 @@ class HistoryRepository {
   ///
   /// [id] 条目在数据库中的主键。
   Future<void> deleteEntry(int id) async {
-    await (_db.delete(
-      _db.clipboardEntries,
-    )..where((t) => t.id.equals(id))).go();
+    await (_db.delete(_db.historyItems)..where((t) => t.id.equals(id))).go();
   }
 
   /// 删除数据库中所有的历史条目。
   Future<void> deleteAllEntries() async {
-    await _db.delete(_db.clipboardEntries).go();
+    await _db.delete(_db.historyItems).go();
   }
 
-  /// 手动向数据库添加一条新的剪贴板条目。
+  /// 删除所有非固定项。
+  Future<void> deleteUnpinnedEntries() async {
+    await (_db.delete(_db.historyItems)..where((t) => t.pin.isNull())).go();
+  }
+
+  /// 添加或更新历史条目（实现 Maccy 的去重逻辑）。
   ///
-  /// [content] 文本内容。
-  /// [isPinned] 是否初始化为置顶。
-  Future<void> addEntry(String content, {bool isPinned = false}) async {
-    await _db
-        .into(_db.clipboardEntries)
-        .insert(
-          ClipboardEntriesCompanion.insert(
-            content: content,
-            isPinned: Value(isPinned),
-          ),
-        );
+  /// [contents] 内容数组（多格式）。
+  /// [application] 来源应用。
+  /// [title] 显示标题。
+  Future<void> addOrUpdateEntry({
+    required List<HistoryItemContentData> contents,
+    String? application,
+    required String title,
+  }) async {
+    final now = DateTime.now();
+
+    // 查找重复项
+    final duplicate = await _findDuplicate(contents);
+
+    if (duplicate != null) {
+      // 更新现有项
+      await (_db.update(_db.historyItems)..where((t) => t.id.equals(duplicate.id)))
+          .write(HistoryItemsCompanion(
+        lastCopiedAt: Value(now),
+        numberOfCopies: Value(duplicate.numberOfCopies + 1),
+        application: Value(application),
+      ));
+    } else {
+      // 插入新项
+      final itemId = await _db.into(_db.historyItems).insert(
+            HistoryItemsCompanion.insert(
+              application: Value(application),
+              firstCopiedAt: now,
+              lastCopiedAt: now,
+              numberOfCopies: const Value(1),
+              pin: const Value(null),
+              title: title,
+            ),
+          );
+
+      // 插入内容
+      for (final content in contents) {
+        await _db.into(_db.historyItemContents).insert(
+              HistoryItemContentsCompanion.insert(
+                itemId: itemId,
+                type: content.type,
+                value: Value(content.value),
+              ),
+            );
+      }
+
+      // 限制历史大小（不包括固定项）
+      await _limitHistorySize();
+    }
+  }
+
+  /// 查找重复项（实现 Maccy 的 supersedes 逻辑）。
+  Future<HistoryItem?> _findDuplicate(List<HistoryItemContentData> newContents) async {
+    final allItems = await _db.select(_db.historyItems).get();
+
+    for (final item in allItems) {
+      if (await _supersedes(newContents, item.id)) {
+        return item;
+      }
+    }
+
+    return null;
+  }
+
+  /// 判断新内容是否与现有项重复（Maccy 的 supersedes 方法）。
+  Future<bool> _supersedes(List<HistoryItemContentData> newContents, int existingItemId) async {
+    // 获取现有项的所有内容
+    final existingContents = await (_db.select(_db.historyItemContents)
+          ..where((t) => t.itemId.equals(existingItemId)))
+        .get();
+
+    // 过滤掉临时类型
+    final nonTransientExisting =
+        existingContents.where((c) => !_transientTypes.contains(c.type)).toList();
+
+    // 检查所有非临时类型的现有内容是否都在新内容中
+    for (final existingContent in nonTransientExisting) {
+      final found = newContents.any((newContent) =>
+          newContent.type == existingContent.type &&
+          _compareBytes(newContent.value, existingContent.value));
+
+      if (!found) {
+        return false;
+      }
+    }
+
+    return nonTransientExisting.isNotEmpty;
+  }
+
+  /// 比较两个字节数组是否相等。
+  bool _compareBytes(Uint8List? a, Uint8List? b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+
+    return true;
+  }
+
+  /// 限制历史大小（仅删除非固定项）。
+  Future<void> _limitHistorySize() async {
+    final limit = _ref.read(historyLimitProvider);
+
+    // 获取所有非固定项，按 lastCopiedAt 降序
+    final unpinnedItems = await (_db.select(_db.historyItems)
+          ..where((t) => t.pin.isNull())
+          ..orderBy([(t) => OrderingTerm.desc(t.lastCopiedAt)]))
+        .get();
+
+    // 删除超出限制的项
+    if (unpinnedItems.length > limit) {
+      final toDelete = unpinnedItems.skip(limit);
+      for (final item in toDelete) {
+        await deleteEntry(item.id);
+      }
+    }
   }
 
   /// 获取所有固定项。
-  ///
-  /// 按 pinOrder 升序排列。
-  Future<List<ClipboardEntry>> getPinnedItems() async {
-    return (_db.select(_db.clipboardEntries)
-      ..where((t) => t.isPinned.equals(true))
-      ..orderBy([(t) => OrderingTerm.asc(t.pinOrder)]))
-      .get();
+  Future<List<HistoryItem>> getPinnedItems() async {
+    return (_db.select(_db.historyItems)
+          ..where((t) => t.pin.isNotNull())
+          ..orderBy([(t) => OrderingTerm.asc(t.pin)]))
+        .get();
   }
 
-  /// 根据 pinOrder 获取项目。
-  ///
-  /// [order] 固定顺序（0-20）。
-  Future<ClipboardEntry?> getItemByPinOrder(int order) async {
-    return (_db.select(_db.clipboardEntries)
-      ..where((t) => t.pinOrder.equals(order)))
-      .getSingleOrNull();
+  /// 获取指定 pin 字符的项。
+  Future<HistoryItem?> getItemByPin(String pin) async {
+    return (_db.select(_db.historyItems)..where((t) => t.pin.equals(pin))).getSingleOrNull();
   }
 
-  /// 更新固定状态。
-  ///
-  /// [id] 项目 ID。
-  /// [isPinned] 是否固定。
-  /// [pinOrder] 固定顺序（0-20），如果 isPinned 为 false 则为 null。
-  Future<void> updatePinStatus(int id, bool isPinned, int? pinOrder) async {
-    await (_db.update(_db.clipboardEntries)
-      ..where((t) => t.id.equals(id)))
-      .write(ClipboardEntriesCompanion(
-        isPinned: Value(isPinned),
-        pinOrder: Value(pinOrder),
-      ));
+  /// 获取下一个可用的 pin 字符。
+  Future<String?> getNextAvailablePin() async {
+    // Maccy 的可用字符：b-y（排除 a/q/v/w/z）
+    const availablePins = [
+      'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
+      'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'x', 'y'
+    ];
+
+    final pinnedItems = await getPinnedItems();
+    final usedPins = pinnedItems.map((e) => e.pin).whereType<String>().toSet();
+
+    for (final pin in availablePins) {
+      if (!usedPins.contains(pin)) {
+        return pin;
+      }
+    }
+
+    return null;
   }
 
   /// 切换指定条目的置顶状态。
-  ///
-  /// 若设为置顶，则自动计算新的排序权重（max + 1）；若取消置顶，则清空权重。
-  ///
-  /// [id] 条目主键。
   Future<void> togglePin(int id) async {
-    final item = await (_db.select(
-      _db.clipboardEntries,
-    )..where((t) => t.id.equals(id))).getSingleOrNull();
+    final item = await (_db.select(_db.historyItems)..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
     if (item == null) return;
 
-    final willPin = !item.isPinned;
-
-    if (willPin) {
-      final query = _db.selectOnly(_db.clipboardEntries)
-        ..addColumns([_db.clipboardEntries.pinOrder.max()]);
-      final maxPinOrder = await query
-          .map((row) => row.read(_db.clipboardEntries.pinOrder.max()))
-          .getSingle();
-      final newOrder = (maxPinOrder ?? 0) + 1;
-
-      await (_db.update(
-        _db.clipboardEntries,
-      )..where((t) => t.id.equals(id))).write(
-        ClipboardEntriesCompanion(
-          isPinned: const Value(true),
-          pinOrder: Value(newOrder),
-        ),
-      );
+    if (item.pin == null) {
+      // 设置为固定
+      final nextPin = await getNextAvailablePin();
+      if (nextPin != null) {
+        await (_db.update(_db.historyItems)..where((t) => t.id.equals(id)))
+            .write(HistoryItemsCompanion(pin: Value(nextPin)));
+      }
     } else {
-      await (_db.update(
-        _db.clipboardEntries,
-      )..where((t) => t.id.equals(id))).write(
-        const ClipboardEntriesCompanion(
-          isPinned: Value(false),
-          pinOrder: Value(null),
-        ),
-      );
+      // 取消固定
+      await (_db.update(_db.historyItems)..where((t) => t.id.equals(id)))
+          .write(const HistoryItemsCompanion(pin: Value(null)));
     }
   }
+
+  /// 获取指定项的所有内容。
+  Future<List<HistoryItemContent>> getItemContents(int itemId) async {
+    return (_db.select(_db.historyItemContents)..where((t) => t.itemId.equals(itemId))).get();
+  }
+}
+
+/// 内容数据类（用于传递多格式数据）。
+class HistoryItemContentData {
+  final String type;
+  final Uint8List? value;
+
+  HistoryItemContentData({required this.type, this.value});
 }
 
 /// 提供全局的历史记录数据仓库实例。

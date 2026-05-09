@@ -48,7 +48,7 @@ final class AppHotKeyManagerProvider
   AppHotKeyManager create() => AppHotKeyManager();
 }
 
-String _$appHotKeyManagerHash() => r'0742827763d27c691dd3ad5eb38f79cba191fab3';
+String _$appHotKeyManagerHash() => r'cf739e17034835c2a17c47eac9ecb36d4fa9c146';
 
 /// 全局热键管理器。
 ///

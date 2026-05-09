@@ -1,10 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/clipboard_manager_provider.dart';
 import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/features/history/repositories/history_repository.dart';
+import 'package:maccy/features/history/providers/popup_state_provider.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:super_clipboard/super_clipboard.dart';
@@ -54,7 +57,7 @@ class HistoryFocusRequest extends _$HistoryFocusRequest {
 ///
 /// 核心数据 Provider，监听搜索词、搜索模式及存储限制，实时从仓库获取数据库数据。
 @riverpod
-Stream<List<ClipboardEntry>> filteredHistory(Ref ref) {
+Stream<List<HistoryItem>> filteredHistory(Ref ref) {
   final query = ref.watch(historySearchQueryProvider);
   final searchMode = ref.watch(searchModeProvider);
   final limit = ref.watch(historyLimitProvider);
@@ -87,19 +90,34 @@ class HistoryController extends _$HistoryController {
     if (index >= history.length) return;
 
     final item = history[index];
+    final repository = ref.read(historyRepositoryProvider);
     final clipboardManager = ref.read(appClipboardManagerProvider.notifier);
 
     final clipboard = SystemClipboard.instance;
     if (clipboard == null) return;
 
+    // 获取该项的所有内容
+    final contents = await repository.getItemContents(item.id);
+
     final itemWriter = DataWriterItem();
-    if (item.type == 'file') {
-      itemWriter.add(Formats.fileUri(Uri.file(item.content)));
+
+    // 写入所有格式的内容
+    for (final content in contents) {
+      if (content.value == null) continue;
+
+      switch (content.type) {
+        case 'text/plain':
+          itemWriter.add(Formats.plainText(utf8.decode(content.value!)));
+        case 'text/html':
+          itemWriter.add(Formats.htmlText(utf8.decode(content.value!)));
+        case 'image/png':
+          itemWriter.add(Formats.png(content.value!));
+        case 'file':
+          final path = utf8.decode(content.value!);
+          itemWriter.add(Formats.fileUri(Uri.file(path)));
+      }
     }
-    if (item.type == 'image') {
-      itemWriter.add(Formats.fileUri(Uri.file(item.content)));
-    }
-    itemWriter.add(Formats.plainText(item.content));
+
     clipboardManager.isSelfUpdate = true;
     await clipboard.write([itemWriter]);
     await clipboardManager.simulatePaste();
@@ -161,7 +179,14 @@ class HistoryController extends _$HistoryController {
   /// 手动添加历史条目（调试或扩展用）。
   Future<void> addItem(String content, {bool isPinned = false}) async {
     final repository = ref.read(historyRepositoryProvider);
-    await repository.addEntry(content, isPinned: isPinned);
+    final contentData = HistoryItemContentData(
+      type: 'text/plain',
+      value: Uint8List.fromList(utf8.encode(content)),
+    );
+    await repository.addOrUpdateEntry(
+      contents: [contentData],
+      title: content.length > 100 ? content.substring(0, 100) : content,
+    );
   }
 
   /// 清空所有历史记录。
@@ -215,9 +240,28 @@ class HistoryController extends _$HistoryController {
   /// 全局键盘事件分发处理。
   ///
   /// 处理上下键导航、回车确认、ESC隐藏、Alt+数字快速选择、Alt+P置顶、Alt+D删除逻辑。
+  /// 同时处理 Popup 状态管理（toggle/cycle/opening）。
   ///
   /// [event] 捕获到的原始键盘事件。
   void handleKeyEvent(KeyEvent event) {
+    // 更新修饰键状态
+    if (event is RawKeyEvent) {
+      ref.read(modifierKeysStateProvider.notifier).update(event);
+    }
+
+    // 处理 flagsChanged 事件（修饰键释放）
+    if (event is KeyUpEvent) {
+      final modifierKeys = ref.read(modifierKeysStateProvider);
+      final popupState = ref.read(popupStateManagerProvider.notifier);
+
+      if (popupState.handleFlagsChanged(modifierKeys.isEmpty)) {
+        // Cycle 模式下释放修饰键 → 自动粘贴并关闭
+        final selectedIndex = ref.read(historySelectedIndexProvider);
+        selectItem(selectedIndex);
+        return;
+      }
+    }
+
     if (event is! KeyDownEvent && event is! KeyRepeatEvent) return;
 
     final logicalKey = event.logicalKey;
@@ -249,6 +293,7 @@ class HistoryController extends _$HistoryController {
             .update((val) => (val - 1).clamp(0, maxIdx));
       case LogicalKeyboardKey.escape:
         ref.read(appWindowManagerProvider.notifier).hideHistory();
+        ref.read(popupStateManagerProvider.notifier).reset();
       case LogicalKeyboardKey.enter:
         if (selectedIndex < totalItems) {
           selectItem(selectedIndex);
@@ -285,6 +330,19 @@ class HistoryController extends _$HistoryController {
         if (digitMap.containsKey(logicalKey)) {
           final index = digitMap[logicalKey]!;
           if (index < totalItems) {
+            selectItem(index);
+          }
+        }
+      // Alt+letter for pinned items
+      case _ when isAltPressed:
+        final char = logicalKey.keyLabel.toLowerCase();
+        final pinnedItem = history.firstWhere(
+          (item) => item.pin == char,
+          orElse: () => history.first,
+        );
+        if (pinnedItem.pin == char) {
+          final index = history.indexOf(pinnedItem);
+          if (index >= 0) {
             selectItem(index);
           }
         }

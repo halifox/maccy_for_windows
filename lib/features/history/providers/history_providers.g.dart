@@ -51,7 +51,7 @@ final class HistorySearchQueryProvider
 }
 
 String _$historySearchQueryHash() =>
-    r'89f46053fb648ac09a67c8521aed87dfa229f048';
+    r'bcabdde7ad84ad21dc8901ef0b2871dfb499de6b';
 
 /// 历史记录搜索查询 Notifier。
 ///
@@ -118,7 +118,7 @@ final class HistorySelectedIndexProvider
 }
 
 String _$historySelectedIndexHash() =>
-    r'425ec12dcebe77a16ed3d53e939050f322188e4b';
+    r'97c194c35ad7c655e8f3720aee9ef352c43b5a47';
 
 /// 历史记录选中项索引 Notifier。
 ///
@@ -223,13 +223,13 @@ final filteredHistoryProvider = FilteredHistoryProvider._();
 final class FilteredHistoryProvider
     extends
         $FunctionalProvider<
-          AsyncValue<List<ClipboardEntry>>,
-          List<ClipboardEntry>,
-          Stream<List<ClipboardEntry>>
+          AsyncValue<List<HistoryItem>>,
+          List<HistoryItem>,
+          Stream<List<HistoryItem>>
         >
     with
-        $FutureModifier<List<ClipboardEntry>>,
-        $StreamProvider<List<ClipboardEntry>> {
+        $FutureModifier<List<HistoryItem>>,
+        $StreamProvider<List<HistoryItem>> {
   /// 经过过滤和排序的历史记录流。
   ///
   /// 核心数据 Provider，监听搜索词、搜索模式及存储限制，实时从仓库获取数据库数据。
@@ -249,17 +249,17 @@ final class FilteredHistoryProvider
 
   @$internal
   @override
-  $StreamProviderElement<List<ClipboardEntry>> $createElement(
+  $StreamProviderElement<List<HistoryItem>> $createElement(
     $ProviderPointer pointer,
   ) => $StreamProviderElement(pointer);
 
   @override
-  Stream<List<ClipboardEntry>> create(Ref ref) {
+  Stream<List<HistoryItem>> create(Ref ref) {
     return filteredHistory(ref);
   }
 }
 
-String _$filteredHistoryHash() => r'594d3b3b8c1f7979b2e8421b57b1c789d825522a';
+String _$filteredHistoryHash() => r'f80ed23ab93e68ae4bdccf7a8fbf5efda990fe9a';
 
 /// 历史记录交互控制器。
 ///
@@ -315,7 +315,7 @@ final class HistoryControllerProvider
   }
 }
 
-String _$historyControllerHash() => r'0c69fb06314db6dcff71a0da7ecd37ae703c92ac';
+String _$historyControllerHash() => r'1eed9b01e305035e689843aeecc39c06be7dd9ee';
 
 /// 历史记录交互控制器。
 ///

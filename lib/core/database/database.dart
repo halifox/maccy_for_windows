@@ -4,43 +4,50 @@ import 'package:sqlite3/sqlite3.dart';
 
 part 'database.g.dart';
 
-/// 剪贴板条目数据库表定义。
+/// 历史条目主表（对应 Maccy 的 HistoryItem）。
 ///
-/// 用于存储从系统剪贴板捕获的所有文本、图片或文件记录。
+/// 存储剪贴板条目的元数据和关系。
 ///
 /// 字段说明:
 /// [id] 主键 ID，自增。
-/// [content] 剪贴板文本内容，设有唯一索引以防重复记录。
-/// [type] 内容类型（如 text, image, file），默认为 'text'。
-/// [createdAt] 记录创建时间，默认为当前系统时间。
-/// [isPinned] 是否置顶标记，默认为 false。
-/// [pinOrder] 置顶排序权重，数值越大排序越靠前。
-/// [appName] 来源应用程序名称（可选）。
-/// [copyCount] 复制次数统计，默认为 1。
-/// [firstCopiedAt] 首次复制时间，默认为当前系统时间。
-/// [lastCopiedAt] 最后复制时间，默认为当前系统时间。
-/// [htmlContent] HTML 格式内容（可选）。
-/// [rtfContent] RTF 格式内容（可选）。
-class ClipboardEntries extends Table {
+/// [application] 来源应用程序的 bundle ID 或进程名（可选）。
+/// [firstCopiedAt] 首次复制时间。
+/// [lastCopiedAt] 最后一次复制时间。
+/// [numberOfCopies] 复制次数统计，默认为 1。
+/// [pin] 固定快捷键，单字符 'b'-'y'（排除 a/q/v/w/z），null 表示未固定。
+/// [title] 显示标题，最大 203 字符。
+class HistoryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
-  TextColumn get content => text().unique()();
-  TextColumn get type => text().withDefault(const Constant('text'))();
-  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
-  BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
-  IntColumn get pinOrder => integer().nullable()();
-  TextColumn get appName => text().nullable()();
-  IntColumn get copyCount => integer().withDefault(const Constant(1))();
-  DateTimeColumn get firstCopiedAt => dateTime().withDefault(currentDateAndTime)();
-  DateTimeColumn get lastCopiedAt => dateTime().withDefault(currentDateAndTime)();
-  TextColumn get htmlContent => text().nullable()();
-  TextColumn get rtfContent => text().nullable()();
+  TextColumn get application => text().nullable()();
+  DateTimeColumn get firstCopiedAt => dateTime()();
+  DateTimeColumn get lastCopiedAt => dateTime()();
+  IntColumn get numberOfCopies => integer().withDefault(const Constant(1))();
+  TextColumn get pin => text().nullable().withLength(min: 1, max: 1)();
+  TextColumn get title => text().withLength(max: 203)();
+}
+
+/// 历史条目内容表（对应 Maccy 的 HistoryItemContent）。
+///
+/// 存储单个剪贴板条目的多格式数据（文本、HTML、RTF、图片等）。
+/// 一个 HistoryItem 可以有多个 HistoryItemContent。
+///
+/// 字段说明:
+/// [id] 主键 ID，自增。
+/// [itemId] 外键，关联到 HistoryItems 表，级联删除。
+/// [type] 内容类型标识符（如 'text/plain', 'text/html', 'image/png', 'file'）。
+/// [value] 二进制数据内容。
+class HistoryItemContents extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get itemId => integer().references(HistoryItems, #id, onDelete: KeyAction.cascade)();
+  TextColumn get type => text()();
+  BlobColumn get value => blob().nullable()();
 }
 
 /// 应用程序数据库类。
 ///
 /// 基于 Drift (Sqlite) 构建，提供剪贴板条目的持久化存储、版本迁移管理、
 /// 以及原生自定义函数（如正则表达式支持）的注册。
-@DriftDatabase(tables: [ClipboardEntries])
+@DriftDatabase(tables: [HistoryItems, HistoryItemContents])
 class AppDatabase extends _$AppDatabase {
   /// 构造函数。
   ///
@@ -48,7 +55,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   /// 获取数据库迁移策略。
   ///
@@ -60,41 +67,14 @@ class AppDatabase extends _$AppDatabase {
         await m.createAll();
       },
       onUpgrade: (m, from, to) async {
-        if (from < 5) {
-          try {
-            await m.addColumn(clipboardEntries, clipboardEntries.isPinned);
-          } catch (_) {}
-        }
-        if (from < 6) {
-          try {
-            await m.addColumn(clipboardEntries, clipboardEntries.pinOrder);
-          } catch (_) {}
-        }
-        if (from < 7) {
-          await m.createIndex(
-            Index(
-              'clipboard_entries_content',
-              'CREATE UNIQUE INDEX IF NOT EXISTS clipboard_entries_content ON clipboard_entries (content)',
-            ),
-          );
-        }
-        if (from < 8) {
-          try {
-            await m.addColumn(clipboardEntries, clipboardEntries.appName);
-          } catch (_) {}
-        }
-        if (from < 9) {
-          try {
-            await m.addColumn(clipboardEntries, clipboardEntries.copyCount);
-            await m.addColumn(clipboardEntries, clipboardEntries.firstCopiedAt);
-            await m.addColumn(clipboardEntries, clipboardEntries.lastCopiedAt);
-          } catch (_) {}
-        }
-        if (from < 10) {
-          try {
-            await m.addColumn(clipboardEntries, clipboardEntries.htmlContent);
-            await m.addColumn(clipboardEntries, clipboardEntries.rtfContent);
-          } catch (_) {}
+        // 版本 11：完全重构为 Maccy 双表结构
+        if (from < 11) {
+          // 删除旧表
+          await m.deleteTable('clipboard_entries');
+
+          // 创建新表
+          await m.createTable(historyItems);
+          await m.createTable(historyItemContents);
         }
       },
       beforeOpen: (details) async {},

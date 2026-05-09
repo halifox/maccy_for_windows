@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:maccy/core/constants/ui_constants.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/core/utils/text_formatter.dart';
@@ -45,62 +47,73 @@ class HistoryPage extends HookConsumerWidget {
         focusNode: useFocusNode(),
         onKeyEvent: (event) =>
             ref.read(historyControllerProvider.notifier).handleKeyEvent(event),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(6), // Match Maccy's 6px radius
-            border: Border.all(
-              color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
-              width: 0.5,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _HistoryHeader(),
-              Expanded(
-                child: RepaintBoundary(
-                  child: Consumer(
-                    builder: (context, ref, child) {
-                      final history =
-                          ref.watch(filteredHistoryProvider).value ?? [];
-                      return ListView.builder(
-                        padding: EdgeInsets.zero,
-                        itemCount: history.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          final item = history[index];
-                          return _HistoryRow(
-                            index: index,
-                            item: item,
-                            type: item.type,
-                            content: item.content,
-                            shortcut: index < 9 ? '${index + 1}' : null,
-                            isPinned: item.isPinned,
-                            selectionColor: highlightColor,
-                            onTap: () => ref
-                                .read(historyControllerProvider.notifier)
-                                .selectItem(index),
-                            onHover: () => ref
-                                .read(historySelectedIndexProvider.notifier)
-                                .value = index,
-                            onPin: () => ref
-                                .read(historyControllerProvider.notifier)
-                                .togglePin(index),
-                            onDelete: () => ref
-                                .read(historyControllerProvider.notifier)
-                                .deleteItem(index),
-                          );
-                        },
-                      );
-                    },
-                  ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+                border: Border.all(
+                  color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
+                  width: 0.5,
                 ),
               ),
-              _FooterMenu(
-                totalItems: totalItems,
-                highlightColor: highlightColor,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const _HistoryHeader(),
+                  Expanded(
+                    child: RepaintBoundary(
+                      child: Consumer(
+                        builder: (context, ref, child) {
+                          final history =
+                              ref.watch(filteredHistoryProvider).value ?? [];
+                          return ListView.builder(
+                            padding: EdgeInsets.zero,
+                            itemCount: history.length,
+                            itemBuilder: (BuildContext context, int index) {
+                              final item = history[index];
+                              // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
+                              String? shortcut;
+                              if (item.pin != null) {
+                                shortcut = item.pin!.toUpperCase();
+                              } else if (index < 10) {
+                                shortcut = '${(index + 1) % 10}';
+                              }
+
+                              return _HistoryRow(
+                                index: index,
+                                item: item,
+                                shortcut: shortcut,
+                                selectionColor: highlightColor,
+                                onTap: () => ref
+                                    .read(historyControllerProvider.notifier)
+                                    .selectItem(index),
+                                onHover: () => ref
+                                    .read(historySelectedIndexProvider.notifier)
+                                    .value = index,
+                                onPin: () => ref
+                                    .read(historyControllerProvider.notifier)
+                                    .togglePin(index),
+                                onDelete: () => ref
+                                    .read(historyControllerProvider.notifier)
+                                    .deleteItem(index),
+                              );
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  _FooterMenu(
+                    totalItems: totalItems,
+                    highlightColor: highlightColor,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -129,9 +142,9 @@ class _FooterMenu extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Divider(
-          indent: 10, // Match Maccy's horizontal padding
-          endIndent: 10,
-          height: 6, // Match Maccy's separator padding
+          indent: MaccyUIConstants.dividerHorizontalPadding,
+          endIndent: MaccyUIConstants.dividerHorizontalPadding,
+          height: MaccyUIConstants.verticalSeparatorPadding,
           color: isDark ? Colors.white10 : Colors.black12,
         ),
         _MenuRow(
@@ -209,22 +222,29 @@ class _HistoryHeader extends HookConsumerWidget {
     });
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(5, 5, 5, 5), // Match Maccy's 5px padding
+      padding: const EdgeInsets.all(MaccyUIConstants.searchFieldPadding),
       child: CupertinoSearchTextField(
         controller: searchController,
         focusNode: searchFocusNode,
         autofocus: true,
         placeholder: 'Search...',
-        itemSize: 12,
-        padding: const EdgeInsetsDirectional.fromSTEB(5, 4, 5, 4), // Adjust internal padding
-        borderRadius: BorderRadius.circular(4), // Match Maccy's corner radius
+        itemSize: MaccyUIConstants.searchFieldIconSize,
+        padding: const EdgeInsetsDirectional.fromSTEB(
+          MaccyUIConstants.searchFieldInternalHorizontalPadding,
+          MaccyUIConstants.searchFieldInternalVerticalPadding,
+          MaccyUIConstants.searchFieldInternalHorizontalPadding,
+          MaccyUIConstants.searchFieldInternalVerticalPadding,
+        ),
+        borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
         backgroundColor: isDark
             ? Colors.white10
             : Colors.black.withValues(alpha: 0.06),
         style: TextStyle(
-          fontSize: 12,
+          fontSize: MaccyUIConstants.searchFieldFontSize,
           color: isDark ? Colors.white : Colors.black,
-          fontFamily: '.AppleSystemUIFont',
+          fontFamily: Platform.isWindows
+              ? MaccyUIConstants.systemFontFamilyWindows
+              : MaccyUIConstants.systemFontFamily,
         ),
         onChanged: (value) {
           debouncer.run(() {
@@ -293,11 +313,8 @@ class _HistoryRow extends HookConsumerWidget {
   });
 
   final int index;
-  final ClipboardEntry item;
-  final String type;
-  final String content;
+  final HistoryItem item;
   final String? shortcut;
-  final bool isPinned;
   final Color selectionColor;
   final VoidCallback onTap;
   final VoidCallback onHover;
@@ -340,22 +357,25 @@ class _HistoryRow extends HookConsumerWidget {
           GestureDetector(
             onTap: onTap,
             child: Container(
-              height: 24, // Match Maccy's itemHeight
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+              height: MaccyUIConstants.itemHeight,
+              padding: const EdgeInsets.symmetric(
+                horizontal: MaccyUIConstants.contentLeadingPadding,
+                vertical: 0,
+              ),
               color: isSelected ? selectionColor : Colors.transparent,
               child: Row(
                 children: [
-                  if (isPinned)
+                  if (item.pin != null)
                     const Icon(Icons.push_pin, size: 10, color: Colors.blueAccent),
                   Expanded(
                     child: Padding(
-                      padding: EdgeInsets.only(left: isPinned ? 4 : 0),
+                      padding: EdgeInsets.only(left: item.pin != null ? 4 : 0),
                       child: buildContent(ref, isSelected, isDark),
                     ),
                   ),
                   if (isSelected) ...[
                     _HoverIcon(
-                      icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                      icon: item.pin != null ? Icons.push_pin : Icons.push_pin_outlined,
                       onTap: onPin,
                       hoverColor: Colors.white,
                     ),
@@ -371,7 +391,10 @@ class _HistoryRow extends HookConsumerWidget {
                     Text(
                       '⌘$shortcut',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: MaccyUIConstants.shortcutFontSize,
+                        fontFamily: Platform.isWindows
+                            ? MaccyUIConstants.systemFontFamilyWindows
+                            : MaccyUIConstants.systemFontFamily,
                         color: isSelected
                             ? Colors.white70
                             : (isDark ? Colors.white24 : Colors.black26),
@@ -394,43 +417,12 @@ class _HistoryRow extends HookConsumerWidget {
   }
 
   Widget buildContent(WidgetRef ref, bool isSelected, bool isDark) {
-    if (type == 'image') {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: Image.file(
-          File(content),
-          fit: BoxFit.contain,
-          height: ref.read(imageHeightProvider).toDouble(),
-          errorBuilder: (_, _, _) => const Icon(Icons.broken_image, size: 32),
-        ),
-      );
-    } else if (type == 'file') {
-      return Row(
-        children: [
-          Icon(
-            Icons.description_outlined,
-            size: 14,
-            color: isSelected
-                ? Colors.white70
-                : (isDark ? Colors.white54 : Colors.black54),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _TextContent(
-              content: content,
-              isSelected: isSelected,
-              isDark: isDark,
-            ),
-          ),
-        ],
-      );
-    } else {
-      return _TextContent(
-        content: content,
-        isSelected: isSelected,
-        isDark: isDark,
-      );
-    }
+    // 使用 title 字段显示内容
+    return _TextContent(
+      content: item.title,
+      isSelected: isSelected,
+      isDark: isDark,
+    );
   }
 }
 
@@ -471,8 +463,10 @@ class _TextContent extends HookConsumerWidget {
 
     final spans = useMemoized(() {
       final baseStyle = TextStyle(
-        fontSize: 13,
-        fontFamily: '.AppleSystemUIFont',
+        fontSize: MaccyUIConstants.primaryFontSize,
+        fontFamily: Platform.isWindows
+            ? MaccyUIConstants.systemFontFamilyWindows
+            : MaccyUIConstants.systemFontFamily,
         color: isSelected
             ? Colors.white
             : (isDark ? Colors.white : Colors.black87),
@@ -617,8 +611,10 @@ class _MenuRow extends ConsumerWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 24, // Match Maccy's itemHeight
-          padding: const EdgeInsets.symmetric(horizontal: 10), // Match Maccy's padding
+          height: MaccyUIConstants.itemHeight,
+          padding: const EdgeInsets.symmetric(
+            horizontal: MaccyUIConstants.contentLeadingPadding,
+          ),
           color: isSelected ? selectionColor : Colors.transparent,
           child: Row(
             children: [
@@ -626,7 +622,10 @@ class _MenuRow extends ConsumerWidget {
                 child: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: MaccyUIConstants.primaryFontSize,
+                    fontFamily: Platform.isWindows
+                        ? MaccyUIConstants.systemFontFamilyWindows
+                        : MaccyUIConstants.systemFontFamily,
                     color: isSelected
                         ? Colors.white
                         : (isDark ? Colors.white : Colors.black87),
@@ -637,7 +636,10 @@ class _MenuRow extends ConsumerWidget {
                 Text(
                   shortcut!,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: MaccyUIConstants.shortcutFontSize,
+                    fontFamily: Platform.isWindows
+                        ? MaccyUIConstants.systemFontFamilyWindows
+                        : MaccyUIConstants.systemFontFamily,
                     color: isSelected
                         ? Colors.white70
                         : (isDark ? Colors.white24 : Colors.black26),
