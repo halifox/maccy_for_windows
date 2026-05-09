@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
+import 'package:maccy/core/services/search_service.dart';
 
 part 'history_repository.g.dart';
 
@@ -27,53 +28,47 @@ class HistoryRepository {
   /// [limit] 最大返回条数。
   Stream<List<ClipboardEntry>> watchEntries({
     String? query,
-    String searchMode = 'fuzzy',
+    String searchMode = 'exact',
     required int limit,
   }) {
-    final select = _db.select(_db.clipboardEntries);
+    // 先获取所有条目（按排序规则）
+    final select = _db.select(_db.clipboardEntries)
+      ..orderBy([
+        (t) => OrderingTerm.desc(t.isPinned),
+        (t) => OrderingTerm.desc(t.pinOrder),
+        (t) => OrderingTerm.desc(t.createdAt),
+      ])
+      ..limit(limit);
 
-    if (query != null && query.isNotEmpty) {
-      switch (searchMode) {
-        case 'exact':
-          select.where((t) => t.content.contains(query));
-        case 'regex':
-          select.where((t) => t.content.regexp(query));
-        case 'mixed':
-          try {
-            RegExp(query);
-            select.where((t) => t.content.regexp(query));
-          } catch (_) {
-            _applyFuzzySearch(select, query);
-          }
-        case 'fuzzy':
-        default:
-          _applyFuzzySearch(select, query);
-      }
+    // 如果没有搜索关键词，直接返回
+    if (query == null || query.isEmpty) {
+      return select.watch();
     }
 
-    return (select
-          ..orderBy([
-            (t) => OrderingTerm.desc(t.isPinned),
-            (t) => OrderingTerm.desc(t.pinOrder),
-            (t) => OrderingTerm.desc(t.createdAt),
-          ])
-          ..limit(limit))
-        .watch();
+    // 有搜索关键词时，使用 SearchService 进行内存过滤
+    return select.watch().map((entries) {
+      final mode = _parseSearchMode(searchMode);
+      return SearchService.search(
+        query: query,
+        items: entries,
+        mode: mode,
+      );
+    });
   }
 
-  /// 应用模糊搜索逻辑。
-  ///
-  /// 将 [query] 按空格拆分为多个术语，并要求内容必须同时包含所有术语。
-  ///
-  /// [select] Drift 查询构建器。
-  /// [query] 原始查询字符串。
-  void _applyFuzzySearch(
-    SimpleSelectStatement<$ClipboardEntriesTable, ClipboardEntry> select,
-    String query,
-  ) {
-    final terms = query.split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
-    for (final term in terms) {
-      select.where((t) => t.content.contains(term));
+  /// 解析搜索模式字符串为枚举。
+  SearchMode _parseSearchMode(String mode) {
+    switch (mode) {
+      case 'exact':
+        return SearchMode.exact;
+      case 'fuzzy':
+        return SearchMode.fuzzy;
+      case 'regex':
+        return SearchMode.regexp;
+      case 'mixed':
+        return SearchMode.mixed;
+      default:
+        return SearchMode.exact;
     }
   }
 

@@ -32,6 +32,7 @@ class FlutterWindow : public Win32Window {
   HWND last_active_window_ = nullptr;
   void RecordActiveApp();
   void RestoreAndPaste();
+  void EnableBlurEffect();
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

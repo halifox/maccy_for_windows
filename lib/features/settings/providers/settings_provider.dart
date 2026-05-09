@@ -125,12 +125,19 @@ NotifierProvider<JsonPersistentNotifier<T>, T> prefJson<T>(
   );
 }
 
-/// 启动与更新设置
+// ============================================================================
+// General Settings (启动与更新)
+// ============================================================================
+
 /// 是否开机自动启动应用
 final launchAtStartupProvider = pref<bool>('launchAtStartup', false);
 
 /// 是否自动检查版本更新
 final autoCheckUpdatesProvider = pref<bool>('autoCheckUpdates', true);
+
+// ============================================================================
+// Keyboard Shortcuts (快捷键)
+// ============================================================================
 
 /// 唤起剪贴板历史面板的全局快捷键
 final hotkeyOpenProvider = prefJson<AppHotKeyConfig>(
@@ -156,61 +163,167 @@ final hotkeyDeleteProvider = prefJson<AppHotKeyConfig>(
   toJson: (v) => v.toJson(),
 );
 
-/// 行为逻辑设置
+// ============================================================================
+// Search Settings (搜索)
+// ============================================================================
+
+/// 搜索匹配模式（exact: 精确, fuzzy: 模糊, regex: 正则, mixed: 混合）
+final searchModeProvider = pref<String>('searchMode', 'exact');
+
+// ============================================================================
+// Behavior Settings (行为逻辑)
+// ============================================================================
+
 /// 选择记录后是否自动执行粘贴操作
-final autoPasteProvider = pref<bool>('autoPaste', true);
+final autoPasteProvider = pref<bool>('autoPaste', false);
+
 /// 是否始终以纯文本格式粘贴（去除格式）
 final pastePlainProvider = pref<bool>('pastePlain', false);
-/// 搜索匹配模式（fuzzy: 模糊, exact: 精确, regex: 正则, mixed: 混合）
-final searchModeProvider = pref<String>('searchMode', 'fuzzy');
-/// 是否暂停捕获新的剪贴板内容
-final isPausedProvider = pref<bool>('isPaused', false);
 
-/// 存储与清理策略设置
+// ============================================================================
+// Storage Settings (存储与清理策略)
+// ============================================================================
+
 /// 历史记录保留的最大条数上限
 final historyLimitProvider = pref<int>('historyLimit', 200);
+
+/// 排序方式 (lastCopiedAt: 最近复制, firstCopiedAt: 首次复制, numberOfCopies: 复制次数)
+final sortByProvider = pref<String>('sortBy', 'lastCopiedAt');
+
 /// 是否记录并保存文本内容
 final saveTextProvider = pref<bool>('saveText', true);
+
 /// 是否记录并保存图片内容
 final saveImagesProvider = pref<bool>('saveImages', true);
+
 /// 是否记录并保存文件/文件夹路径
 final saveFilesProvider = pref<bool>('saveFiles', true);
+
 /// 应用退出时是否自动清空所有历史记录
 final clearOnExitProvider = pref<bool>('clearOnExit', false);
+
 /// 清空历史时是否同步清空系统当前的剪贴板
 final clearSystemClipboardProvider = pref<bool>('clearSystemClipboard', false);
 
-/// UI 与外观配置设置
-/// 面板弹出位置（cursor: 鼠标光标处, center: 屏幕中央）
+// ============================================================================
+// Appearance Settings (UI 与外观配置)
+// ============================================================================
+
+/// 面板弹出位置（cursor: 鼠标光标处, center: 屏幕中央, statusItem: 状态栏, lastPosition: 记住位置）
 final popupPositionProvider = pref<String>('popupPosition', 'cursor');
+
+/// 多屏幕环境下的目标屏幕索引（0: 活动屏幕, 1+: 具体屏幕编号）
+final popupScreenProvider = pref<int>('popupScreen', 0);
+
 /// 置顶项目在列表中的显示位置（top: 顶部, bottom: 底部）
 final pinPositionProvider = pref<String>('pinPosition', 'top');
-/// 列表中图片预览区域的高度
+
+/// 列表中图片预览区域的最大高度（像素）
 final imageHeightProvider = pref<int>('imageHeight', 40);
+
 /// 显示详细内容预览前的延迟毫秒数
 final previewDelayProvider = pref<int>('previewDelay', 1500);
+
 /// 搜索结果匹配文字的高亮样式（bold: 加粗, color: 颜色高亮）
 final highlightMatchProvider = pref<String>('highlightMatch', 'bold');
-/// 是否显示空格、换行等特殊不可见字符
+
+/// 是否显示空格、换行等特殊不可见字符（空格→·, 换行→⏎, Tab→⇥）
 final showSpecialCharsProvider = pref<bool>('showSpecialChars', false);
-/// 是否在系统菜单栏显示应用图标
+
+/// 是否在系统菜单栏/托盘显示应用图标
 final showMenuBarIconProvider = pref<bool>('showMenuBarIcon', true);
-/// 菜单栏图标的样式类型
+
+/// 菜单栏图标的样式类型 (clipboard: 剪贴板图标, scissors: 剪刀图标, text: 文字图标)
 final menuBarIconTypeProvider = pref<String>('menuBarIconType', 'clipboard');
-/// 是否在菜单栏图标旁实时显示剪贴板文字预览
-final showClipboardNearIconProvider = pref<bool>(
-  'showClipboardNearIcon',
+
+/// 是否在菜单栏图标旁实时显示最近复制的内容预览
+final showRecentCopyInMenuBarProvider = pref<bool>(
+  'showRecentCopyInMenuBar',
   false,
 );
-/// 搜索框的显示时机（always: 总是显示, typing: 输入时显示, never: 从不显示）
-final showSearchBoxProvider = pref<String>('showSearchBox', 'always');
-/// 是否显示来源应用程序的名称
-final showAppNameProvider = pref<bool>('showAppName', false);
+
+/// 是否显示搜索框
+final showSearchProvider = pref<bool>('showSearch', true);
+
+/// 搜索框的可见性策略（always: 总是显示, onType: 输入时显示, never: 从不显示）
+final searchVisibilityProvider = pref<String>('searchVisibility', 'always');
+
+/// 是否在搜索框上方显示标题栏
+final showTitleProvider = pref<bool>('showTitle', true);
+
 /// 是否显示来源应用程序的图标
-final showAppIconProvider = pref<bool>('showAppIcon', true);
-/// 是否显示列表底部的功能操作菜单
+final showAppIconProvider = pref<bool>('showAppIcon', false);
+
+/// 是否显示列表底部的功能操作菜单（清空历史、设置、退出）
 final showFooterMenuProvider = pref<bool>('showFooterMenu', true);
-/// 剪贴板面板的默认窗口宽度
-final windowWidthProvider = pref<double>('windowWidth', 350.0);
+
+/// 剪贴板面板的默认窗口宽度（像素）
+final windowWidthProvider = pref<double>('windowWidth', 450.0);
+
+/// 剪贴板面板的默认窗口高度（像素）
+final windowHeightProvider = pref<double>('windowHeight', 800.0);
+
 /// 应用主题模式（system: 跟随系统, light: 浅色, dark: 深色）
 final themeModeProvider = pref<String>('themeMode', 'system');
+
+// ============================================================================
+// Ignore Settings (忽略/过滤规则)
+// ============================================================================
+
+/// 忽略的应用程序列表（Bundle ID 或进程名）
+final ignoredAppsProvider = pref<List<String>>('ignoredApps', []);
+
+/// 反向模式：仅记录列表内的应用（true 时 ignoredApps 变为白名单）
+final ignoreAllAppsExceptListedProvider = pref<bool>(
+  'ignoreAllAppsExceptListed',
+  false,
+);
+
+/// 忽略的剪贴板类型列表（如密码管理器的特殊类型）
+final ignoredPasteboardTypesProvider = pref<List<String>>(
+  'ignoredPasteboardTypes',
+  [
+    'com.agilebits.onepassword',
+    'com.typeit4me.clipping',
+    'de.petermaurer.TransientPasteboardType',
+    'net.antelle.keeweb',
+  ],
+);
+
+/// 正则表达式过滤规则列表（匹配的内容将被忽略）
+final ignoreRegexpProvider = pref<List<String>>('ignoreRegexp', []);
+
+// ============================================================================
+// Advanced Settings (高级配置)
+// ============================================================================
+
+/// 剪贴板检查间隔（秒）
+final clipboardCheckIntervalProvider = pref<double>(
+  'clipboardCheckInterval',
+  0.5,
+);
+
+/// 是否暂停捕获新的剪贴板内容（临时开关）
+final ignoreEventsProvider = pref<bool>('ignoreEvents', false);
+
+/// 仅忽略下一次剪贴板事件（配合 ignoreEvents 使用）
+final ignoreOnlyNextEventProvider = pref<bool>('ignoreOnlyNextEvent', false);
+
+// ============================================================================
+// Computed/Derived Providers (派生状态)
+// ============================================================================
+
+/// 所有启用的剪贴板类型集合（根据 saveText/saveImages/saveFiles 计算）
+final enabledPasteboardTypesProvider = Provider<Set<String>>((ref) {
+  final types = <String>{};
+  if (ref.watch(saveTextProvider)) {
+    types.addAll(['text', 'html', 'rtf']);
+  }
+  if (ref.watch(saveImagesProvider)) {
+    types.addAll(['image', 'png', 'tiff']);
+  }
+  if (ref.watch(saveFilesProvider)) {
+    types.add('file');
+  }
+  return types;
+});

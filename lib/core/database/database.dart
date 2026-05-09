@@ -15,6 +15,7 @@ part 'database.g.dart';
 /// [createdAt] 记录创建时间，默认为当前系统时间。
 /// [isPinned] 是否置顶标记，默认为 false。
 /// [pinOrder] 置顶排序权重，数值越大排序越靠前。
+/// [appName] 来源应用程序名称（可选）。
 class ClipboardEntries extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get content => text().unique()();
@@ -22,6 +23,7 @@ class ClipboardEntries extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
   IntColumn get pinOrder => integer().nullable()();
+  TextColumn get appName => text().nullable()();
 }
 
 /// 应用程序数据库类。
@@ -36,7 +38,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   /// 获取数据库迁移策略。
   ///
@@ -65,6 +67,11 @@ class AppDatabase extends _$AppDatabase {
               'CREATE UNIQUE INDEX IF NOT EXISTS clipboard_entries_content ON clipboard_entries (content)',
             ),
           );
+        }
+        if (from < 8) {
+          try {
+            await m.addColumn(clipboardEntries, clipboardEntries.appName);
+          } catch (_) {}
         }
       },
       beforeOpen: (details) async {},

@@ -3,10 +3,18 @@
 #include <optional>
 #include <vector>
 #include <windows.h>
+#include <dwmapi.h>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
+
+#pragma comment(lib, "dwmapi.lib")
+
+// Windows 11 backdrop attribute (if not in SDK)
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -50,7 +58,30 @@ bool FlutterWindow::OnCreate() {
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   flutter_controller_->ForceRedraw();
 
+  // Enable acrylic blur effect for Windows 10/11
+  EnableBlurEffect();
+
   return true;
+}
+
+void FlutterWindow::EnableBlurEffect() {
+  HWND hwnd = GetHandle();
+
+  // Try Windows 11 backdrop first (value 3 = DWMSBT_TRANSIENTWINDOW)
+  int backdropType = 3;
+  HRESULT hr = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
+
+  if (FAILED(hr)) {
+    // Fallback to Windows 10 blur behind
+    DWM_BLURBEHIND bb = {0};
+    bb.dwFlags = DWM_BB_ENABLE | DWM_BB_BLURREGION;
+    bb.fEnable = TRUE;
+    bb.hRgnBlur = CreateRectRgn(0, 0, -1, -1);
+    DwmEnableBlurBehindWindow(hwnd, &bb);
+    if (bb.hRgnBlur) {
+      DeleteObject(bb.hRgnBlur);
+    }
+  }
 }
 
 void FlutterWindow::RecordActiveApp() {

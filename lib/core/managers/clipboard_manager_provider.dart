@@ -7,6 +7,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
+import 'package:maccy/core/services/foreground_app_service.dart';
+import 'package:maccy/core/services/paste_service.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -131,16 +133,30 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         debugPrint('[ClipboardManager] 粘贴失败: 缺少 macOS 辅助功能权限');
         return;
       }
-    }
 
-    try {
-      const platform = MethodChannel('com.hali.clip/native_utils');
-      await platform.invokeMethod('restoreAndPaste');
-      if (Platform.isWindows) {
-        await windowManager.hide();
+      try {
+        const platform = MethodChannel('com.hali.clip/native_utils');
+        await platform.invokeMethod('restoreAndPaste');
+      } catch (e) {
+        debugPrint('[ClipboardManager] macOS 模拟粘贴失败: $e');
       }
-    } catch (e) {
-      debugPrint('[ClipboardManager] 模拟粘贴失败: $e');
+    } else if (Platform.isWindows) {
+      // 使用 Win32 SendInput API 模拟粘贴
+      try {
+        // 先隐藏窗口，恢复之前的活跃窗口
+        await windowManager.hide();
+
+        // 等待窗口完全隐藏并焦点切换
+        await Future.delayed(const Duration(milliseconds: 100));
+
+        // 执行粘贴
+        final success = await PasteService.simulatePasteDelayed(delayMs: 50);
+        if (!success) {
+          debugPrint('[ClipboardManager] Windows 粘贴失败');
+        }
+      } catch (e) {
+        debugPrint('[ClipboardManager] Windows 模拟粘贴失败: $e');
+      }
     }
   }
 
@@ -214,6 +230,14 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
 
   Future<void> upsertClipboardEntry(String content, String type) async {
     final db = ref.read(appDatabaseProvider);
+
+    // 获取来源应用名称（仅 Windows 平台）
+    String? appName;
+    if (Platform.isWindows) {
+      appName = ForegroundAppService.getForegroundAppName();
+      debugPrint('[ClipboardManager] 来源应用: $appName');
+    }
+
     await db
         .into(db.clipboardEntries)
         .insert(
@@ -221,11 +245,13 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
             content: content,
             type: Value(type),
             createdAt: Value(DateTime.now()),
+            appName: Value(appName),
           ),
           onConflict: DoUpdate(
             (old) => ClipboardEntriesCompanion(
               createdAt: Value(DateTime.now()),
               type: Value(type),
+              appName: Value(appName),
             ),
             target: [db.clipboardEntries.content],
           ),

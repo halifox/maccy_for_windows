@@ -82,6 +82,17 @@ class $ClipboardEntriesTable extends ClipboardEntries
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _appNameMeta = const VerificationMeta(
+    'appName',
+  );
+  @override
+  late final GeneratedColumn<String> appName = GeneratedColumn<String>(
+    'app_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -90,6 +101,7 @@ class $ClipboardEntriesTable extends ClipboardEntries
     createdAt,
     isPinned,
     pinOrder,
+    appName,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -138,6 +150,12 @@ class $ClipboardEntriesTable extends ClipboardEntries
         pinOrder.isAcceptableOrUnknown(data['pin_order']!, _pinOrderMeta),
       );
     }
+    if (data.containsKey('app_name')) {
+      context.handle(
+        _appNameMeta,
+        appName.isAcceptableOrUnknown(data['app_name']!, _appNameMeta),
+      );
+    }
     return context;
   }
 
@@ -171,6 +189,10 @@ class $ClipboardEntriesTable extends ClipboardEntries
         DriftSqlType.int,
         data['${effectivePrefix}pin_order'],
       ),
+      appName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}app_name'],
+      ),
     );
   }
 
@@ -187,6 +209,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
   final DateTime createdAt;
   final bool isPinned;
   final int? pinOrder;
+  final String? appName;
   const ClipboardEntry({
     required this.id,
     required this.content,
@@ -194,6 +217,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     required this.createdAt,
     required this.isPinned,
     this.pinOrder,
+    this.appName,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -205,6 +229,9 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     map['is_pinned'] = Variable<bool>(isPinned);
     if (!nullToAbsent || pinOrder != null) {
       map['pin_order'] = Variable<int>(pinOrder);
+    }
+    if (!nullToAbsent || appName != null) {
+      map['app_name'] = Variable<String>(appName);
     }
     return map;
   }
@@ -219,6 +246,9 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       pinOrder: pinOrder == null && nullToAbsent
           ? const Value.absent()
           : Value(pinOrder),
+      appName: appName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(appName),
     );
   }
 
@@ -234,6 +264,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       pinOrder: serializer.fromJson<int?>(json['pinOrder']),
+      appName: serializer.fromJson<String?>(json['appName']),
     );
   }
   @override
@@ -246,6 +277,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'isPinned': serializer.toJson<bool>(isPinned),
       'pinOrder': serializer.toJson<int?>(pinOrder),
+      'appName': serializer.toJson<String?>(appName),
     };
   }
 
@@ -256,6 +288,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     DateTime? createdAt,
     bool? isPinned,
     Value<int?> pinOrder = const Value.absent(),
+    Value<String?> appName = const Value.absent(),
   }) => ClipboardEntry(
     id: id ?? this.id,
     content: content ?? this.content,
@@ -263,6 +296,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
     createdAt: createdAt ?? this.createdAt,
     isPinned: isPinned ?? this.isPinned,
     pinOrder: pinOrder.present ? pinOrder.value : this.pinOrder,
+    appName: appName.present ? appName.value : this.appName,
   );
   ClipboardEntry copyWithCompanion(ClipboardEntriesCompanion data) {
     return ClipboardEntry(
@@ -272,6 +306,7 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
       pinOrder: data.pinOrder.present ? data.pinOrder.value : this.pinOrder,
+      appName: data.appName.present ? data.appName.value : this.appName,
     );
   }
 
@@ -283,14 +318,15 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
           ..write('type: $type, ')
           ..write('createdAt: $createdAt, ')
           ..write('isPinned: $isPinned, ')
-          ..write('pinOrder: $pinOrder')
+          ..write('pinOrder: $pinOrder, ')
+          ..write('appName: $appName')
           ..write(')'))
         .toString();
   }
 
   @override
   int get hashCode =>
-      Object.hash(id, content, type, createdAt, isPinned, pinOrder);
+      Object.hash(id, content, type, createdAt, isPinned, pinOrder, appName);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -300,7 +336,8 @@ class ClipboardEntry extends DataClass implements Insertable<ClipboardEntry> {
           other.type == this.type &&
           other.createdAt == this.createdAt &&
           other.isPinned == this.isPinned &&
-          other.pinOrder == this.pinOrder);
+          other.pinOrder == this.pinOrder &&
+          other.appName == this.appName);
 }
 
 class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
@@ -310,6 +347,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
   final Value<DateTime> createdAt;
   final Value<bool> isPinned;
   final Value<int?> pinOrder;
+  final Value<String?> appName;
   const ClipboardEntriesCompanion({
     this.id = const Value.absent(),
     this.content = const Value.absent(),
@@ -317,6 +355,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     this.createdAt = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.pinOrder = const Value.absent(),
+    this.appName = const Value.absent(),
   });
   ClipboardEntriesCompanion.insert({
     this.id = const Value.absent(),
@@ -325,6 +364,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     this.createdAt = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.pinOrder = const Value.absent(),
+    this.appName = const Value.absent(),
   }) : content = Value(content);
   static Insertable<ClipboardEntry> custom({
     Expression<int>? id,
@@ -333,6 +373,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     Expression<DateTime>? createdAt,
     Expression<bool>? isPinned,
     Expression<int>? pinOrder,
+    Expression<String>? appName,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -341,6 +382,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
       if (createdAt != null) 'created_at': createdAt,
       if (isPinned != null) 'is_pinned': isPinned,
       if (pinOrder != null) 'pin_order': pinOrder,
+      if (appName != null) 'app_name': appName,
     });
   }
 
@@ -351,6 +393,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     Value<DateTime>? createdAt,
     Value<bool>? isPinned,
     Value<int?>? pinOrder,
+    Value<String?>? appName,
   }) {
     return ClipboardEntriesCompanion(
       id: id ?? this.id,
@@ -359,6 +402,7 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
       createdAt: createdAt ?? this.createdAt,
       isPinned: isPinned ?? this.isPinned,
       pinOrder: pinOrder ?? this.pinOrder,
+      appName: appName ?? this.appName,
     );
   }
 
@@ -383,6 +427,9 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
     if (pinOrder.present) {
       map['pin_order'] = Variable<int>(pinOrder.value);
     }
+    if (appName.present) {
+      map['app_name'] = Variable<String>(appName.value);
+    }
     return map;
   }
 
@@ -394,7 +441,8 @@ class ClipboardEntriesCompanion extends UpdateCompanion<ClipboardEntry> {
           ..write('type: $type, ')
           ..write('createdAt: $createdAt, ')
           ..write('isPinned: $isPinned, ')
-          ..write('pinOrder: $pinOrder')
+          ..write('pinOrder: $pinOrder, ')
+          ..write('appName: $appName')
           ..write(')'))
         .toString();
   }
@@ -421,6 +469,7 @@ typedef $$ClipboardEntriesTableCreateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<bool> isPinned,
       Value<int?> pinOrder,
+      Value<String?> appName,
     });
 typedef $$ClipboardEntriesTableUpdateCompanionBuilder =
     ClipboardEntriesCompanion Function({
@@ -430,6 +479,7 @@ typedef $$ClipboardEntriesTableUpdateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<bool> isPinned,
       Value<int?> pinOrder,
+      Value<String?> appName,
     });
 
 class $$ClipboardEntriesTableFilterComposer
@@ -468,6 +518,11 @@ class $$ClipboardEntriesTableFilterComposer
 
   ColumnFilters<int> get pinOrder => $composableBuilder(
     column: $table.pinOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get appName => $composableBuilder(
+    column: $table.appName,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -510,6 +565,11 @@ class $$ClipboardEntriesTableOrderingComposer
     column: $table.pinOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get appName => $composableBuilder(
+    column: $table.appName,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ClipboardEntriesTableAnnotationComposer
@@ -538,6 +598,9 @@ class $$ClipboardEntriesTableAnnotationComposer
 
   GeneratedColumn<int> get pinOrder =>
       $composableBuilder(column: $table.pinOrder, builder: (column) => column);
+
+  GeneratedColumn<String> get appName =>
+      $composableBuilder(column: $table.appName, builder: (column) => column);
 }
 
 class $$ClipboardEntriesTableTableManager
@@ -583,6 +646,7 @@ class $$ClipboardEntriesTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<int?> pinOrder = const Value.absent(),
+                Value<String?> appName = const Value.absent(),
               }) => ClipboardEntriesCompanion(
                 id: id,
                 content: content,
@@ -590,6 +654,7 @@ class $$ClipboardEntriesTableTableManager
                 createdAt: createdAt,
                 isPinned: isPinned,
                 pinOrder: pinOrder,
+                appName: appName,
               ),
           createCompanionCallback:
               ({
@@ -599,6 +664,7 @@ class $$ClipboardEntriesTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<int?> pinOrder = const Value.absent(),
+                Value<String?> appName = const Value.absent(),
               }) => ClipboardEntriesCompanion.insert(
                 id: id,
                 content: content,
@@ -606,6 +672,7 @@ class $$ClipboardEntriesTableTableManager
                 createdAt: createdAt,
                 isPinned: isPinned,
                 pinOrder: pinOrder,
+                appName: appName,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

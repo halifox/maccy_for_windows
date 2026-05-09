@@ -42,6 +42,8 @@ dependencies:
   super_clipboard: ^0.9.1
   crypto: ^3.0.7
   stream_transform: ^2.1.1
+  intl: ^0.19.0
+  fuzzy: ^0.5.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

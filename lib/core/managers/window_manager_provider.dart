@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:maccy/app.dart';
+import 'package:maccy/core/services/screen_service.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:screen_retriever/screen_retriever.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -112,17 +114,33 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     router.go('/clipboard');
     await windowManager.setSize(_windowSize);
 
+    // 使用 ScreenService 计算窗口位置
+    final Offset position;
     if (source == TriggerSource.tray) {
-      await _positionNearTray();
+      position = await ScreenService.calculateWindowPosition(
+        position: PopupPosition.statusItem,
+        screenIndex: ref.read(popupScreenProvider),
+        windowSize: _windowSize,
+      );
     } else {
-      final popupPosition = ref.read(popupPositionProvider);
-      if (popupPosition == 'cursor') {
-        await _positionNearCursor();
-      } else {
-        await windowManager.center();
+      final positionMode = _parsePopupPosition(ref.read(popupPositionProvider));
+      final prefs = ref.read(sharedPrefsProvider);
+      final lastPosition = _getLastPosition(prefs);
+
+      position = await ScreenService.calculateWindowPosition(
+        position: positionMode,
+        screenIndex: ref.read(popupScreenProvider),
+        windowSize: _windowSize,
+        lastPosition: lastPosition,
+      );
+
+      // 保存位置（用于 lastPosition 模式）
+      if (positionMode == PopupPosition.lastPosition) {
+        await _saveLastPosition(prefs, position);
       }
     }
 
+    await windowManager.setPosition(position);
     await windowManager.show();
     await windowManager.focus();
     _isShowing = true;
@@ -133,111 +151,39 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     debugPrint('[WindowManager] 历史记录窗口已显示');
   }
 
-  /// 计算并将窗口定位在当前鼠标光标附近。
-  ///
-  /// 包含多显示器边界检查，确保窗口不会超出屏幕边缘。
-  Future<void> _positionNearCursor() async {
-    final Offset cursorPoint = await screenRetriever.getCursorScreenPoint();
-    final List<Display> displays = await screenRetriever.getAllDisplays();
-    Display targetDisplay = displays.first;
-
-    for (final display in displays) {
-      final rect = Rect.fromLTWH(
-        display.visiblePosition?.dx ?? 0,
-        display.visiblePosition?.dy ?? 0,
-        display.visibleSize?.width ?? display.size.width,
-        display.visibleSize?.height ?? display.size.height,
-      );
-      if (rect.contains(cursorPoint)) {
-        targetDisplay = display;
-        break;
-      }
+  /// 解析字符串配置为 PopupPosition 枚举。
+  PopupPosition _parsePopupPosition(String value) {
+    switch (value) {
+      case 'cursor':
+        return PopupPosition.cursor;
+      case 'center':
+        return PopupPosition.center;
+      case 'statusItem':
+        return PopupPosition.statusItem;
+      case 'lastPosition':
+        return PopupPosition.lastPosition;
+      default:
+        return PopupPosition.cursor;
     }
-
-    final visiblePos = targetDisplay.visiblePosition ?? Offset.zero;
-    final visibleSize = targetDisplay.visibleSize ?? targetDisplay.size;
-
-    double x = cursorPoint.dx;
-    double y = cursorPoint.dy;
-
-    if (x + _windowSize.width > visiblePos.dx + visibleSize.width) {
-      x = x - _windowSize.width;
-    }
-    if (y + _windowSize.height > visiblePos.dy + visibleSize.height) {
-      y = y - _windowSize.height;
-    }
-
-    x = x.clamp(
-      visiblePos.dx,
-      visiblePos.dx + visibleSize.width - _windowSize.width,
-    );
-    y = y.clamp(
-      visiblePos.dy,
-      visiblePos.dy + visibleSize.height - _windowSize.height,
-    );
-
-    await windowManager.setPosition(Offset(x, y));
   }
 
-  /// 计算并将窗口定位在系统托盘图标附近。
-  ///
-  /// 能够根据任务栏的位置（上、下、左、右）自动调整窗口的对齐方式。
-  Future<void> _positionNearTray() async {
-    final Rect? trayBounds = await trayManager.getBounds();
+  /// 获取上次保存的窗口位置。
+  Offset? _getLastPosition(SharedPreferences prefs) {
+    final x = prefs.getDouble('lastWindowPositionX');
+    final y = prefs.getDouble('lastWindowPositionY');
 
-    if (trayBounds == null) {
-      await _positionNearCursor();
-      return;
+    if (x != null && y != null) {
+      return Offset(x, y);
     }
-
-    final List<Display> displays = await screenRetriever.getAllDisplays();
-    Display targetDisplay = displays.first;
-    for (final display in displays) {
-      final rect = Rect.fromLTWH(
-        display.visiblePosition?.dx ?? 0,
-        display.visiblePosition?.dy ?? 0,
-        display.visibleSize?.width ?? display.size.width,
-        display.visibleSize?.height ?? display.size.height,
-      );
-      if (rect.contains(trayBounds.center)) {
-        targetDisplay = display;
-        break;
-      }
-    }
-
-    final visiblePos = targetDisplay.visiblePosition ?? Offset.zero;
-    final visibleSize = targetDisplay.visibleSize ?? targetDisplay.size;
-    final screenWidth = targetDisplay.size.width;
-    final screenHeight = targetDisplay.size.height;
-    final screenX = targetDisplay.visiblePosition?.dx ?? 0;
-    final screenY = targetDisplay.visiblePosition?.dy ?? 0;
-
-    double x = trayBounds.center.dx - _windowSize.width / 2;
-    double y = trayBounds.center.dy - _windowSize.height / 2;
-
-    if (trayBounds.top > screenY + screenHeight * 0.8) {
-      y = trayBounds.top - _windowSize.height - 10;
-    } else if (trayBounds.bottom < screenY + screenHeight * 0.2) {
-      y = trayBounds.bottom + 10;
-    } else if (trayBounds.left > screenX + screenWidth * 0.8) {
-      x = trayBounds.left - _windowSize.width - 10;
-      y = trayBounds.center.dy - _windowSize.height / 2;
-    } else if (trayBounds.right < screenX + screenWidth * 0.2) {
-      x = trayBounds.right + 10;
-      y = trayBounds.center.dy - _windowSize.height / 2;
-    }
-
-    x = x.clamp(
-      visiblePos.dx,
-      visiblePos.dx + visibleSize.width - _windowSize.width,
-    );
-    y = y.clamp(
-      visiblePos.dy,
-      visiblePos.dy + visibleSize.height - _windowSize.height,
-    );
-
-    await windowManager.setPosition(Offset(x, y));
+    return null;
   }
+
+  /// 保存当前窗口位置。
+  Future<void> _saveLastPosition(SharedPreferences prefs, Offset position) async {
+    await prefs.setDouble('lastWindowPositionX', position.dx);
+    await prefs.setDouble('lastWindowPositionY', position.dy);
+  }
+
 
   /// 隐藏当前主窗口并记录时间戳。
   Future<void> hideHistory() async {

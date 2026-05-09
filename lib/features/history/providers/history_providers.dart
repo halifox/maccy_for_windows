@@ -106,6 +106,40 @@ class HistoryController extends _$HistoryController {
     clipboardManager.setSelfUpdate(false);
   }
 
+  /// 选择下一项（用于循环模式）。
+  ///
+  /// [cycle] 是否循环：到达末尾后是否回到开头。
+  void selectNext({bool cycle = false}) {
+    final history = ref.read(filteredHistoryProvider).value ?? [];
+    if (history.isEmpty) return;
+
+    final currentIndex = ref.read(historySelectedIndexProvider);
+    int nextIndex = currentIndex + 1;
+
+    if (nextIndex >= history.length) {
+      nextIndex = cycle ? 0 : history.length - 1;
+    }
+
+    ref.read(historySelectedIndexProvider.notifier).set(nextIndex);
+  }
+
+  /// 选择上一项（用于循环模式）。
+  ///
+  /// [cycle] 是否循环：到达开头后是否回到末尾。
+  void selectPrevious({bool cycle = false}) {
+    final history = ref.read(filteredHistoryProvider).value ?? [];
+    if (history.isEmpty) return;
+
+    final currentIndex = ref.read(historySelectedIndexProvider);
+    int prevIndex = currentIndex - 1;
+
+    if (prevIndex < 0) {
+      prevIndex = cycle ? history.length - 1 : 0;
+    }
+
+    ref.read(historySelectedIndexProvider.notifier).set(prevIndex);
+  }
+
   /// 删除指定的历史记录条目。
   Future<void> deleteItem(int index) async {
     final history = ref.read(filteredHistoryProvider).value ?? [];
@@ -180,7 +214,7 @@ class HistoryController extends _$HistoryController {
 
   /// 全局键盘事件分发处理。
   ///
-  /// 处理上下键导航、回车确认、ESC隐藏以及 Alt+数字 快速选择逻辑。
+  /// 处理上下键导航、回车确认、ESC隐藏、Alt+数字快速选择、Alt+P置顶、Alt+D删除逻辑。
   ///
   /// [event] 捕获到的原始键盘事件。
   void handleKeyEvent(KeyEvent event) {
@@ -188,6 +222,7 @@ class HistoryController extends _$HistoryController {
 
     final logicalKey = event.logicalKey;
     final isAltPressed = HardwareKeyboard.instance.isAltPressed;
+    final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
     final isArrowKey =
         logicalKey == LogicalKeyboardKey.arrowDown ||
         logicalKey == LogicalKeyboardKey.arrowUp;
@@ -228,6 +263,24 @@ class HistoryController extends _$HistoryController {
               quitApp();
           }
         }
+      // Alt+P to pin/unpin selected item
+      case LogicalKeyboardKey.keyP when isAltPressed:
+        if (selectedIndex < totalItems) {
+          togglePin(selectedIndex);
+        }
+      // Alt+D or Alt+Backspace to delete selected item
+      case LogicalKeyboardKey.keyD when isAltPressed:
+      case LogicalKeyboardKey.backspace when isAltPressed:
+        if (selectedIndex < totalItems) {
+          deleteItem(selectedIndex);
+        }
+      // Ctrl+, to open settings
+      case LogicalKeyboardKey.comma when isCtrlPressed:
+        ref.read(appWindowManagerProvider.notifier).showSettings();
+      // Ctrl+Q to quit
+      case LogicalKeyboardKey.keyQ when isCtrlPressed:
+        quitApp();
+      // Alt+number for quick select
       case _ when isAltPressed:
         if (digitMap.containsKey(logicalKey)) {
           final index = digitMap[logicalKey]!;

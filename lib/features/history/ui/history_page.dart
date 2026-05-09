@@ -4,8 +4,10 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
+import 'package:maccy/features/history/ui/widgets/preview_popover.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -24,15 +26,17 @@ class HistoryPage extends HookConsumerWidget {
     );
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // Match Maccy's exact background colors with transparency
     final bgColor = useMemoized(
       () => isDark
-          ? const Color(0xFF2C2C2C).withOpacity(0.98)
-          : const Color(0xFFEBEBEB).withOpacity(0.98),
+          ? const Color(0xFF1E1E1E).withOpacity(0.85)
+          : const Color(0xFFF5F5F5).withOpacity(0.85),
       [isDark],
     );
+    // Match Maccy's accent color with 0.8 opacity
     final highlightColor = isDark
-        ? const Color(0xFF0058D0)
-        : const Color(0xFF0063E1);
+        ? const Color(0xFF0A84FF).withOpacity(0.8)
+        : const Color(0xFF007AFF).withOpacity(0.8);
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -43,7 +47,7 @@ class HistoryPage extends HookConsumerWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: bgColor,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6), // Match Maccy's 6px radius
             border: Border.all(
               color: isDark ? Colors.black.withOpacity(0.5) : Colors.black12,
               width: 0.5,
@@ -66,6 +70,7 @@ class HistoryPage extends HookConsumerWidget {
                           final item = history[index];
                           return _HistoryRow(
                             index: index,
+                            item: item,
                             type: item.type,
                             content: item.content,
                             shortcut: index < 9 ? '${index + 1}' : null,
@@ -123,9 +128,9 @@ class _FooterMenu extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Divider(
-          indent: 8,
-          endIndent: 8,
-          height: 4,
+          indent: 10, // Match Maccy's horizontal padding
+          endIndent: 10,
+          height: 6, // Match Maccy's separator padding
           color: isDark ? Colors.white10 : Colors.black12,
         ),
         _MenuRow(
@@ -203,15 +208,15 @@ class _HistoryHeader extends HookConsumerWidget {
     });
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
+      padding: const EdgeInsets.fromLTRB(5, 5, 5, 5), // Match Maccy's 5px padding
       child: CupertinoSearchTextField(
         controller: searchController,
         focusNode: searchFocusNode,
         autofocus: true,
         placeholder: 'Search...',
         itemSize: 12,
-        padding: const EdgeInsetsDirectional.fromSTEB(4, 0, 4, 0),
-        borderRadius: BorderRadius.circular(6),
+        padding: const EdgeInsetsDirectional.fromSTEB(5, 4, 5, 4), // Adjust internal padding
+        borderRadius: BorderRadius.circular(4), // Match Maccy's corner radius
         backgroundColor: isDark
             ? Colors.white10
             : Colors.black.withOpacity(0.06),
@@ -257,10 +262,12 @@ class _Debouncer {
 
 /// 历史记录条目行组件。
 ///
-/// 展示单条剪贴板内容，支持关键词搜索高亮、置顶状态标识、删除/置顶交互按钮。
+/// 展示单条剪贴板内容，支持关键词搜索高亮、置顶状态标识、删除/置顶交互按钮、预览弹窗。
 ///
 /// 字段说明:
 /// [index] 条目在列表中的索引。
+/// [item] 完整的剪贴板条目数据。
+/// [type] 条目类型。
 /// [content] 原始剪贴板文本。
 /// [shortcut] 可用的快捷键文本（如 ⌘1）。
 /// [isPinned] 是否置顶。
@@ -272,6 +279,7 @@ class _Debouncer {
 class _HistoryRow extends HookConsumerWidget {
   const _HistoryRow({
     required this.index,
+    required this.item,
     required this.type,
     required this.content,
     this.shortcut,
@@ -284,6 +292,7 @@ class _HistoryRow extends HookConsumerWidget {
   });
 
   final int index;
+  final ClipboardEntry item;
   final String type;
   final String content;
   final String? shortcut;
@@ -300,51 +309,85 @@ class _HistoryRow extends HookConsumerWidget {
       historySelectedIndexProvider.select((val) => val == index),
     );
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final previewDelay = ref.watch(previewDelayProvider);
+
+    final showPreview = useState(false);
+    final hoverTimer = useRef<Timer?>(null);
+
+    useEffect(() {
+      return () {
+        hoverTimer.value?.cancel();
+      };
+    }, []);
 
     return MouseRegion(
-      onHover: (_) => onHover(),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-          color: isSelected ? selectionColor : Colors.transparent,
-          child: Row(
-            children: [
-              if (isPinned)
-                const Icon(Icons.push_pin, size: 10, color: Colors.blueAccent),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(left: isPinned ? 4 : 0),
-                  child: buildContent(ref, isSelected, isDark),
-                ),
-              ),
-              if (isSelected) ...[
-                _HoverIcon(
-                  icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                  onTap: onPin,
-                  hoverColor: Colors.white,
-                ),
-                const SizedBox(width: 8),
-                _HoverIcon(
-                  icon: Icons.delete_outline,
-                  onTap: onDelete,
-                  hoverColor: Colors.redAccent,
-                ),
-                const SizedBox(width: 8),
-              ],
-              if (shortcut != null)
-                Text(
-                  '⌘$shortcut',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isSelected
-                        ? Colors.white70
-                        : (isDark ? Colors.white24 : Colors.black26),
+      onEnter: (_) {
+        onHover();
+        // Start timer for preview
+        hoverTimer.value?.cancel();
+        hoverTimer.value = Timer(Duration(milliseconds: previewDelay), () {
+          showPreview.value = true;
+        });
+      },
+      onExit: (_) {
+        hoverTimer.value?.cancel();
+        showPreview.value = false;
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              height: 24, // Match Maccy's itemHeight
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+              color: isSelected ? selectionColor : Colors.transparent,
+              child: Row(
+                children: [
+                  if (isPinned)
+                    const Icon(Icons.push_pin, size: 10, color: Colors.blueAccent),
+                  Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.only(left: isPinned ? 4 : 0),
+                      child: buildContent(ref, isSelected, isDark),
+                    ),
                   ),
-                ),
-            ],
+                  if (isSelected) ...[
+                    _HoverIcon(
+                      icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                      onTap: onPin,
+                      hoverColor: Colors.white,
+                    ),
+                    const SizedBox(width: 8),
+                    _HoverIcon(
+                      icon: Icons.delete_outline,
+                      onTap: onDelete,
+                      hoverColor: Colors.redAccent,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (shortcut != null)
+                    Text(
+                      '⌘$shortcut',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isSelected
+                            ? Colors.white70
+                            : (isDark ? Colors.white24 : Colors.black26),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
+          // Preview popover overlay
+          if (showPreview.value)
+            Positioned(
+              left: 460, // Position to the right of the window
+              top: -12,
+              child: PreviewPopover(item: item),
+            ),
+        ],
       ),
     );
   }
@@ -560,8 +603,8 @@ class _MenuRow extends ConsumerWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          height: 24,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          height: 24, // Match Maccy's itemHeight
+          padding: const EdgeInsets.symmetric(horizontal: 10), // Match Maccy's padding
           color: isSelected ? selectionColor : Colors.transparent,
           child: Row(
             children: [

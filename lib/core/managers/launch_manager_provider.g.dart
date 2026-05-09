@@ -45,7 +45,7 @@ final class AppLaunchManagerProvider
   AppLaunchManager create() => AppLaunchManager();
 }
 
-String _$appLaunchManagerHash() => r'e3036f8c5cbcea849a3a1c72bbcc9d0d57ec89b5';
+String _$appLaunchManagerHash() => r'af57c5f57a1eb28d7bfe05a7a457e6117caf2cb6';
 
 /// 开机自启管理器。
 ///
