@@ -26,6 +26,21 @@ class GeneralTab extends ConsumerWidget {
     };
   }
 
+  /// 获取修饰键行为描述文本。
+  ///
+  /// 根据当前的 auto-paste 和 paste-plain 设置，动态生成修饰键的作用说明。
+  String _getModifiersDescription(bool autoPaste, bool pastePlain) {
+    if (autoPaste && pastePlain) {
+      return 'Hold Shift to paste with formatting.';
+    } else if (autoPaste && !pastePlain) {
+      return 'Hold Shift to paste without formatting.';
+    } else if (!autoPaste && pastePlain) {
+      return 'Hold Shift to copy item instead of pasting. Paste will be without formatting.';
+    } else {
+      return 'Hold Shift to paste item. Hold Shift+Alt to paste without formatting.';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
@@ -94,7 +109,27 @@ class GeneralTab extends ConsumerWidget {
                 subtitle: 'Toggle clipboard history visibility',
                 icon: CupertinoIcons.keyboard,
                 iconColor: CupertinoColors.systemOrange,
-                trailing: _HotkeySelector(),
+                trailing: _HotkeySelector(
+                  provider: hotkeyOpenProvider,
+                ),
+              ),
+              MacosSettingsTile(
+                label: 'Pin Item',
+                subtitle: 'Pin or unpin the selected item',
+                icon: CupertinoIcons.pin,
+                iconColor: CupertinoColors.systemPurple,
+                trailing: _HotkeySelector(
+                  provider: hotkeyPinProvider,
+                ),
+              ),
+              MacosSettingsTile(
+                label: 'Delete Item',
+                subtitle: 'Delete the selected item',
+                icon: CupertinoIcons.trash,
+                iconColor: CupertinoColors.systemRed,
+                trailing: _HotkeySelector(
+                  provider: hotkeyDeleteProvider,
+                ),
               ),
             ],
           ),
@@ -142,6 +177,20 @@ class GeneralTab extends ConsumerWidget {
               ),
             ],
           ),
+          // Modifiers description
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              _getModifiersDescription(
+                ref.watch(autoPasteProvider),
+                ref.watch(pastePlainProvider),
+              ),
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white38 : Colors.black38,
+              ),
+            ),
+          ),
           const SizedBox(height: 24),
         ],
       ),
@@ -153,15 +202,21 @@ class GeneralTab extends ConsumerWidget {
 ///
 /// 允许用户通过勾选修饰键（Ctrl, Alt, Shift, Win/Cmd）并选择主键位来实时更新唤起热键。
 class _HotkeySelector extends ConsumerWidget {
+  const _HotkeySelector({
+    required this.provider,
+  });
+
+  final NotifierProvider<JsonPersistentNotifier<AppHotKeyConfig>, AppHotKeyConfig> provider;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(hotkeyOpenProvider);
+    final config = ref.watch(provider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     /// 更新热键配置并同步至持久化存储。
     void update(List<String> newMods, String newKey) {
       ref
-          .read(hotkeyOpenProvider.notifier)
+          .read(provider.notifier)
           .set(AppHotKeyConfig(modifiers: newMods, key: newKey));
     }
 

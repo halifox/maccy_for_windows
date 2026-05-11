@@ -99,8 +99,8 @@ class AdvancedTab extends ConsumerWidget {
             title: 'Recording Control',
             children: [
               MacosSettingsTile(
-                label: 'Pause Clipboard Monitoring',
-                subtitle: 'Temporarily stop recording new clipboard items',
+                label: 'Turn Off Clipboard Monitoring',
+                subtitle: 'Stop recording clipboard changes',
                 icon: CupertinoIcons.pause_circle,
                 iconColor: CupertinoColors.systemOrange,
                 trailing: CupertinoCheckbox(
@@ -122,6 +122,62 @@ class AdvancedTab extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+          // Turn off descriptions
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Maccy will stop recording clipboard changes until you turn it back on.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white38 : Colors.black38,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'You can also pause/resume from the menu bar icon.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white38 : Colors.black38,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Shell script examples:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white54 : Colors.black54,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withValues(alpha: 0.05)
+                        : Colors.black.withValues(alpha: 0.03),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    '# Pause monitoring\n'
+                    'reg add "HKCU\\Software\\Maccy" /v ignoreEvents /t REG_DWORD /d 1 /f\n\n'
+                    '# Resume monitoring\n'
+                    'reg add "HKCU\\Software\\Maccy" /v ignoreEvents /t REG_DWORD /d 0 /f\n\n'
+                    '# Ignore only next event\n'
+                    'reg add "HKCU\\Software\\Maccy" /v ignoreOnlyNextEvent /t REG_DWORD /d 1 /f',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'Courier New',
+                      color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           MacosSettingsGroup(
             title: 'Privacy & Cleanup',

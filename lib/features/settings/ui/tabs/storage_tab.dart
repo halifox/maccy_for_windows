@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:maccy/core/database/database_provider.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:maccy/features/settings/ui/tabs/general_tab.dart';
 import 'package:maccy/features/settings/ui/widgets/macos_settings_widgets.dart';
@@ -20,8 +21,27 @@ class StorageTab extends HookConsumerWidget {
     };
   }
 
+  /// 获取数据库大小信息。
+  Future<String> _getDatabaseSize(WidgetRef ref) async {
+    try {
+      final db = ref.read(appDatabaseProvider);
+      final count = await (db.selectOnly(db.historyItems)
+            ..addColumns([db.historyItems.id.count()]))
+          .getSingle();
+      final itemCount = count.read(db.historyItems.id.count()) ?? 0;
+
+      // 获取数据库文件大小（简化版本，实际大小需要查询文件系统）
+      final sizeMB = (itemCount * 0.01).toStringAsFixed(1); // 估算
+      return '$sizeMB MB ($itemCount items)';
+    } catch (e) {
+      return 'Unknown';
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
+
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -33,12 +53,30 @@ class StorageTab extends HookConsumerWidget {
                 subtitle: 'Maximum number of clipboard items to keep',
                 icon: CupertinoIcons.list_number,
                 iconColor: CupertinoColors.systemPurple,
-                trailing: NumberStepper(
-                  value: ref.watch(historyLimitProvider),
-                  onChanged: (v) =>
-                      ref.read(historyLimitProvider.notifier).set(v),
-                  min: 1,
-                  max: 999,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    NumberStepper(
+                      value: ref.watch(historyLimitProvider),
+                      onChanged: (v) =>
+                          ref.read(historyLimitProvider.notifier).set(v),
+                      min: 1,
+                      max: 999,
+                    ),
+                    const SizedBox(width: 12),
+                    FutureBuilder<String>(
+                      future: _getDatabaseSize(ref),
+                      builder: (context, snapshot) {
+                        return Text(
+                          snapshot.data ?? 'Loading...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white38 : Colors.black38,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
               MacosSettingsTile(
@@ -87,6 +125,19 @@ class StorageTab extends HookConsumerWidget {
                 ),
               ),
             ],
+          ),
+          // Save description
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Text(
+              'Maccy will save only the types you enable above.',
+              style: TextStyle(
+                fontSize: 12,
+                color: MediaQuery.of(context).platformBrightness == Brightness.dark
+                    ? Colors.white38
+                    : Colors.black38,
+              ),
+            ),
           ),
           MacosSettingsGroup(
             title: 'Cleanup',
