@@ -25,161 +25,164 @@ class PinsTab extends HookConsumerWidget {
 
     final items = pinnedItemsSnapshot.data ?? [];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: items.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        CupertinoIcons.pin_slash,
-                        size: 64,
-                        color: isDark ? Colors.white24 : Colors.black26,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No pinned items',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: isDark ? Colors.white38 : Colors.black38,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Pin items from the history view using Alt+P',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isDark ? Colors.white24 : Colors.black26,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : SingleChildScrollView(
-                  child: Container(
-                    margin: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withValues(alpha: 0.03)
-                          : Colors.black.withValues(alpha: 0.02),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: isDark
-                            ? Colors.white.withValues(alpha: 0.1)
-                            : Colors.black.withValues(alpha: 0.1),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (items.isEmpty) 
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 64),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      CupertinoIcons.pin_slash,
+                      size: 64,
+                      color: isDark ? Colors.white24 : Colors.black26,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'No pinned items',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: isDark ? Colors.white38 : Colors.black38,
                       ),
                     ),
-                    child: Column(
+                    const SizedBox(height: 8),
+                    Text(
+                      'Pin items from the history view using Alt+P',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isDark ? Colors.white24 : Colors.black26,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Container(
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.03)
+                    : Colors.black.withValues(alpha: 0.02),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : Colors.black.withValues(alpha: 0.1),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Table header
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : Colors.black.withValues(alpha: 0.03),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(8),
+                        topRight: Radius.circular(8),
+                      ),
+                    ),
+                    child: Row(
                       children: [
-                        // Table header
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? Colors.white.withValues(alpha: 0.05)
-                                : Colors.black.withValues(alpha: 0.03),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(8),
-                              topRight: Radius.circular(8),
+                        SizedBox(
+                          width: 80,
+                          child: Text(
+                            'Key',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.white70
+                                  : Colors.black87,
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              SizedBox(
-                                width: 80,
-                                child: Text(
-                                  'Key',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black87,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                flex: 2,
-                                child: Text(
-                                  'Alias',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black87,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                flex: 3,
-                                child: Text(
-                                  'Content',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark
-                                        ? Colors.white70
-                                        : Colors.black87,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 40),
-                            ],
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            'Alias',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.white70
+                                  : Colors.black87,
+                            ),
                           ),
                         ),
-                        // Table rows
-                        ...items.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final item = entry.value;
-                          final isSelected = selectedId.value == item.id;
-                          final isLast = index == items.length - 1;
-
-                          return _PinTableRow(
-                            item: item,
-                            isSelected: isSelected,
-                            isLast: isLast,
-                            onTap: () => selectedId.value = item.id,
-                            onDelete: () async {
-                              await _unpinItem(db, item.id);
-                              if (selectedId.value == item.id) {
-                                selectedId.value = null;
-                              }
-                            },
-                            onUpdatePin: (newPin) async {
-                              await _updateItemPin(db, item.id, newPin);
-                            },
-                            onUpdateTitle: (newTitle) async {
-                              await _updateItemTitle(db, item.id, newTitle);
-                            },
-                          );
-                        }),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            'Content',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? Colors.white70
+                                  : Colors.black87,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 40),
                       ],
                     ),
                   ),
-                ),
-        ),
-        // Description
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            'Customize pinned items by changing their keyboard shortcuts, aliases, or content. '
-            'Press Delete to unpin selected items.',
-            style: TextStyle(
-              fontSize: 12,
-              color: isDark ? Colors.white38 : Colors.black38,
+                  // Table rows
+                  ...items.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value;
+                    final isSelected = selectedId.value == item.id;
+                    final isLast = index == items.length - 1;
+
+                    return _PinTableRow(
+                      item: item,
+                      isSelected: isSelected,
+                      isLast: isLast,
+                      onTap: () => selectedId.value = item.id,
+                      onDelete: () async {
+                        await _unpinItem(db, item.id);
+                        if (selectedId.value == item.id) {
+                          selectedId.value = null;
+                        }
+                      },
+                      onUpdatePin: (newPin) async {
+                        await _updateItemPin(db, item.id, newPin);
+                      },
+                      onUpdateTitle: (newTitle) async {
+                        await _updateItemTitle(db, item.id, newTitle);
+                      },
+                    );
+                  }),
+                ],
+              ),
+            ),
+          // Description
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: Text(
+              'Customize pinned items by changing their keyboard shortcuts, aliases, or content. '
+              'Press Delete to unpin selected items.',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white38 : Colors.black38,
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
