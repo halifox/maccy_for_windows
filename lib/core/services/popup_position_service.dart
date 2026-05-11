@@ -74,7 +74,7 @@ class PopupPositionService {
 
       return Offset(x, y);
     } catch (e) {
-      // 回退到光标位置
+      debugPrint(e.toString());
       return _calculateCursorPosition(windowSize);
     }
   }

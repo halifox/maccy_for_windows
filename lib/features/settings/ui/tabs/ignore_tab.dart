@@ -445,6 +445,7 @@ class _RegexTab extends HookConsumerWidget {
                                     errorText.value = null;
                                   }
                                 } catch (e) {
+                                  debugPrint(e.toString());
                                   errorText.value = 'Invalid regex pattern';
                                 }
                               },

@@ -19,12 +19,9 @@ void main(List<String> args) async {
 
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
-    debugPrint('[Main] 捕捉到 Flutter 框架异常: ${details.exception}');
   };
 
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('[Main] 捕捉到平台/异步异常: $error');
-    debugPrintStack(stackTrace: stack);
     return true;
   };
 

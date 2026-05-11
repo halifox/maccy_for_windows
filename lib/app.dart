@@ -167,7 +167,6 @@ class ErrorScreen extends ConsumerWidget {
                 const SizedBox(height: 32),
                 ElevatedButton.icon(
                   onPressed: () {
-                    debugPrint('[App] 用户触发重试应用初始化');
                     ref.invalidate(appStartupProvider);
                   },
                   icon: const Icon(Icons.refresh),

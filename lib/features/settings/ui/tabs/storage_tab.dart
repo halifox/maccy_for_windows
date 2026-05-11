@@ -36,6 +36,7 @@ class StorageTab extends HookConsumerWidget {
       final sizeMB = (itemCount * 0.01).toStringAsFixed(1); // 估算
       return '$sizeMB MB ($itemCount items)';
     } catch (e) {
+      debugPrint(e.toString());
       return 'Unknown';
     }
   }

@@ -18,7 +18,6 @@ class AppLaunchManager extends _$AppLaunchManager {
   FutureOr<void> build() async {
     // 只有在非 Web 和非调试模式下才启用开机自启设置
     if (kIsWeb || kDebugMode) {
-      debugPrint('[LaunchManager] 调试模式或 Web 环境，跳过自启配置');
       return;
     }
 
@@ -33,8 +32,6 @@ class AppLaunchManager extends _$AppLaunchManager {
     ref.listen(launchAtStartupProvider, (previous, next) async {
       await _syncStatus(next);
     }, fireImmediately: true);
-
-    debugPrint('[LaunchManager] 服务已就绪');
   }
 
   /// 同步自启状态至系统。
@@ -46,17 +43,15 @@ class AppLaunchManager extends _$AppLaunchManager {
         final isEnabled = await launchAtStartup.isEnabled();
         if (!isEnabled) {
           await launchAtStartup.enable();
-          debugPrint('[LaunchManager] 已启用开机自启');
         }
       } else {
         final isEnabled = await launchAtStartup.isEnabled();
         if (isEnabled) {
           await launchAtStartup.disable();
-          debugPrint('[LaunchManager] 已禁用开机自启');
         }
       }
     } catch (e) {
-      debugPrint('[LaunchManager] 同步状态失败: $e');
+      debugPrint(e.toString());
     }
   }
 }

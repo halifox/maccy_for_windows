@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 /// 剪贴板内容过滤服务。
 ///
 /// 提供应用过滤和正则表达式过滤功能，对应 Maccy 的过滤机制。
@@ -60,7 +62,7 @@ class ClipboardFilterService {
           return true;
         }
       } catch (e) {
-        // 忽略无效的正则表达式
+        debugPrint(e.toString());
         continue;
       }
     }

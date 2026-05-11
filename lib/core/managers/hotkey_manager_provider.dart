@@ -59,7 +59,6 @@ class AppHotKeyManager extends _$AppHotKeyManager {
     final AppHotKeyConfig config = ref.read(hotkeyOpenProvider);
     // 验证：必须包含至少一个修饰键（Ctrl, Alt, Shift, Meta），不能单独使用主键位
     if (config.modifiers.isEmpty) {
-      debugPrint('[HotKeyManager] 取消注册：未检测到修饰键，不允许使用单键作为全局热键');
       return;
     }
 
@@ -71,9 +70,8 @@ class AppHotKeyManager extends _$AppHotKeyManager {
           hotKey,
           keyDownHandler: (_) => _handleHotkeyPressed(),
         );
-        debugPrint('[HotKeyManager] 成功注册热键: ${hotKey.toJson()}');
       } catch (e) {
-        debugPrint('[HotKeyManager] 注册热键失败: $e');
+        debugPrint(e.toString());
       }
     }
   }
@@ -97,7 +95,6 @@ class AppHotKeyManager extends _$AppHotKeyManager {
       Future.delayed(const Duration(milliseconds: 200), () {
         if (_popupState == PopupState.opening) {
           _popupState = PopupState.toggle;
-          debugPrint('[HotKeyManager] 进入 toggle 模式');
         }
       });
 
@@ -108,7 +105,6 @@ class AppHotKeyManager extends _$AppHotKeyManager {
       if (_popupState == PopupState.opening) {
         // 从 opening 进入 cycle 模式
         _popupState = PopupState.cycle;
-        debugPrint('[HotKeyManager] 进入 cycle 模式');
       }
 
       if (_popupState == PopupState.cycle) {
@@ -134,8 +130,6 @@ class AppHotKeyManager extends _$AppHotKeyManager {
   /// 在 cycle 模式下，释放修饰键时自动粘贴选中项并关闭窗口。
   void _handleModifiersReleased() {
     if (_popupState == PopupState.cycle) {
-      debugPrint('[HotKeyManager] 修饰键释放，执行粘贴并关闭窗口');
-
       // 粘贴选中项
       final selectedIndex = ref.read(historySelectedIndexProvider);
       ref.read(historyControllerProvider.notifier).selectItem(selectedIndex);
@@ -151,7 +145,6 @@ class AppHotKeyManager extends _$AppHotKeyManager {
   void _resetState() {
     _popupState = PopupState.toggle;
     _modifierKeyService.stopMonitoring();
-    debugPrint('[HotKeyManager] 状态已重置');
   }
 
   /// 获取当前弹窗状态（用于调试）。

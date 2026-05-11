@@ -27,7 +27,6 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
     ref.onDispose(() {
       trayManager.removeListener(this);
     });
-    debugPrint('[TrayManager] 服务已就绪');
   }
 
   /// 托盘图标按下回调。
@@ -35,17 +34,12 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
   /// 通常响应左键点击，用于快速切换历史记录窗口的显隐状态。
   @override
   void onTrayIconMouseDown() {
-    debugPrint('[TrayManager] ========== 托盘图标被点击 ==========');
-    debugPrint('[TrayManager] 时间: ${DateTime.now()}');
     try {
-      debugPrint('[TrayManager] 开始调用 toggleHistory');
       ref
           .read(appWindowManagerProvider.notifier)
           .toggleHistory(source: TriggerSource.tray);
-      debugPrint('[TrayManager] toggleHistory 调用完成');
-    } catch (e, stackTrace) {
-      debugPrint('[TrayManager] ❌ 调用 toggleHistory 时发生异常: $e');
-      debugPrint('[TrayManager] 堆栈跟踪: $stackTrace');
+    } catch (e) {
+      debugPrint(e.toString());
     }
   }
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
 
@@ -34,7 +35,8 @@ class AppHotKeyConfig {
         return const AppHotKeyConfig(modifiers: ['alt'], key: 'V');
       }
       return AppHotKeyConfig.fromJson(jsonDecode(rawJson) as Map<String, dynamic>);
-    } catch (_) {
+    } catch (e) {
+      debugPrint(e.toString());
       return const AppHotKeyConfig(modifiers: ['alt'], key: 'V');
     }
   }

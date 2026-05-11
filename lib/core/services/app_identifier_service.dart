@@ -1,6 +1,7 @@
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 import 'package:win32/win32.dart';
 
 /// 应用标识服务
@@ -52,6 +53,7 @@ class AppIdentifierService {
 
       return appName;
     } catch (e) {
+      debugPrint(e.toString());
       return null;
     }
   }

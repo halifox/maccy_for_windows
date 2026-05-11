@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:fuzzy/fuzzy.dart';
 import 'package:maccy/core/database/database.dart' as db;
 
@@ -171,7 +172,7 @@ class AdvancedSearchService {
 
       return results;
     } catch (e) {
-      // 正则表达式无效，返回空结果
+      debugPrint(e.toString());
       return [];
     }
   }

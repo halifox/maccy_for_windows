@@ -58,7 +58,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       _cleanupTimer?.cancel();
       _clipboardUpdateController.close();
     });
-    debugPrint('[ClipboardManager] 服务已启动');
   }
 
   /// 模拟系统粘贴操作。
@@ -84,8 +83,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
 
   /// 处理剪贴板变化（实现 Maccy 的多格式逻辑）。
   Future<void> _processClipboardChange() async {
-    debugPrint('[ClipboardManager] 处理剪贴板变化');
-
     // 1. 检查是否暂停监听
     final isPaused = ref.read(ignoreEventsProvider);
     if (isPaused) return;
@@ -93,7 +90,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
     // 2. 获取前台应用名称
     String? appName;
     appName = ForegroundAppService.getForegroundAppName();
-    debugPrint('[ClipboardManager] 来源应用: $appName');
 
     // 3. 应用过滤检查
     final ignoredApps = ref.read(ignoredAppsProvider);
@@ -104,7 +100,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       ignoredApps: ignoredApps,
       isWhitelistMode: isWhitelistMode,
     )) {
-      debugPrint('[ClipboardManager] 应用被过滤: $appName');
       return;
     }
 
@@ -123,7 +118,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         // 正则表达式过滤
         final regexPatterns = ref.read(ignoreRegexpProvider);
         if (ClipboardFilterService.shouldIgnoreContent(text, regexPatterns)) {
-          debugPrint('[ClipboardManager] 内容被正则过滤');
           return;
         }
 
@@ -156,7 +150,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
         ));
       }
     } catch (e) {
-      debugPrint('[ClipboardManager] 读取 RTF 失败: $e');
+      debugPrint(e.toString());
     }
 
     // 5.4 图片格式
@@ -171,7 +165,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
           titleText ??= '[图片]';
         }
       } catch (e) {
-        debugPrint('[ClipboardManager] 读取 PNG 失败: $e');
+        debugPrint(e.toString());
       }
     } else if (reader.canProvide(Formats.jpeg)) {
       try {
@@ -184,7 +178,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
           titleText ??= '[图片]';
         }
       } catch (e) {
-        debugPrint('[ClipboardManager] 读取 JPEG 失败: $e');
+        debugPrint(e.toString());
       }
     }
 
@@ -201,13 +195,12 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
           titleText = filePath;
         }
       } catch (e) {
-        debugPrint('[ClipboardManager] 读取文件路径失败: $e');
+        debugPrint(e.toString());
       }
     }
 
     // 6. 如果没有任何内容，返回
     if (contents.isEmpty) {
-      debugPrint('[ClipboardManager] 没有可保存的内容');
       return;
     }
 
@@ -221,8 +214,6 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       application: appName,
       title: title,
     );
-
-    debugPrint('[ClipboardManager] 已保存 ${contents.length} 种格式的内容');
   }
 
   /// 读取图片数据。
@@ -287,7 +278,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
       const platform = MethodChannel('com.hali.clip/native_utils');
       await platform.invokeMethod('simulatePaste');
     } catch (e) {
-      debugPrint('[ClipboardManager] Windows 粘贴失败: $e');
+      debugPrint(e.toString());
     }
   }
 }
