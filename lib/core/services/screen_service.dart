@@ -34,8 +34,8 @@ class ScreenService {
       // GetCursorPos 返回的是物理像素坐标，需要转换为逻辑坐标
       // 获取光标所在位置的 DPI
       final hMonitor = MonitorFromPoint(point.ref, MONITOR_DEFAULTTONEAREST);
-      var dpiX = calloc<UINT>();
-      var dpiY = calloc<UINT>();
+      final dpiX = calloc<UINT>();
+      final dpiY = calloc<UINT>();
 
       try {
         // 尝试获取监视器的 DPI

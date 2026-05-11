@@ -1,10 +1,12 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:maccy/core/database/database_provider.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:maccy/features/settings/ui/tabs/general_tab.dart';
 import 'package:maccy/features/settings/ui/widgets/macos_settings_widgets.dart';
 import 'package:maccy/features/settings/ui/widgets/number_stepper.dart';
+import 'package:drift/drift.dart' as drift;
 
 /// 设置：存储选项页。
 ///
@@ -25,10 +27,10 @@ class StorageTab extends HookConsumerWidget {
   Future<String> _getDatabaseSize(WidgetRef ref) async {
     try {
       final db = ref.read(appDatabaseProvider);
-      final count = await (db.selectOnly(db.historyItems)
-            ..addColumns([db.historyItems.id.count()]))
-          .getSingle();
-      final itemCount = count.read(db.historyItems.id.count()) ?? 0;
+      final countQuery = db.selectOnly(db.historyItems)
+        ..addColumns([db.historyItems.id.count()]);
+      final result = await countQuery.getSingle();
+      final itemCount = result.read(db.historyItems.id.count()) ?? 0;
 
       // 获取数据库文件大小（简化版本，实际大小需要查询文件系统）
       final sizeMB = (itemCount * 0.01).toStringAsFixed(1); // 估算

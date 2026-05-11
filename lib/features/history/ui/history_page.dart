@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:maccy/core/constants/ui_constants.dart';
@@ -228,8 +227,8 @@ class _HistoryHeader extends HookConsumerWidget {
         height: MaccyUIConstants.searchFieldHeight,
         decoration: BoxDecoration(
           color: isDark
-              ? Colors.white.withOpacity(0.1)
-              : Colors.black.withOpacity(0.06),
+              ? Colors.white.withValues(alpha: 0.1)
+              : Colors.black.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
         ),
         child: Row(
@@ -243,7 +242,7 @@ class _HistoryHeader extends HookConsumerWidget {
                 Icons.search,
                 size: MaccyUIConstants.searchFieldIconSize,
                 color: (isDark ? Colors.white : Colors.black)
-                    .withOpacity(MaccyUIConstants.searchFieldIconOpacity),
+                    .withValues(alpha: MaccyUIConstants.searchFieldIconOpacity),
               ),
             ),
             // 输入框
@@ -290,7 +289,7 @@ class _HistoryHeader extends HookConsumerWidget {
                     Icons.cancel,
                     size: MaccyUIConstants.searchFieldIconSize,
                     color: (isDark ? Colors.white : Colors.black)
-                        .withOpacity(MaccyUIConstants.searchFieldClearButtonOpacity),
+                        .withValues(alpha: MaccyUIConstants.searchFieldClearButtonOpacity),
                   ),
                 ),
               ),

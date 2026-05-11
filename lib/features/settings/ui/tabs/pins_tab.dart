@@ -297,7 +297,7 @@ class _PinTableRow extends StatelessWidget {
             CupertinoButton(
               padding: EdgeInsets.zero,
               onPressed: onDelete,
-              minSize: 24,
+              minimumSize: const Size(24, 24),
               child: Icon(
                 CupertinoIcons.xmark_circle_fill,
                 size: 20,
@@ -361,7 +361,7 @@ class _PinKeyPicker extends StatelessWidget {
           padding: EdgeInsets.zero,
           onPressed: () =>
               controller.isOpen ? controller.close() : controller.open(),
-          minSize: Size.zero,
+          minimumSize: Size.zero,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(

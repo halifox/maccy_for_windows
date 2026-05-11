@@ -150,7 +150,7 @@ class AppearanceTab extends ConsumerWidget {
                       value: ref.watch(showSearchProvider) != 'never',
                       onChanged: (v) => ref
                           .read(showSearchProvider.notifier)
-                          .set(v == true ? 'always' : 'never'),
+                          .set((v ?? false) ? 'always' : 'never'),
                     ),
                   ],
                 ),

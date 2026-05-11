@@ -162,17 +162,19 @@ class AdvancedTab extends ConsumerWidget {
                         : Colors.black.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text(
-                    '# Pause monitoring\n'
-                    'reg add "HKCU\\Software\\Maccy" /v ignoreEvents /t REG_DWORD /d 1 /f\n\n'
-                    '# Resume monitoring\n'
-                    'reg add "HKCU\\Software\\Maccy" /v ignoreEvents /t REG_DWORD /d 0 /f\n\n'
-                    '# Ignore only next event\n'
-                    'reg add "HKCU\\Software\\Maccy" /v ignoreOnlyNextEvent /t REG_DWORD /d 1 /f',
+                  child: DefaultTextStyle(
                     style: TextStyle(
                       fontSize: 11,
                       fontFamily: 'Courier New',
                       color: isDark ? Colors.white70 : Colors.black87,
+                    ),
+                    child: const Text(
+                      '# Pause monitoring\n'
+                      r'reg add "HKCU\Software\Maccy" /v ignoreEvents /t REG_DWORD /d 1 /f' '\n\n'
+                      '# Resume monitoring\n'
+                      r'reg add "HKCU\Software\Maccy" /v ignoreEvents /t REG_DWORD /d 0 /f' '\n\n'
+                      '# Ignore only next event\n'
+                      r'reg add "HKCU\Software\Maccy" /v ignoreOnlyNextEvent /t REG_DWORD /d 1 /f',
                     ),
                   ),
                 ),
