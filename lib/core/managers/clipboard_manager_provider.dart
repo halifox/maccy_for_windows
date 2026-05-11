@@ -218,16 +218,22 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
 
   /// 读取图片数据。
   Future<Uint8List?> _readImageData(ClipboardReader reader, SimpleFileFormat format) async {
-    Uint8List? imageData;
+    final completer = Completer<Uint8List?>();
+
     reader.getFile(format, (file) async {
-      final stream = file.getStream();
-      final chunks = <int>[];
-      await for (final chunk in stream) {
-        chunks.addAll(chunk);
+      try {
+        final stream = file.getStream();
+        final chunks = <int>[];
+        await for (final chunk in stream) {
+          chunks.addAll(chunk);
+        }
+        completer.complete(Uint8List.fromList(chunks));
+      } catch (e) {
+        completer.completeError(e);
       }
-      imageData = Uint8List.fromList(chunks);
     });
-    return imageData;
+
+    return completer.future;
   }
 
   /// 生成标题（实现 Maccy 的 generateTitle 逻辑）。
