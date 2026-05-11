@@ -50,9 +50,6 @@ bool FlutterWindow::OnCreate() {
         } else if (call.method_name().compare("restoreAndPaste") == 0) {
           this->RestoreAndPaste();
           result->Success();
-        } else if (call.method_name().compare("simulatePaste") == 0) {
-          this->SimulatePaste();
-          result->Success();
         } else {
           result->NotImplemented();
         }
@@ -133,25 +130,6 @@ void FlutterWindow::RestoreAndPaste() {
 
     SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
   }
-}
-
-void FlutterWindow::SimulatePaste() {
-  std::vector<INPUT> inputs;
-  auto AddKey = [&](WORD vk, bool up) {
-    INPUT input = {0};
-    input.type = INPUT_KEYBOARD;
-    input.ki.wVk = vk;
-    if (up) input.ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs.push_back(input);
-  };
-
-  // Simulate Ctrl+V
-  AddKey(VK_CONTROL, false);
-  AddKey('V', false);
-  AddKey('V', true);
-  AddKey(VK_CONTROL, true);
-
-  SendInput(static_cast<UINT>(inputs.size()), inputs.data(), sizeof(INPUT));
 }
 
 void FlutterWindow::OnDestroy() {
