@@ -19,6 +19,7 @@ class IgnoreTab extends HookConsumerWidget {
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, 
       children: [
         // Tab 切换器
         Container(
@@ -49,14 +50,12 @@ class IgnoreTab extends HookConsumerWidget {
           ),
         ),
         // Tab 内容
-        Expanded(
-          child: switch (selectedTab.value) {
-            0 => const _ApplicationsTab(),
-            1 => const _PasteboardTypesTab(),
-            2 => const _RegexTab(),
-            _ => const SizedBox.shrink(),
-          },
-        ),
+        switch (selectedTab.value) {
+          0 => const _ApplicationsTab(),
+          1 => const _PasteboardTypesTab(),
+          2 => const _RegexTab(),
+          _ => const SizedBox.shrink(),
+        },
       ],
     );
   }
