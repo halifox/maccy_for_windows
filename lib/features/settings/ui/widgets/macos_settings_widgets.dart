@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-/// macOS 风格的设置组容器。
+/// Windows 风格的设置组容器。
 ///
 /// 为一组相关的设置项提供带有标题、圆角背景和内部分割线的统一样式。
 ///
@@ -84,7 +84,7 @@ class MacosSettingsGroup extends StatelessWidget {
   }
 }
 
-/// macOS 风格的设置行组件。
+/// Windows 风格的设置行组件。
 ///
 /// 展示图标、标题、副标题，并在右侧放置自定义的操作组件（如 Checkbox 或 Dropdown）。
 ///

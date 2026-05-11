@@ -150,7 +150,7 @@ class _FooterMenu extends ConsumerWidget {
         _MenuRow(
           index: totalItems,
           label: 'Clear History',
-          shortcut: '⌥⌘⌫',
+          shortcut: 'Alt+Win+Del',
           selectionColor: highlightColor,
           onTap: () =>
               ref.read(historyControllerProvider.notifier).clearHistory(),
@@ -160,7 +160,7 @@ class _FooterMenu extends ConsumerWidget {
         _MenuRow(
           index: totalItems + 1,
           label: 'Settings...',
-          shortcut: '⌘,',
+          shortcut: 'Win+,',
           selectionColor: highlightColor,
           onTap: () {
             ref.read(appWindowManagerProvider.notifier).showSettings();
@@ -172,7 +172,7 @@ class _FooterMenu extends ConsumerWidget {
         _MenuRow(
           index: totalItems + 2,
           label: 'Quit',
-          shortcut: '⌘Q',
+          shortcut: 'Win+Q',
           selectionColor: highlightColor,
           onTap: () => ref.read(historyControllerProvider.notifier).quitApp(),
           onHover: () => ref
@@ -331,7 +331,7 @@ class _Debouncer {
 /// 字段说明:
 /// [index] 条目在列表中的索引。
 /// [item] 完整的剪贴板条目数据。
-/// [shortcut] 可用的快捷键文本（如 ⌘1）。
+/// [shortcut] 可用的快捷键文本（如 Win+1）。
 /// [selectionColor] 选中状态背景色。
 /// [onTap] 点击（选择）回调。
 /// [onHover] 悬停（导航聚焦）回调。
@@ -414,7 +414,7 @@ class _HistoryRow extends HookConsumerWidget {
                         right: MaccyUIConstants.shortcutTrailingPadding,
                       ),
                       child: KeyboardShortcutWidget(
-                        shortcut: '⌘$shortcut',
+                        shortcut: 'Win+$shortcut',
                         isSelected: isSelected,
                         isDark: isDark,
                       ),

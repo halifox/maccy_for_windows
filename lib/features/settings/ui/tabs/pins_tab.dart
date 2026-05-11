@@ -383,7 +383,7 @@ class _PinKeyPicker extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  '⌘${currentPin.toUpperCase()}',
+                  'Win+${currentPin.toUpperCase()}',
                   style: TextStyle(
                     fontSize: 13,
                     fontFamily: 'Courier New',
@@ -437,7 +437,7 @@ class _PinKeyPicker extends StatelessWidget {
                     : null,
               ),
               Text(
-                '⌘$pin',
+                'Win+$pin',
                 style: const TextStyle(
                   fontSize: 13,
                   fontFamily: 'Courier New',

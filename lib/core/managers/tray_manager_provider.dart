@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/cupertino.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -20,14 +18,7 @@ class AppTrayManager extends _$AppTrayManager with TrayListener {
   /// 设置全局提示文字并注册交互监听器。
   @override
   FutureOr<void> build() async {
-    String iconPath = '';
-    if (Platform.isMacOS) {
-      iconPath = 'assets/tray_icon_32.png';
-    } else if (Platform.isLinux) {
-      iconPath = 'assets/tray_icon_32.png';
-    } else if (Platform.isWindows) {
-      iconPath = 'assets/tray_icon_32.ico';
-    }
+    const iconPath = 'assets/tray_icon_32.ico';
 
     await trayManager.setIcon(iconPath, isTemplate: true);
     await trayManager.setToolTip('Maccy');

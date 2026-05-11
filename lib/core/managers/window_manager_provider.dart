@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:maccy/app.dart';
 import 'package:maccy/core/services/screen_service.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
@@ -120,15 +118,13 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
     debugPrint('[WindowManager] ========== showHistory 开始执行 ==========');
     debugPrint('[WindowManager] 显示来源: $source');
 
-    if (Platform.isMacOS || Platform.isWindows) {
-      try {
-        debugPrint('[WindowManager] 尝试记录活跃应用...');
-        const platform = MethodChannel('com.hali.clip/native_utils');
-        await platform.invokeMethod('recordActiveApp');
-        debugPrint('[WindowManager] ✓ 活跃应用记录成功');
-      } catch (e) {
-        debugPrint('[WindowManager] ❌ 记录活跃应用失败: $e');
-      }
+    try {
+      debugPrint('[WindowManager] 尝试记录活跃应用...');
+      const platform = MethodChannel('com.hali.clip/native_utils');
+      await platform.invokeMethod('recordActiveApp');
+      debugPrint('[WindowManager] ✓ 活跃应用记录成功');
+    } catch (e) {
+      debugPrint('[WindowManager] ❌ 记录活跃应用失败: $e');
     }
 
     debugPrint('[WindowManager] 执行路由跳转到 /clipboard');

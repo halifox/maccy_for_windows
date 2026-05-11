@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:maccy/core/models/hotkey_config.dart';
 
 /// 快捷键工具类。
@@ -10,30 +8,18 @@ class HotkeyUtils {
   ///
   /// [modifier] 修饰键标识符 ('meta', 'alt', 'control', 'shift')。
   static String getModifierDisplay(String modifier) {
-    if (Platform.isMacOS) {
-      return switch (modifier) {
-        'meta' => '⌘',
-        'alt' => '⌥',
-        'control' => '⌃',
-        'shift' => '⇧',
-        _ => modifier,
-      };
-    } else {
-      return switch (modifier) {
-        'meta' => 'Win',
-        'alt' => 'Alt',
-        'control' => 'Ctrl',
-        'shift' => 'Shift',
-        _ => modifier,
-      };
-    }
+    return switch (modifier) {
+      'meta' => 'Win',
+      'alt' => 'Alt',
+      'control' => 'Ctrl',
+      'shift' => 'Shift',
+      _ => modifier,
+    };
   }
 
   /// 获取快捷键配置的完整显示文本。
   ///
-  /// 例如:
-  /// - macOS: ⌥⌘V
-  /// - Windows: Ctrl + Alt + V
+  /// 例如: Ctrl + Alt + V
   static String getHotkeyDisplay(AppHotKeyConfig config) {
     if (config.modifiers.isEmpty) return config.key;
 
@@ -42,11 +28,9 @@ class HotkeyUtils {
 
     for (final modifier in sortedModifiers) {
       buffer.write(getModifierDisplay(modifier));
-      if (!Platform.isMacOS) {
-        buffer.write(' + ');
-      }
+      buffer.write(' + ');
     }
-    
+
     buffer.write(config.key);
     return buffer.toString();
   }
@@ -54,25 +38,15 @@ class HotkeyUtils {
   /// 对修饰键进行排序。
   static List<String> _sortModifiers(List<String> modifiers) {
     final sorted = List<String>.from(modifiers);
-    
-    // 排序规则:
-    // macOS: Control (⌃) -> Option (⌥) -> Shift (⇧) -> Command (⌘)
-    // Windows: Ctrl -> Alt -> Shift -> Win
-    
-    final weights = Platform.isMacOS 
-      ? {
-        'control': 1,
-        'alt': 2,
-        'shift': 3,
-        'meta': 4,
-      }
-      : {
-        'control': 1,
-        'alt': 2,
-        'shift': 3,
-        'meta': 4,
-      };
-      
+
+    // 排序规则: Ctrl -> Alt -> Shift -> Win
+    final weights = {
+      'control': 1,
+      'alt': 2,
+      'shift': 3,
+      'meta': 4,
+    };
+
     sorted.sort((a, b) => (weights[a] ?? 0).compareTo(weights[b] ?? 0));
     return sorted;
   }

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:maccy/core/constants/ui_constants.dart';
 
@@ -38,9 +37,7 @@ class KeyboardShortcutWidget extends StatelessWidget {
               textAlign: TextAlign.right,
               style: TextStyle(
                 fontSize: MaccyUIConstants.shortcutFontSize,
-                fontFamily: Platform.isWindows
-                    ? MaccyUIConstants.systemFontFamilyWindows
-                    : MaccyUIConstants.systemFontFamily,
+                fontFamily: MaccyUIConstants.systemFontFamilyWindows,
                 color: isSelected
                     ? Colors.white
                     : (isDark ? Colors.white : Colors.black87),
@@ -57,9 +54,7 @@ class KeyboardShortcutWidget extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: MaccyUIConstants.shortcutFontSize,
-                fontFamily: Platform.isWindows
-                    ? MaccyUIConstants.systemFontFamilyWindows
-                    : MaccyUIConstants.systemFontFamily,
+                fontFamily: MaccyUIConstants.systemFontFamilyWindows,
                 color: isSelected
                     ? Colors.white
                     : (isDark ? Colors.white : Colors.black87),
