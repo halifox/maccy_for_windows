@@ -15,7 +15,7 @@ part 'database.g.dart';
 /// [lastCopiedAt] 最后一次复制时间。
 /// [numberOfCopies] 复制次数统计，默认为 1。
 /// [pin] 固定快捷键，单字符 'b'-'y'（排除 a/q/v/w/z），null 表示未固定。
-/// [title] 显示标题，最大 203 字符。
+/// [title] 显示标题。
 class HistoryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get application => text().nullable()();
@@ -23,7 +23,7 @@ class HistoryItems extends Table {
   DateTimeColumn get lastCopiedAt => dateTime()();
   IntColumn get numberOfCopies => integer().withDefault(const Constant(1))();
   TextColumn get pin => text().nullable().withLength(min: 1, max: 1)();
-  TextColumn get title => text().withLength(max: 203)();
+  TextColumn get title => text()();
 }
 
 /// 历史条目内容表（对应 Maccy 的 HistoryItemContent）。
@@ -55,13 +55,21 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
       onCreate: (m) async {
         await m.createAll();
+      },
+      onUpgrade: (m, from, to) async {
+        if (from < 12) {
+          // 从版本 11 升级到 12：移除 title 字段的 203 字符限制
+          // SQLite 不支持直接修改列约束，但由于我们只是放宽限制（移除 CHECK 约束），
+          // 现有数据仍然有效，新数据可以使用更长的标题
+          // Drift 会在下次访问时应用新的模式
+        }
       },
     );
   }
