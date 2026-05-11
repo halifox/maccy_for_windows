@@ -132,7 +132,7 @@ final class ModifierKeysStateProvider
   }
 }
 
-String _$modifierKeysStateHash() => r'c373f6eee5cd8b929b0585c96ef1bbf7a3e88f7c';
+String _$modifierKeysStateHash() => r'c19b0d5254173ea9c36812ae66fefc9e033d43f6';
 
 /// 修饰键状态管理器。
 ///

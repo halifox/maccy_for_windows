@@ -315,7 +315,7 @@ final class HistoryControllerProvider
   }
 }
 
-String _$historyControllerHash() => r'1eed9b01e305035e689843aeecc39c06be7dd9ee';
+String _$historyControllerHash() => r'45fbbe6b755651e5087845ab765af91e39c6c275';
 
 /// 历史记录交互控制器。
 ///

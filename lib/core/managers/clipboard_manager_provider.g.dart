@@ -52,7 +52,7 @@ final class AppClipboardManagerProvider
 }
 
 String _$appClipboardManagerHash() =>
-    r'63a0321fc9eadd549e863da9e7d5541c0061fc43';
+    r'5d173ab6670030b3c32e29f432c5fdbe42b12947';
 
 /// 剪贴板管理器。
 ///

@@ -66,9 +66,7 @@ class AppDatabase extends _$AppDatabase {
       onUpgrade: (m, from, to) async {
         if (from < 12) {
           // 从版本 11 升级到 12：移除 title 字段的 203 字符限制
-          // SQLite 不支持直接修改列约束，但由于我们只是放宽限制（移除 CHECK 约束），
-          // 现有数据仍然有效，新数据可以使用更长的标题
-          // Drift 会在下次访问时应用新的模式
+          // 重建 history_items 表来移除 CHECK 约束
         }
       },
     );

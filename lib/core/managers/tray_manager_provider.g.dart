@@ -45,7 +45,7 @@ final class AppTrayManagerProvider
   AppTrayManager create() => AppTrayManager();
 }
 
-String _$appTrayManagerHash() => r'a5485e8d6af3ee882a7a32d3c027448bd5ad35b9';
+String _$appTrayManagerHash() => r'65e57284348635c2dd1280ec5d729d8c5fda6fb5';
 
 /// 系统托盘管理器。
 ///

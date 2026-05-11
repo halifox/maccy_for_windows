@@ -87,7 +87,6 @@ class $HistoryItemsTable extends HistoryItems
     'title',
     aliasedName,
     false,
-    additionalChecks: GeneratedColumn.checkTextLength(maxTextLength: 203),
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
