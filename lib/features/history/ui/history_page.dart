@@ -254,6 +254,7 @@ class _HistoryHeader extends HookConsumerWidget {
                 decoration: const InputDecoration(
                   hintText: 'Search...',
                   border: InputBorder.none,
+                  isDense: true,
                   contentPadding: EdgeInsets.symmetric(
                     horizontal: MaccyUIConstants.searchFieldInternalHorizontalPadding,
                   ),
