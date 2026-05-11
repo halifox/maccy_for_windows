@@ -276,7 +276,7 @@ class AppClipboardManager extends _$AppClipboardManager with ClipboardListener {
   Future<void> _simulateWindowsPaste() async {
     try {
       const platform = MethodChannel('com.hali.clip/native_utils');
-      await platform.invokeMethod('simulatePaste');
+      await platform.invokeMethod('restoreAndPaste');
     } catch (e) {
       debugPrint(e.toString());
     }
