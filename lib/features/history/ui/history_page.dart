@@ -367,7 +367,7 @@ class _HistoryRow extends HookConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final previewDelay = ref.watch(previewDelayProvider);
 
-    final showPreview = useState(false);
+    final overlayController = useMemoized(() => OverlayPortalController());
     final hoverTimer = useRef<Timer?>(null);
 
     useEffect(() {
@@ -379,61 +379,60 @@ class _HistoryRow extends HookConsumerWidget {
     return MouseRegion(
       onEnter: (_) {
         onHover();
-        // Start timer for preview
         hoverTimer.value?.cancel();
         hoverTimer.value = Timer(Duration(milliseconds: previewDelay), () {
-          showPreview.value = true;
+          overlayController.show();
         });
       },
       onExit: (_) {
         hoverTimer.value?.cancel();
-        showPreview.value = false;
+        // overlayController.hide();
       },
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          GestureDetector(
-            onTap: onTap,
-            child: Container(
-              height: MaccyUIConstants.itemHeight,
-              padding: const EdgeInsets.symmetric(
-                horizontal: MaccyUIConstants.contentLeadingPadding,
-                vertical: 0,
-              ),
-              decoration: BoxDecoration(
-                color: isSelected ? selectionColor : Colors.transparent,
-                borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: buildContent(ref, isSelected, isDark),
-                  ),
-                  if (shortcut != null)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        right: MaccyUIConstants.shortcutTrailingPadding,
-                      ),
-                      child: KeyboardShortcutWidget(
-                        shortcut: 'Win+$shortcut',
-                        isSelected: isSelected,
-                        isDark: isDark,
-                      ),
-                    )
-                  else
-                    const SizedBox(width: MaccyUIConstants.shortcutPlaceholderWidth),
-                ],
-              ),
+      child: OverlayPortal(
+        controller: overlayController,
+        overlayChildBuilder: (context) {
+          return Positioned(
+            right: 10,
+            left: 150,
+            bottom: 70,
+            top: 45,
+            child: PreviewPopover(item: item),
+          );
+        },
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            height: MaccyUIConstants.itemHeight,
+            padding: const EdgeInsets.symmetric(
+              horizontal: MaccyUIConstants.contentLeadingPadding,
+              vertical: 0,
+            ),
+            decoration: BoxDecoration(
+              color: isSelected ? selectionColor : Colors.transparent,
+              borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: buildContent(ref, isSelected, isDark),
+                ),
+                if (shortcut != null)
+                  Padding(
+                    padding: const EdgeInsets.only(
+                      right: MaccyUIConstants.shortcutTrailingPadding,
+                    ),
+                    child: KeyboardShortcutWidget(
+                      shortcut: 'Win+$shortcut',
+                      isSelected: isSelected,
+                      isDark: isDark,
+                    ),
+                  )
+                else
+                  const SizedBox(width: MaccyUIConstants.shortcutPlaceholderWidth),
+              ],
             ),
           ),
-          // Preview popover overlay
-          if (showPreview.value)
-            Positioned(
-              left: 460, // Position to the right of the window
-              top: -12,
-              child: PreviewPopover(item: item),
-            ),
-        ],
+        ),
       ),
     );
   }
