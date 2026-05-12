@@ -386,7 +386,7 @@ class _HistoryRow extends HookConsumerWidget {
       },
       onExit: (_) {
         hoverTimer.value?.cancel();
-        // overlayController.hide();
+        overlayController.hide();
       },
       child: OverlayPortal(
         controller: overlayController,
