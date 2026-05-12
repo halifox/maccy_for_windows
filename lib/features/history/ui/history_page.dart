@@ -386,7 +386,9 @@ class _HistoryRow extends HookConsumerWidget {
       },
       onExit: (_) {
         hoverTimer.value?.cancel();
-        overlayController.hide();
+        hoverTimer.value = Timer(const Duration(milliseconds: 200), () {
+          overlayController.hide();
+        });
       },
       child: OverlayPortal(
         controller: overlayController,
@@ -394,7 +396,11 @@ class _HistoryRow extends HookConsumerWidget {
           return Positioned(
             right: 10,
             top: 45,
-            child: PreviewPopover(item: item),
+            child: MouseRegion(
+              onEnter: (_) => hoverTimer.value?.cancel(),
+              onExit: (_) => overlayController.hide(),
+              child: PreviewPopover(item: item),
+            ),
           );
         },
         child: GestureDetector(
