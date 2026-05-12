@@ -393,8 +393,6 @@ class _HistoryRow extends HookConsumerWidget {
         overlayChildBuilder: (context) {
           return Positioned(
             right: 10,
-            left: 150,
-            bottom: 70,
             top: 45,
             child: PreviewPopover(item: item),
           );
