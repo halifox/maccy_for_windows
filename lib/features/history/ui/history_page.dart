@@ -160,7 +160,7 @@ class _FooterMenu extends ConsumerWidget {
         _MenuRow(
           index: totalItems + 1,
           label: 'Settings...',
-          shortcut: 'Win+,',
+          shortcut: 'Ctrl+,',
           selectionColor: highlightColor,
           onTap: () {
             ref.read(appWindowManagerProvider.notifier).showSettings();
@@ -172,7 +172,7 @@ class _FooterMenu extends ConsumerWidget {
         _MenuRow(
           index: totalItems + 2,
           label: 'Quit',
-          shortcut: 'Win+Q',
+          shortcut: 'Ctrl+Q',
           selectionColor: highlightColor,
           onTap: () => ref.read(historyControllerProvider.notifier).quitApp(),
           onHover: () => ref
@@ -426,7 +426,7 @@ class _HistoryRow extends HookConsumerWidget {
                       right: MaccyUIConstants.shortcutTrailingPadding,
                     ),
                     child: KeyboardShortcutWidget(
-                      shortcut: 'Win+$shortcut',
+                      shortcut: 'Alt+$shortcut',
                       isSelected: isSelected,
                       isDark: isDark,
                     ),
