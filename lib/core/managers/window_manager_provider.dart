@@ -1,6 +1,7 @@
 import 'package:maccy/app.dart';
 import 'package:maccy/core/services/screen_service.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
+import 'package:maccy/features/history/providers/popup_state_provider.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -152,8 +153,6 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
 
     _isShowing = true;
 
-    ref.read(historySearchQueryProvider.notifier).value = '';
-    ref.read(historySelectedIndexProvider.notifier).value = 0;
     ref.read(historyFocusRequestProvider.notifier).request();
   }
 
@@ -192,11 +191,18 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
 
 
   /// 隐藏当前主窗口并记录时间戳。
+  ///
+  /// 同时重置所有 UI 状态（搜索词、选中索引、弹出框状态等）。
   Future<void> hideHistory() async {
     router.go('/clipboard');
     await windowManager.hide();
     _isShowing = false;
     _lastHideTime = DateTime.now();
+
+    // 重置所有 UI 状态
+    ref.read(historySearchQueryProvider.notifier).value = '';
+    ref.read(historySelectedIndexProvider.notifier).value = 0;
+    ref.read(popupStateManagerProvider.notifier).reset();
   }
 
   /// 显示应用程序的设置界面。
