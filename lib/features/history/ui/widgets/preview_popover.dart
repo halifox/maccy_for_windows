@@ -27,8 +27,8 @@ class PreviewPopover extends ConsumerWidget {
 
     return Container(
       constraints: const BoxConstraints(
-        maxWidth: 400,
-        maxHeight: 500,
+        maxWidth: 300,
+        maxHeight: 400,
       ),
       decoration: BoxDecoration(
         color: isDark
