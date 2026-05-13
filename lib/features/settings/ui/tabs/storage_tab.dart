@@ -129,47 +129,6 @@ class StorageTab extends HookConsumerWidget {
               ),
             ],
           ),
-          // Save description
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Text(
-              'Maccy will save only the types you enable above.',
-              style: TextStyle(
-                fontSize: 12,
-                color: MediaQuery.of(context).platformBrightness == Brightness.dark
-                    ? Colors.white38
-                    : Colors.black38,
-              ),
-            ),
-          ),
-          MacosSettingsGroup(
-            title: 'Cleanup',
-            children: [
-              MacosSettingsTile(
-                label: 'Clear on Exit',
-                subtitle: 'Delete all history when quitting the application',
-                icon: CupertinoIcons.trash,
-                iconColor: CupertinoColors.systemRed,
-                trailing: CupertinoCheckbox(
-                  value: ref.watch(clearOnExitProvider),
-                  onChanged: (v) =>
-                      ref.read(clearOnExitProvider.notifier).set(v ?? false),
-                ),
-              ),
-              MacosSettingsTile(
-                label: 'Clear System Clipboard',
-                subtitle: 'Also clear system clipboard when clearing history',
-                icon: CupertinoIcons.clear,
-                iconColor: CupertinoColors.systemGrey,
-                trailing: CupertinoCheckbox(
-                  value: ref.watch(clearSystemClipboardProvider),
-                  onChanged: (v) => ref
-                      .read(clearSystemClipboardProvider.notifier)
-                      .set(v ?? false),
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );
