@@ -509,8 +509,9 @@ class _EditableTextField extends HookWidget {
         ),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      onSubmitted: onChanged,
-      onEditingComplete: () => onChanged(controller.text),
+      onChanged: onChanged,
+      // onSubmitted: onChanged,
+      // onEditingComplete: () => onChanged(controller.text),
     );
   }
 }
