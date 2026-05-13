@@ -128,24 +128,12 @@ class HistoryPage extends HookConsumerWidget {
                             builder: (context, ref, child) {
                               final pinnedItems = ref.watch(pinnedHistoryProvider).value ?? [];
                               final unpinnedItems = ref.watch(unpinnedHistoryProvider).value ?? [];
-
                               return CustomScrollView(
                                 slivers: [
                                   SliverList(
                                     delegate: SliverChildBuilderDelegate((context, listIndex) {
                                       final item = pinnedItems[listIndex];
-                                      return _HistoryRow(
-                                        item: item,
-                                        shortcut: item.pin,
-                                        selectionColor: isDark
-                                            ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
-                                            : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                        onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
-                                        onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
-                                        onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
-                                        onDelete: () =>
-                                            ref.read(historyControllerProvider.notifier).deleteItem(item.id),
-                                      );
+                                      return _HistoryRow(item: item, shortcut: item.pin);
                                     }, childCount: pinnedItems.length),
                                   ),
                                   const SliverToBoxAdapter(child: Divider(thickness: 1, height: 1)),
@@ -153,18 +141,7 @@ class HistoryPage extends HookConsumerWidget {
                                     delegate: SliverChildBuilderDelegate((context, listIndex) {
                                       final item = unpinnedItems[listIndex];
                                       final shortcut = listIndex < 10 ? '${(listIndex + 1) % 10}' : null;
-                                      return _HistoryRow(
-                                        item: item,
-                                        shortcut: shortcut,
-                                        selectionColor: isDark
-                                            ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
-                                            : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                        onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
-                                        onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
-                                        onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
-                                        onDelete: () =>
-                                            ref.read(historyControllerProvider.notifier).deleteItem(item.id),
-                                      );
+                                      return _HistoryRow(item: item, shortcut: shortcut);
                                     }, childCount: unpinnedItems.length),
                                   ),
                                 ],
@@ -399,28 +376,11 @@ class _Debouncer {
 /// [item] 完整的剪贴板条目数据。
 /// [shortcut] 可用的快捷键文本（如 Win+1）。
 /// [selectionColor] 选中状态背景色。
-/// [onTap] 点击（选择）回调。
-/// [onHover] 悬停（导航聚焦）回调。
-/// [onPin] 切换置顶回调。
-/// [onDelete] 删除回调。
 class _HistoryRow extends HookConsumerWidget {
-  const _HistoryRow({
-    required this.item,
-    this.shortcut,
-    required this.selectionColor,
-    required this.onTap,
-    required this.onHover,
-    required this.onPin,
-    required this.onDelete,
-  });
+  const _HistoryRow({required this.item, this.shortcut});
 
   final HistoryItem item;
   final String? shortcut;
-  final Color selectionColor;
-  final VoidCallback onTap;
-  final VoidCallback onHover;
-  final VoidCallback onPin;
-  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -439,7 +399,7 @@ class _HistoryRow extends HookConsumerWidget {
 
     return MouseRegion(
       onEnter: (_) {
-        onHover();
+        ref.read(historySelectedIdProvider.notifier).value = item.id;
         hoverTimer.value?.cancel();
         hoverTimer.value = Timer(Duration(milliseconds: previewDelay), () {
           overlayController.show();
@@ -465,12 +425,18 @@ class _HistoryRow extends HookConsumerWidget {
           );
         },
         child: GestureDetector(
-          onTap: onTap,
+          onTap: () {
+            ref.read(historyControllerProvider.notifier).selectItem(item.id);
+          },
           child: Container(
             height: MaccyUIConstants.itemHeight,
             padding: const EdgeInsets.symmetric(horizontal: MaccyUIConstants.contentLeadingPadding, vertical: 0),
             decoration: BoxDecoration(
-              color: isSelected ? selectionColor : Colors.transparent,
+              color: isSelected
+                  ? isDark
+                        ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                        : const Color(0xFF007AFF).withValues(alpha: 0.8)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
             ),
             child: Row(
