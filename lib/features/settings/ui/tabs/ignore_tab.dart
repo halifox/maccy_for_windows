@@ -16,10 +16,93 @@ class IgnoreTab extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedTab = useState(0);
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
+    final isWhitelistMode = ref.watch(ignoreAllAppsExceptListedProvider);
+
+    final types = ref.watch(ignoredPasteboardTypesProvider);
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          MacosSettingsGroup(
+            title: "Applications",
+            children: [
+              MacosSettingsTile(
+                label: 'Whitelist Mode',
+                subtitle: 'Only capture clipboard from listed applications',
+                icon: CupertinoIcons.checkmark_circle,
+                iconColor: CupertinoColors.systemGreen,
+                trailing: CupertinoCheckbox(
+                  value: isWhitelistMode,
+                  onChanged: (v) => ref
+                      .read(ignoreAllAppsExceptListedProvider.notifier)
+                      .set(v ?? false),
+                ),
+              ),
+            ],
+          ),
+          MacosSettingsGroup(
+            title: "Types",
+            children: [
+              SizedBox(
+                height: 300, // 固定总高度
+                child: ListView.separated(
+                  itemCount: types.length,
+                  separatorBuilder: (context, index) {
+                    return const Divider(height: 1, thickness: 1);
+                  },
+                  itemBuilder: (context, index) {
+                    final type = types[index];
+                    return ListTile(
+                      dense: true,
+                      title: Text(
+                        type,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : Colors.black87,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      trailing: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        color: isDark
+                            ? Colors.white.withValues(alpha: 0.1)
+                            : Colors.black.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(6),
+                        onPressed: () {
+                          final updated = types
+                              .where((t) => t != type)
+                              .toList();
+                          ref
+                              .read(ignoredPasteboardTypesProvider.notifier)
+                              .set(updated);
+                        },
+                        minimumSize: Size.zero,
+                        child: Text(
+                          'delete',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+          MacosSettingsGroup(title: "Regex", children: []),
+        ],
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min, 
+      mainAxisSize: MainAxisSize.min,
       children: [
         // Tab 切换器
         Container(
@@ -150,9 +233,10 @@ class _ApplicationsTab extends HookConsumerWidget {
                           onPressed: () {
                             final text = textController.text.trim();
                             if (text.isNotEmpty && !apps.contains(text)) {
-                              ref
-                                  .read(ignoredAppsProvider.notifier)
-                                  .set([...apps, text]);
+                              ref.read(ignoredAppsProvider.notifier).set([
+                                ...apps,
+                                text,
+                              ]);
                               textController.clear();
                             }
                           },
@@ -174,9 +258,7 @@ class _ApplicationsTab extends HookConsumerWidget {
                               Icon(
                                 CupertinoIcons.app,
                                 size: 48,
-                                color: isDark
-                                    ? Colors.white24
-                                    : Colors.black26,
+                                color: isDark ? Colors.white24 : Colors.black26,
                               ),
                               const SizedBox(height: 12),
                               Text(
@@ -194,13 +276,17 @@ class _ApplicationsTab extends HookConsumerWidget {
                         ),
                       )
                     else
-                      ...apps.map((app) => _ListItem(
-                            text: app,
-                            onDelete: () {
-                              final updated = apps.where((a) => a != app).toList();
-                              ref.read(ignoredAppsProvider.notifier).set(updated);
-                            },
-                          )),
+                      ...apps.map(
+                        (app) => _ListItem(
+                          text: app,
+                          onDelete: () {
+                            final updated = apps
+                                .where((a) => a != app)
+                                .toList();
+                            ref.read(ignoredAppsProvider.notifier).set(updated);
+                          },
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -312,9 +398,7 @@ class _PasteboardTypesTab extends HookConsumerWidget {
                               Icon(
                                 CupertinoIcons.doc_text,
                                 size: 48,
-                                color: isDark
-                                    ? Colors.white24
-                                    : Colors.black26,
+                                color: isDark ? Colors.white24 : Colors.black26,
                               ),
                               const SizedBox(height: 12),
                               Text(
@@ -330,15 +414,19 @@ class _PasteboardTypesTab extends HookConsumerWidget {
                         ),
                       )
                     else
-                      ...types.map((type) => _ListItem(
-                            text: type,
-                            onDelete: () {
-                              final updated = types.where((t) => t != type).toList();
-                              ref
-                                  .read(ignoredPasteboardTypesProvider.notifier)
-                                  .set(updated);
-                            },
-                          )),
+                      ...types.map(
+                        (type) => _ListItem(
+                          text: type,
+                          onDelete: () {
+                            final updated = types
+                                .where((t) => t != type)
+                                .toList();
+                            ref
+                                .read(ignoredPasteboardTypesProvider.notifier)
+                                .set(updated);
+                          },
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -415,8 +503,12 @@ class _RegexTab extends HookConsumerWidget {
                                     color: errorText.value != null
                                         ? CupertinoColors.systemRed
                                         : (isDark
-                                            ? Colors.white.withValues(alpha: 0.1)
-                                            : Colors.black.withValues(alpha: 0.1)),
+                                              ? Colors.white.withValues(
+                                                  alpha: 0.1,
+                                                )
+                                              : Colors.black.withValues(
+                                                  alpha: 0.1,
+                                                )),
                                   ),
                                 ),
                                 onChanged: (_) => errorText.value = null,
@@ -438,9 +530,9 @@ class _RegexTab extends HookConsumerWidget {
                                 try {
                                   RegExp(text);
                                   if (!patterns.contains(text)) {
-                                    ref
-                                        .read(ignoreRegexpProvider.notifier)
-                                        .set([...patterns, text]);
+                                    ref.read(ignoreRegexpProvider.notifier).set(
+                                      [...patterns, text],
+                                    );
                                     textController.clear();
                                     errorText.value = null;
                                   }
@@ -480,9 +572,7 @@ class _RegexTab extends HookConsumerWidget {
                               Icon(
                                 CupertinoIcons.textformat,
                                 size: 48,
-                                color: isDark
-                                    ? Colors.white24
-                                    : Colors.black26,
+                                color: isDark ? Colors.white24 : Colors.black26,
                               ),
                               const SizedBox(height: 12),
                               Text(
@@ -498,17 +588,20 @@ class _RegexTab extends HookConsumerWidget {
                         ),
                       )
                     else
-                      ...patterns.map((pattern) => _ListItem(
-                            text: pattern,
-                            isMonospace: true,
-                            onDelete: () {
-                              final updated =
-                                  patterns.where((p) => p != pattern).toList();
-                              ref
-                                  .read(ignoreRegexpProvider.notifier)
-                                  .set(updated);
-                            },
-                          )),
+                      ...patterns.map(
+                        (pattern) => _ListItem(
+                          text: pattern,
+                          isMonospace: true,
+                          onDelete: () {
+                            final updated = patterns
+                                .where((p) => p != pattern)
+                                .toList();
+                            ref
+                                .read(ignoreRegexpProvider.notifier)
+                                .set(updated);
+                          },
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -600,13 +693,16 @@ class _ListItem extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 fontFamily: isMonospace ? 'Courier New' : null,
-                color: isDark ? Colors.white.withValues(alpha: 0.87) : Colors.black.withValues(alpha: 0.87),
+                color: isDark
+                    ? Colors.white.withValues(alpha: 0.87)
+                    : Colors.black.withValues(alpha: 0.87),
               ),
             ),
           ),
           CupertinoButton(
             padding: EdgeInsets.zero,
-            onPressed: onDelete, minimumSize: const Size(24, 24),
+            onPressed: onDelete,
+            minimumSize: const Size(24, 24),
             child: Icon(
               CupertinoIcons.xmark_circle_fill,
               size: 18,
