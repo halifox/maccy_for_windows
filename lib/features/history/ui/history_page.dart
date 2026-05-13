@@ -30,6 +30,15 @@ class HistoryPage extends HookConsumerWidget {
     final totalItems = ref.watch(filteredHistoryProvider.select((v) => v.value?.length ?? 0));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // 确保有选中项，如果没有则选中第一项
+    ref.listen(filteredHistoryProvider, (previous, next) {
+      final history = next.value ?? [];
+      final selectedId = ref.read(historySelectedIdProvider);
+      if (history.isNotEmpty && (selectedId == null || !history.any((item) => item.id == selectedId))) {
+        ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Shortcuts(
@@ -119,7 +128,6 @@ class HistoryPage extends HookConsumerWidget {
                             builder: (context, ref, child) {
                               final pinnedItems = ref.watch(pinnedHistoryProvider).value ?? [];
                               final unpinnedItems = ref.watch(unpinnedHistoryProvider).value ?? [];
-                              final allHistory = ref.watch(filteredHistoryProvider).value ?? [];
 
                               return CustomScrollView(
                                 slivers: [
@@ -127,18 +135,16 @@ class HistoryPage extends HookConsumerWidget {
                                     delegate: SliverChildBuilderDelegate(
                                       (context, listIndex) {
                                         final item = pinnedItems[listIndex];
-                                        final originalIndex = allHistory.indexOf(item);
                                         return _HistoryRow(
-                                          index: originalIndex,
                                           item: item,
                                           shortcut: item.pin,
                                           selectionColor: isDark
                                               ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
                                               : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(originalIndex),
-                                          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = originalIndex,
-                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(originalIndex),
-                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(originalIndex),
+                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
+                                          onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
+                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
+                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(item.id),
                                         );
                                       },
                                       childCount: pinnedItems.length,
@@ -148,19 +154,17 @@ class HistoryPage extends HookConsumerWidget {
                                     delegate: SliverChildBuilderDelegate(
                                       (context, listIndex) {
                                         final item = unpinnedItems[listIndex];
-                                        final originalIndex = allHistory.indexOf(item);
                                         final shortcut = listIndex < 10 ? '${(listIndex + 1) % 10}' : null;
                                         return _HistoryRow(
-                                          index: originalIndex,
                                           item: item,
                                           shortcut: shortcut,
                                           selectionColor: isDark
                                               ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
                                               : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(originalIndex),
-                                          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = originalIndex,
-                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(originalIndex),
-                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(originalIndex),
+                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
+                                          onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
+                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
+                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(item.id),
                                         );
                                       },
                                       childCount: unpinnedItems.length,
@@ -222,7 +226,7 @@ class _FooterMenu extends ConsumerWidget {
           shortcut: 'Alt+Win+Del',
           selectionColor: highlightColor,
           onTap: () => ref.read(historyControllerProvider.notifier).clearHistory(),
-          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = totalItems,
+          onHover: () => ref.read(historySelectedIdProvider.notifier).value = null,
         ),
         _MenuRow(
           index: totalItems + 1,
@@ -232,7 +236,7 @@ class _FooterMenu extends ConsumerWidget {
           onTap: () {
             ref.read(appWindowManagerProvider.notifier).showSettings();
           },
-          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = totalItems + 1,
+          onHover: () => ref.read(historySelectedIdProvider.notifier).value = null,
         ),
         _MenuRow(
           index: totalItems + 2,
@@ -240,7 +244,7 @@ class _FooterMenu extends ConsumerWidget {
           shortcut: 'Ctrl+Q',
           selectionColor: highlightColor,
           onTap: () => ref.read(historyControllerProvider.notifier).quitApp(),
-          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = totalItems + 2,
+          onHover: () => ref.read(historySelectedIdProvider.notifier).value = null,
         ),
         const SizedBox(height: 4),
       ],
@@ -329,7 +333,10 @@ class _HistoryHeader extends HookConsumerWidget {
                 onChanged: (value) {
                   debouncer.run(() {
                     ref.read(historySearchQueryProvider.notifier).value = value;
-                    ref.read(historySelectedIndexProvider.notifier).value = 0;
+                    final history = ref.read(filteredHistoryProvider).value ?? [];
+                    if (history.isNotEmpty) {
+                      ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+                    }
                   });
                 },
               ),
@@ -340,7 +347,10 @@ class _HistoryHeader extends HookConsumerWidget {
                 onTap: () {
                   searchController.clear();
                   ref.read(historySearchQueryProvider.notifier).value = '';
-                  ref.read(historySelectedIndexProvider.notifier).value = 0;
+                  final history = ref.read(filteredHistoryProvider).value ?? [];
+                  if (history.isNotEmpty) {
+                    ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+                  }
                 },
                 child: Padding(
                   padding: const EdgeInsets.only(right: MaccyUIConstants.searchFieldInternalHorizontalPadding),
@@ -389,7 +399,6 @@ class _Debouncer {
 /// 展示单条剪贴板内容，支持关键词搜索高亮、置顶状态标识、删除/置顶交互按钮、预览弹窗。
 ///
 /// 字段说明:
-/// [index] 条目在列表中的索引。
 /// [item] 完整的剪贴板条目数据。
 /// [shortcut] 可用的快捷键文本（如 Win+1）。
 /// [selectionColor] 选中状态背景色。
@@ -399,7 +408,6 @@ class _Debouncer {
 /// [onDelete] 删除回调。
 class _HistoryRow extends HookConsumerWidget {
   const _HistoryRow({
-    required this.index,
     required this.item,
     this.shortcut,
     required this.selectionColor,
@@ -409,7 +417,6 @@ class _HistoryRow extends HookConsumerWidget {
     required this.onDelete,
   });
 
-  final int index;
   final HistoryItem item;
   final String? shortcut;
   final Color selectionColor;
@@ -420,7 +427,7 @@ class _HistoryRow extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isSelected = ref.watch(historySelectedIndexProvider.select((val) => val == index));
+    final isSelected = ref.watch(historySelectedIdProvider.select((val) => val == item.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final previewDelay = ref.watch(previewDelayProvider);
 
@@ -603,7 +610,7 @@ class _MenuRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isSelected = ref.watch(historySelectedIndexProvider.select((val) => val == index));
+    final isSelected = ref.watch(historySelectedIdProvider.select((val) => val == null && val == index));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return MouseRegion(
       onHover: (_) => onHover(),

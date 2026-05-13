@@ -131,8 +131,10 @@ class AppHotKeyManager extends _$AppHotKeyManager {
   void _handleModifiersReleased() {
     if (_popupState == PopupState.cycle) {
       // 粘贴选中项
-      final selectedIndex = ref.read(historySelectedIndexProvider);
-      ref.read(historyControllerProvider.notifier).selectItem(selectedIndex);
+      final id = ref.read(historySelectedIdProvider);
+      if(id!=null){
+        ref.read(historyControllerProvider.notifier).selectItem(id);
+      }
 
       // 关闭窗口
       ref.read(appWindowManagerProvider.notifier).hideHistory();

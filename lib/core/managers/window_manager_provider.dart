@@ -201,7 +201,7 @@ class AppWindowManager extends _$AppWindowManager with WindowListener {
 
     // 重置所有 UI 状态
     ref.read(historySearchQueryProvider.notifier).value = '';
-    ref.read(historySelectedIndexProvider.notifier).value = 0;
+    ref.read(historySelectedIdProvider.notifier).value = null;
     ref.read(popupStateManagerProvider.notifier).reset();
   }
 

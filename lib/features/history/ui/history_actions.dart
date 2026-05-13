@@ -14,15 +14,7 @@ class NavigateDownAction extends Action<NavigateDownIntent> {
 
   @override
   void invoke(NavigateDownIntent intent) {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    final totalItems = history.length;
-    final showFooter = ref.read(showFooterMenuProvider);
-    final menuCount = showFooter ? 3 : 0;
-    final maxIdx = totalItems + menuCount - 1;
-
-    if (maxIdx < 0) return;
-
-    ref.read(historySelectedIndexProvider.notifier).update((val) => (val + 1).clamp(0, maxIdx));
+    ref.read(historyControllerProvider.notifier).selectNext();
   }
 }
 
@@ -33,15 +25,7 @@ class NavigateUpAction extends Action<NavigateUpIntent> {
 
   @override
   void invoke(NavigateUpIntent intent) {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    final totalItems = history.length;
-    final showFooter = ref.read(showFooterMenuProvider);
-    final menuCount = showFooter ? 3 : 0;
-    final maxIdx = totalItems + menuCount - 1;
-
-    if (maxIdx < 0) return;
-
-    ref.read(historySelectedIndexProvider.notifier).update((val) => (val - 1).clamp(0, maxIdx));
+    ref.read(historyControllerProvider.notifier).selectPrevious();
   }
 }
 
@@ -52,22 +36,9 @@ class SelectItemAction extends Action<SelectItemIntent> {
 
   @override
   void invoke(SelectItemIntent intent) {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    final selectedIndex = ref.read(historySelectedIndexProvider);
-    final totalItems = history.length;
-
-    if (selectedIndex < totalItems) {
-      ref.read(historyControllerProvider.notifier).selectItem(selectedIndex);
-    } else {
-      final menuIdx = selectedIndex - totalItems;
-      switch (menuIdx) {
-        case 0:
-          ref.read(historyControllerProvider.notifier).clearHistory();
-        case 1:
-          ref.read(appWindowManagerProvider.notifier).showSettings();
-        case 2:
-          ref.read(historyControllerProvider.notifier).quitApp();
-      }
+    final selectedId = ref.read(historySelectedIdProvider);
+    if (selectedId != null) {
+      ref.read(historyControllerProvider.notifier).selectItem(selectedId);
     }
   }
 }
@@ -91,10 +62,9 @@ class TogglePinAction extends Action<TogglePinIntent> {
 
   @override
   void invoke(TogglePinIntent intent) {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    final selectedIndex = ref.read(historySelectedIndexProvider);
-    if (selectedIndex < history.length) {
-      ref.read(historyControllerProvider.notifier).togglePin(selectedIndex);
+    final selectedId = ref.read(historySelectedIdProvider);
+    if (selectedId != null) {
+      ref.read(historyControllerProvider.notifier).togglePin(selectedId);
     }
   }
 }
@@ -128,9 +98,9 @@ class QuickSelectAction extends Action<QuickSelectIntent> {
 
   @override
   void invoke(QuickSelectIntent intent) {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    if (intent.index < history.length) {
-      ref.read(historyControllerProvider.notifier).selectItem(intent.index);
+    final unpinnedItems = ref.read(unpinnedHistoryProvider).value ?? [];
+    if (intent.index < unpinnedItems.length) {
+      ref.read(historyControllerProvider.notifier).selectItem(unpinnedItems[intent.index].id);
     }
   }
 }

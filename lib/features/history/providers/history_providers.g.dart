@@ -75,66 +75,65 @@ abstract class _$HistorySearchQuery extends $Notifier<String> {
   }
 }
 
-/// 历史记录选中项索引 Notifier。
+/// 历史记录选中项 ID Notifier。
 ///
 /// 管理列表中的焦点位置（键盘上下键导航的当前项）。
 
-@ProviderFor(HistorySelectedIndex)
-final historySelectedIndexProvider = HistorySelectedIndexProvider._();
+@ProviderFor(HistorySelectedId)
+final historySelectedIdProvider = HistorySelectedIdProvider._();
 
-/// 历史记录选中项索引 Notifier。
+/// 历史记录选中项 ID Notifier。
 ///
 /// 管理列表中的焦点位置（键盘上下键导航的当前项）。
-final class HistorySelectedIndexProvider
-    extends $NotifierProvider<HistorySelectedIndex, int> {
-  /// 历史记录选中项索引 Notifier。
+final class HistorySelectedIdProvider
+    extends $NotifierProvider<HistorySelectedId, int?> {
+  /// 历史记录选中项 ID Notifier。
   ///
   /// 管理列表中的焦点位置（键盘上下键导航的当前项）。
-  HistorySelectedIndexProvider._()
+  HistorySelectedIdProvider._()
     : super(
         from: null,
         argument: null,
         retry: null,
-        name: r'historySelectedIndexProvider',
+        name: r'historySelectedIdProvider',
         isAutoDispose: true,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
 
   @override
-  String debugGetCreateSourceHash() => _$historySelectedIndexHash();
+  String debugGetCreateSourceHash() => _$historySelectedIdHash();
 
   @$internal
   @override
-  HistorySelectedIndex create() => HistorySelectedIndex();
+  HistorySelectedId create() => HistorySelectedId();
 
   /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(int value) {
+  Override overrideWithValue(int? value) {
     return $ProviderOverride(
       origin: this,
-      providerOverride: $SyncValueProvider<int>(value),
+      providerOverride: $SyncValueProvider<int?>(value),
     );
   }
 }
 
-String _$historySelectedIndexHash() =>
-    r'97c194c35ad7c655e8f3720aee9ef352c43b5a47';
+String _$historySelectedIdHash() => r'82f5740054b87fc46419b4fb563cb953c85af854';
 
-/// 历史记录选中项索引 Notifier。
+/// 历史记录选中项 ID Notifier。
 ///
 /// 管理列表中的焦点位置（键盘上下键导航的当前项）。
 
-abstract class _$HistorySelectedIndex extends $Notifier<int> {
-  int build();
+abstract class _$HistorySelectedId extends $Notifier<int?> {
+  int? build();
   @$mustCallSuper
   @override
   void runBuild() {
-    final ref = this.ref as $Ref<int, int>;
+    final ref = this.ref as $Ref<int?, int?>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<int, int>,
-              int,
+              AnyNotifier<int?, int?>,
+              int?,
               Object?,
               Object?
             >;
@@ -413,7 +412,7 @@ final class HistoryControllerProvider
   }
 }
 
-String _$historyControllerHash() => r'4844729fab9fec20ead5ec0f957d03e5e53cefdf';
+String _$historyControllerHash() => r'094127d3b169a66a1494dabf915fd648bb0be775';
 
 /// 历史记录交互控制器。
 ///

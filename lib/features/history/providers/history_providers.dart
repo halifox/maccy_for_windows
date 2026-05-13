@@ -23,19 +23,16 @@ class HistorySearchQuery extends _$HistorySearchQuery {
   set value(String query) => state = query;
 }
 
-/// 历史记录选中项索引 Notifier。
+/// 历史记录选中项 ID Notifier。
 ///
 /// 管理列表中的焦点位置（键盘上下键导航的当前项）。
 @riverpod
-class HistorySelectedIndex extends _$HistorySelectedIndex {
+class HistorySelectedId extends _$HistorySelectedId {
   @override
-  int build() => 0;
+  int? build() => null;
 
-  /// 设置选中的索引。
-  set value(int index) => state = index;
-
-  /// 通过函数式更新器改变索引状态。
-  void update(int Function(int) updater) => state = updater(state);
+  /// 设置选中的 ID。
+  set value(int? id) => state = id;
 }
 
 /// 历史记录焦点请求 Notifier。
@@ -136,13 +133,9 @@ class HistoryController extends _$HistoryController {
 
   /// 执行条目选择操作。
   ///
-  /// 将选中的 [index] 对应的内容存入系统剪贴板，并触发模拟粘贴指令。
-  Future<void> selectItem(int index) async {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    if (index >= history.length) return;
-
-    final item = history[index];
-    paste(item.id);
+  /// 将选中的 [id] 对应的内容存入系统剪贴板，并触发模拟粘贴指令。
+  Future<void> selectItem(int id) async {
+    paste(id);
   }
 
   /// 选择下一项（用于循环模式）。
@@ -152,14 +145,25 @@ class HistoryController extends _$HistoryController {
     final history = ref.read(filteredHistoryProvider).value ?? [];
     if (history.isEmpty) return;
 
-    final currentIndex = ref.read(historySelectedIndexProvider);
-    int nextIndex = currentIndex + 1;
+    final currentId = ref.read(historySelectedIdProvider);
 
+    if (currentId == null) {
+      ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+      return;
+    }
+
+    final currentIndex = history.indexWhere((item) => item.id == currentId);
+    if (currentIndex == -1) {
+      ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+      return;
+    }
+
+    int nextIndex = currentIndex + 1;
     if (nextIndex >= history.length) {
       nextIndex = cycle ? 0 : history.length - 1;
     }
 
-    ref.read(historySelectedIndexProvider.notifier).value = nextIndex;
+    ref.read(historySelectedIdProvider.notifier).value = history[nextIndex].id;
   }
 
   /// 选择上一项（用于循环模式）。
@@ -169,32 +173,37 @@ class HistoryController extends _$HistoryController {
     final history = ref.read(filteredHistoryProvider).value ?? [];
     if (history.isEmpty) return;
 
-    final currentIndex = ref.read(historySelectedIndexProvider);
-    int prevIndex = currentIndex - 1;
+    final currentId = ref.read(historySelectedIdProvider);
 
+    if (currentId == null) {
+      ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+      return;
+    }
+
+    final currentIndex = history.indexWhere((item) => item.id == currentId);
+    if (currentIndex == -1) {
+      ref.read(historySelectedIdProvider.notifier).value = history.first.id;
+      return;
+    }
+
+    int prevIndex = currentIndex - 1;
     if (prevIndex < 0) {
       prevIndex = cycle ? history.length - 1 : 0;
     }
 
-    ref.read(historySelectedIndexProvider.notifier).value = prevIndex;
+    ref.read(historySelectedIdProvider.notifier).value = history[prevIndex].id;
   }
 
   /// 删除指定的历史记录条目。
-  Future<void> deleteItem(int index) async {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    if (index >= history.length) return;
-
+  Future<void> deleteItem(int id) async {
     final repository = ref.read(historyRepositoryProvider);
-    await repository.deleteEntry(history[index].id);
+    await repository.deleteEntry(id);
   }
 
   /// 切换条目的置顶/取消置顶状态。
-  Future<void> togglePin(int index) async {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    if (index >= history.length) return;
-
+  Future<void> togglePin(int id) async {
     final repository = ref.read(historyRepositoryProvider);
-    await repository.togglePin(history[index].id);
+    await repository.togglePin(id);
   }
 
   /// 手动添加历史条目（调试或扩展用）。
