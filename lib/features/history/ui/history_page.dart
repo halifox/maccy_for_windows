@@ -368,6 +368,8 @@ class _Debouncer {
   }
 }
 
+GlobalKey? HistoryRowKey = null;
+
 /// 历史记录条目行组件。
 ///
 /// 展示单条剪贴板内容，支持关键词搜索高亮、置顶状态标识、删除/置顶交互按钮、预览弹窗。
@@ -390,6 +392,25 @@ class _HistoryRow extends HookConsumerWidget {
 
     final overlayController = useMemoized(() => OverlayPortalController());
     final hoverTimer = useRef<Timer?>(null);
+    final itemKey = useMemoized(() => GlobalKey());
+
+    useEffect(() {
+      if (isSelected) {
+        HistoryRowKey = itemKey;
+        // WidgetsBinding.instance.addPostFrameCallback((_) {
+        //   final context = itemKey.currentContext;
+        //   if (context != null) {
+        //     Scrollable.ensureVisible(
+        //       context,
+        //       duration: const Duration(milliseconds: 150),
+        //       curve: Curves.easeOut,
+        //       alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        //     );
+        //   }
+        // });
+      }
+      return null;
+    }, [isSelected]);
 
     useEffect(() {
       return () {
@@ -398,6 +419,7 @@ class _HistoryRow extends HookConsumerWidget {
     }, []);
 
     return MouseRegion(
+      key: itemKey,
       onEnter: (_) {
         ref.read(historySelectedIdProvider.notifier).value = item.id;
         hoverTimer.value?.cancel();

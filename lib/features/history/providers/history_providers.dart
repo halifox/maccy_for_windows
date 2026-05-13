@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/clipboard_manager_provider.dart';
 import 'package:maccy/features/history/repositories/history_repository.dart';
+import 'package:maccy/features/history/ui/history_page.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:super_clipboard/super_clipboard.dart';
@@ -164,6 +166,14 @@ class HistoryController extends _$HistoryController {
     }
 
     ref.read(historySelectedIdProvider.notifier).value = history[nextIndex].id;
+    if (HistoryRowKey != null && HistoryRowKey!.currentContext != null) {
+      Scrollable.ensureVisible(
+        HistoryRowKey!.currentContext!,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+      );
+    }
   }
 
   /// 选择上一项（用于循环模式）。
@@ -192,6 +202,15 @@ class HistoryController extends _$HistoryController {
     }
 
     ref.read(historySelectedIdProvider.notifier).value = history[prevIndex].id;
+    if (HistoryRowKey != null && HistoryRowKey!.currentContext != null) {
+      Scrollable.ensureVisible(
+        HistoryRowKey!.currentContext!,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      );
+    }
+
   }
 
   /// 删除指定的历史记录条目。
