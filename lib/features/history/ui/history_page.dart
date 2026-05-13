@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:maccy/core/constants/ui_constants.dart';
 import 'package:maccy/core/database/database.dart';
@@ -11,6 +12,9 @@ import 'package:maccy/core/utils/text_formatter.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
 import 'package:maccy/features/history/ui/widgets/preview_popover.dart';
 import 'package:maccy/features/history/ui/widgets/keyboard_shortcut_widget.dart';
+import 'package:maccy/features/history/ui/history_intents.dart';
+import 'package:maccy/features/history/ui/history_actions.dart';
+import 'package:maccy/features/history/ui/modifier_key_handler.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -41,77 +45,114 @@ class HistoryPage extends HookConsumerWidget {
         ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
         : const Color(0xFF007AFF).withValues(alpha: 0.8);
 
+    final shortcuts = useMemoized(() => <ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.arrowDown): const NavigateDownIntent(),
+      const SingleActivator(LogicalKeyboardKey.arrowUp): const NavigateUpIntent(),
+      const SingleActivator(LogicalKeyboardKey.enter): const SelectItemIntent(),
+      const SingleActivator(LogicalKeyboardKey.escape): const CloseWindowIntent(),
+      const SingleActivator(LogicalKeyboardKey.keyP, control: true): const TogglePinIntent(),
+      const SingleActivator(LogicalKeyboardKey.comma, control: true): const OpenSettingsIntent(),
+      const SingleActivator(LogicalKeyboardKey.keyQ, control: true): const QuitAppIntent(),
+      const SingleActivator(LogicalKeyboardKey.digit1, alt: true): const QuickSelectIntent(0),
+      const SingleActivator(LogicalKeyboardKey.digit2, alt: true): const QuickSelectIntent(1),
+      const SingleActivator(LogicalKeyboardKey.digit3, alt: true): const QuickSelectIntent(2),
+      const SingleActivator(LogicalKeyboardKey.digit4, alt: true): const QuickSelectIntent(3),
+      const SingleActivator(LogicalKeyboardKey.digit5, alt: true): const QuickSelectIntent(4),
+      const SingleActivator(LogicalKeyboardKey.digit6, alt: true): const QuickSelectIntent(5),
+      const SingleActivator(LogicalKeyboardKey.digit7, alt: true): const QuickSelectIntent(6),
+      const SingleActivator(LogicalKeyboardKey.digit8, alt: true): const QuickSelectIntent(7),
+      const SingleActivator(LogicalKeyboardKey.digit9, alt: true): const QuickSelectIntent(8),
+      const SingleActivator(LogicalKeyboardKey.digit0, alt: true): const QuickSelectIntent(9),
+    }, []);
+
+    final actions = useMemoized(() => <Type, Action<Intent>>{
+      NavigateDownIntent: NavigateDownAction(ref),
+      NavigateUpIntent: NavigateUpAction(ref),
+      SelectItemIntent: SelectItemAction(ref),
+      CloseWindowIntent: CloseWindowAction(ref),
+      TogglePinIntent: TogglePinAction(ref),
+      OpenSettingsIntent: OpenSettingsAction(ref),
+      QuitAppIntent: QuitAppAction(ref),
+      QuickSelectIntent: QuickSelectAction(ref),
+    }, [ref]);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: KeyboardListener(
-        focusNode: useFocusNode(),
-        onKeyEvent: (event) =>
-            ref.read(historyControllerProvider.notifier).handleKeyEvent(event),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: bgColor,
+      body: ModifierKeyHandler(
+        child: Shortcuts(
+          shortcuts: shortcuts,
+          child: Actions(
+            actions: actions,
+            child: Focus(
+              autofocus: true,
+              child: ClipRRect(
                 borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
-                border: Border.all(
-                  color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
-                  width: 0.5,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const _HistoryHeader(),
-                  Expanded(
-                    child: RepaintBoundary(
-                      child: Consumer(
-                        builder: (context, ref, child) {
-                          final history =
-                              ref.watch(filteredHistoryProvider).value ?? [];
-                          return ListView.builder(
-                            padding: EdgeInsets.zero,
-                            itemCount: history.length,
-                            itemBuilder: (BuildContext context, int index) {
-                              final item = history[index];
-                              // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
-                              String? shortcut;
-                              if (item.pin != null) {
-                                shortcut = item.pin!.toUpperCase();
-                              } else if (index < 10) {
-                                shortcut = '${(index + 1) % 10}';
-                              }
-
-                              return _HistoryRow(
-                                index: index,
-                                item: item,
-                                shortcut: shortcut,
-                                selectionColor: highlightColor,
-                                onTap: () => ref
-                                    .read(historyControllerProvider.notifier)
-                                    .selectItem(index),
-                                onHover: () => ref
-                                    .read(historySelectedIndexProvider.notifier)
-                                    .value = index,
-                                onPin: () => ref
-                                    .read(historyControllerProvider.notifier)
-                                    .togglePin(index),
-                                onDelete: () => ref
-                                    .read(historyControllerProvider.notifier)
-                                    .deleteItem(index),
-                              );
-                            },
-                          );
-                        },
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+                      border: Border.all(
+                        color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
+                        width: 0.5,
                       ),
                     ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const _HistoryHeader(),
+                        Expanded(
+                          child: RepaintBoundary(
+                            child: Consumer(
+                              builder: (context, ref, child) {
+                                final history =
+                                    ref.watch(filteredHistoryProvider).value ?? [];
+                                return ListView.builder(
+                                  padding: EdgeInsets.zero,
+                                  itemCount: history.length,
+                                  itemBuilder: (BuildContext context, int index) {
+                                    final item = history[index];
+                                    // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
+                                    String? shortcut;
+                                    if (item.pin != null) {
+                                      shortcut = item.pin!.toUpperCase();
+                                    } else if (index < 10) {
+                                      shortcut = '${(index + 1) % 10}';
+                                    }
+
+                                    return _HistoryRow(
+                                      index: index,
+                                      item: item,
+                                      shortcut: shortcut,
+                                      selectionColor: highlightColor,
+                                      onTap: () => ref
+                                          .read(historyControllerProvider.notifier)
+                                          .selectItem(index),
+                                      onHover: () => ref
+                                          .read(historySelectedIndexProvider.notifier)
+                                          .value = index,
+                                      onPin: () => ref
+                                          .read(historyControllerProvider.notifier)
+                                          .togglePin(index),
+                                      onDelete: () => ref
+                                          .read(historyControllerProvider.notifier)
+                                          .deleteItem(index),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        _FooterMenu(
+                          totalItems: totalItems,
+                          highlightColor: highlightColor,
+                        ),
+                      ],
+                    ),
                   ),
-                  _FooterMenu(
-                    totalItems: totalItems,
-                    highlightColor: highlightColor,
-                  ),
-                ],
+                ),
               ),
             ),
           ),

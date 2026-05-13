@@ -4,9 +4,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/clipboard_manager_provider.dart';
-import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/features/history/repositories/history_repository.dart';
-import 'package:maccy/features/history/providers/popup_state_provider.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:super_clipboard/super_clipboard.dart';
@@ -74,8 +72,6 @@ Stream<List<HistoryItem>> filteredHistory(Ref ref) {
 /// 整合了所有的业务操作逻辑，如条目点击（选择并自动粘贴）、删除、置顶、
 /// 全局键盘事件处理（导航、确认、快捷键操作）以及应用的清理逻辑。
 ///
-/// 字段说明:
-/// [digitMap] 数字键位到列表索引的映射表，用于 Alt+数字 快速选择。
 @riverpod
 class HistoryController extends _$HistoryController {
   @override
@@ -212,121 +208,5 @@ class HistoryController extends _$HistoryController {
       await clearHistory();
     }
     exit(0);
-  }
-
-  final digitMap = {
-    LogicalKeyboardKey.digit1: 0,
-    LogicalKeyboardKey.digit2: 1,
-    LogicalKeyboardKey.digit3: 2,
-    LogicalKeyboardKey.digit4: 3,
-    LogicalKeyboardKey.digit5: 4,
-    LogicalKeyboardKey.digit6: 5,
-    LogicalKeyboardKey.digit7: 6,
-    LogicalKeyboardKey.digit8: 7,
-    LogicalKeyboardKey.digit9: 8,
-    LogicalKeyboardKey.digit0: 9,
-  };
-
-  /// 全局键盘事件分发处理。
-  ///
-  /// 处理上下键导航、回车确认、ESC隐藏、Alt+数字快速选择、Alt+P置顶、Alt+D删除逻辑。
-  /// 同时处理 Popup 状态管理（toggle/cycle/opening）。
-  ///
-  /// [event] 捕获到的原始键盘事件。
-  void handleKeyEvent(KeyEvent event) {
-    // 处理 flagsChanged 事件（修饰键释放）
-    if (event is KeyUpEvent) {
-      final modifierKeys = ref.read(modifierKeysStateProvider);
-      final popupState = ref.read(popupStateManagerProvider.notifier);
-
-      if (popupState.handleFlagsChanged(modifierKeys.isEmpty)) {
-        // Cycle 模式下释放修饰键 → 自动粘贴并关闭
-        final selectedIndex = ref.read(historySelectedIndexProvider);
-        selectItem(selectedIndex);
-        return;
-      }
-    }
-
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return;
-
-    final logicalKey = event.logicalKey;
-    final isAltPressed = HardwareKeyboard.instance.isAltPressed;
-    final isCtrlPressed = HardwareKeyboard.instance.isControlPressed;
-    final isArrowKey =
-        logicalKey == LogicalKeyboardKey.arrowDown ||
-        logicalKey == LogicalKeyboardKey.arrowUp;
-
-    if (event is KeyRepeatEvent && !isArrowKey) return;
-
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    final selectedIndex = ref.read(historySelectedIndexProvider);
-    final totalItems = history.length;
-    final showFooter = ref.read(showFooterMenuProvider);
-
-    final int menuCount = showFooter ? 3 : 0;
-    final int maxIdx = totalItems + menuCount - 1;
-    if (maxIdx < 0) return;
-
-    switch (logicalKey) {
-      case LogicalKeyboardKey.arrowDown:
-        ref
-            .read(historySelectedIndexProvider.notifier)
-            .update((val) => (val + 1).clamp(0, maxIdx));
-      case LogicalKeyboardKey.arrowUp:
-        ref
-            .read(historySelectedIndexProvider.notifier)
-            .update((val) => (val - 1).clamp(0, maxIdx));
-      case LogicalKeyboardKey.escape:
-        ref.read(appWindowManagerProvider.notifier).hideHistory();
-        ref.read(popupStateManagerProvider.notifier).reset();
-      case LogicalKeyboardKey.enter:
-        if (selectedIndex < totalItems) {
-          selectItem(selectedIndex);
-        } else {
-          final menuIdx = selectedIndex - totalItems;
-          switch (menuIdx) {
-            case 0:
-              clearHistory();
-            case 1:
-              ref.read(appWindowManagerProvider.notifier).showSettings();
-            case 2:
-              quitApp();
-          }
-        }
-      // Alt+P to pin/unpin selected item
-      case LogicalKeyboardKey.keyP when isCtrlPressed:
-        if (selectedIndex < totalItems) {
-          togglePin(selectedIndex);
-        }
-      // Alt+D or Alt+Backspace to delete selected item
-      case LogicalKeyboardKey.keyD when isCtrlPressed:
-      // Ctrl+, to open settings
-      case LogicalKeyboardKey.comma when isCtrlPressed:
-        ref.read(appWindowManagerProvider.notifier).showSettings();
-      // Ctrl+Q to quit
-      case LogicalKeyboardKey.keyQ when isCtrlPressed:
-        quitApp();
-      // Alt+number for quick select
-      case _ when isAltPressed:
-        if (digitMap.containsKey(logicalKey)) {
-          final index = digitMap[logicalKey]!;
-          if (index < totalItems) {
-            selectItem(index);
-          }
-        }
-      // Alt+letter for pinned items
-      case _ when isAltPressed:
-        final char = logicalKey.keyLabel.toLowerCase();
-        final pinnedItem = history.firstWhere(
-          (item) => item.pin == char,
-          orElse: () => history.first,
-        );
-        if (pinnedItem.pin == char) {
-          final index = history.indexOf(pinnedItem);
-          if (index >= 0) {
-            selectItem(index);
-          }
-        }
-    }
   }
 }
