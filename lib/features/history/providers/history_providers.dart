@@ -143,7 +143,7 @@ class HistoryController extends _$HistoryController {
   /// 选择下一项（用于循环模式）。
   ///
   /// [cycle] 是否循环：到达末尾后是否回到开头。
-  void selectNext({bool cycle = false}) {
+  void selectNext({bool cycle = false}) async{
     final history = ref.read(filteredHistoryProvider).value ?? [];
     if (history.isEmpty) return;
 
@@ -166,6 +166,7 @@ class HistoryController extends _$HistoryController {
     }
 
     ref.read(historySelectedIdProvider.notifier).value = history[nextIndex].id;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
     if (HistoryRowKey != null && HistoryRowKey!.currentContext != null) {
       Scrollable.ensureVisible(
         HistoryRowKey!.currentContext!,
@@ -179,7 +180,7 @@ class HistoryController extends _$HistoryController {
   /// 选择上一项（用于循环模式）。
   ///
   /// [cycle] 是否循环：到达开头后是否回到末尾。
-  void selectPrevious({bool cycle = false}) {
+  void selectPrevious({bool cycle = false}) async{
     final history = ref.read(filteredHistoryProvider).value ?? [];
     if (history.isEmpty) return;
 
@@ -202,6 +203,7 @@ class HistoryController extends _$HistoryController {
     }
 
     ref.read(historySelectedIdProvider.notifier).value = history[prevIndex].id;
+    await Future<void>.delayed(const Duration(milliseconds: 50));
     if (HistoryRowKey != null && HistoryRowKey!.currentContext != null) {
       Scrollable.ensureVisible(
         HistoryRowKey!.currentContext!,
