@@ -261,13 +261,115 @@ final class FilteredHistoryProvider
 
 String _$filteredHistoryHash() => r'f80ed23ab93e68ae4bdccf7a8fbf5efda990fe9a';
 
+/// Pin 的历史记录流。
+///
+/// 仅返回已固定的条目。
+
+@ProviderFor(pinnedHistory)
+final pinnedHistoryProvider = PinnedHistoryProvider._();
+
+/// Pin 的历史记录流。
+///
+/// 仅返回已固定的条目。
+
+final class PinnedHistoryProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<HistoryItem>>,
+          List<HistoryItem>,
+          Stream<List<HistoryItem>>
+        >
+    with
+        $FutureModifier<List<HistoryItem>>,
+        $StreamProvider<List<HistoryItem>> {
+  /// Pin 的历史记录流。
+  ///
+  /// 仅返回已固定的条目。
+  PinnedHistoryProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'pinnedHistoryProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$pinnedHistoryHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<List<HistoryItem>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<List<HistoryItem>> create(Ref ref) {
+    return pinnedHistory(ref);
+  }
+}
+
+String _$pinnedHistoryHash() => r'd45786045e5db861dca18e85cf5b159892454260';
+
+/// 非 Pin 的历史记录流。
+///
+/// 仅返回未固定的条目。
+
+@ProviderFor(unpinnedHistory)
+final unpinnedHistoryProvider = UnpinnedHistoryProvider._();
+
+/// 非 Pin 的历史记录流。
+///
+/// 仅返回未固定的条目。
+
+final class UnpinnedHistoryProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<HistoryItem>>,
+          List<HistoryItem>,
+          Stream<List<HistoryItem>>
+        >
+    with
+        $FutureModifier<List<HistoryItem>>,
+        $StreamProvider<List<HistoryItem>> {
+  /// 非 Pin 的历史记录流。
+  ///
+  /// 仅返回未固定的条目。
+  UnpinnedHistoryProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'unpinnedHistoryProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$unpinnedHistoryHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<List<HistoryItem>> $createElement(
+    $ProviderPointer pointer,
+  ) => $StreamProviderElement(pointer);
+
+  @override
+  Stream<List<HistoryItem>> create(Ref ref) {
+    return unpinnedHistory(ref);
+  }
+}
+
+String _$unpinnedHistoryHash() => r'a899a514ef1f803426245d3fcf5a783ec45d556e';
+
 /// 历史记录交互控制器。
 ///
 /// 整合了所有的业务操作逻辑，如条目点击（选择并自动粘贴）、删除、置顶、
 /// 全局键盘事件处理（导航、确认、快捷键操作）以及应用的清理逻辑。
 ///
-/// 字段说明:
-/// [digitMap] 数字键位到列表索引的映射表，用于 Alt+数字 快速选择。
 
 @ProviderFor(HistoryController)
 final historyControllerProvider = HistoryControllerProvider._();
@@ -277,8 +379,6 @@ final historyControllerProvider = HistoryControllerProvider._();
 /// 整合了所有的业务操作逻辑，如条目点击（选择并自动粘贴）、删除、置顶、
 /// 全局键盘事件处理（导航、确认、快捷键操作）以及应用的清理逻辑。
 ///
-/// 字段说明:
-/// [digitMap] 数字键位到列表索引的映射表，用于 Alt+数字 快速选择。
 final class HistoryControllerProvider
     extends $NotifierProvider<HistoryController, void> {
   /// 历史记录交互控制器。
@@ -286,8 +386,6 @@ final class HistoryControllerProvider
   /// 整合了所有的业务操作逻辑，如条目点击（选择并自动粘贴）、删除、置顶、
   /// 全局键盘事件处理（导航、确认、快捷键操作）以及应用的清理逻辑。
   ///
-  /// 字段说明:
-  /// [digitMap] 数字键位到列表索引的映射表，用于 Alt+数字 快速选择。
   HistoryControllerProvider._()
     : super(
         from: null,
@@ -315,15 +413,13 @@ final class HistoryControllerProvider
   }
 }
 
-String _$historyControllerHash() => r'02971ea756111b00fc6ad45f3db3153cb388047d';
+String _$historyControllerHash() => r'4844729fab9fec20ead5ec0f957d03e5e53cefdf';
 
 /// 历史记录交互控制器。
 ///
 /// 整合了所有的业务操作逻辑，如条目点击（选择并自动粘贴）、删除、置顶、
 /// 全局键盘事件处理（导航、确认、快捷键操作）以及应用的清理逻辑。
 ///
-/// 字段说明:
-/// [digitMap] 数字键位到列表索引的映射表，用于 Alt+数字 快速选择。
 
 abstract class _$HistoryController extends $Notifier<void> {
   void build();

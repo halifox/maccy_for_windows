@@ -63,6 +63,32 @@ Stream<List<HistoryItem>> filteredHistory(Ref ref) {
   return repository.watchEntries(query: query, searchMode: searchMode, limit: limit);
 }
 
+/// Pin 的历史记录流。
+///
+/// 仅返回已固定的条目。
+@riverpod
+Stream<List<HistoryItem>> pinnedHistory(Ref ref) {
+  final query = ref.watch(historySearchQueryProvider);
+  final searchMode = ref.watch(searchModeProvider);
+  final limit = ref.watch(historyLimitProvider);
+  final repository = ref.watch(historyRepositoryProvider);
+
+  return repository.watchPinnedEntries(query: query, searchMode: searchMode, limit: limit);
+}
+
+/// 非 Pin 的历史记录流。
+///
+/// 仅返回未固定的条目。
+@riverpod
+Stream<List<HistoryItem>> unpinnedHistory(Ref ref) {
+  final query = ref.watch(historySearchQueryProvider);
+  final searchMode = ref.watch(searchModeProvider);
+  final limit = ref.watch(historyLimitProvider);
+  final repository = ref.watch(historyRepositoryProvider);
+
+  return repository.watchUnpinnedEntries(query: query, searchMode: searchMode, limit: limit);
+}
+
 /// 历史记录交互控制器。
 ///
 /// 整合了所有的业务操作逻辑，如条目点击（选择并自动粘贴）、删除、置顶、

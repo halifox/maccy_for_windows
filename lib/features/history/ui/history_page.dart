@@ -117,33 +117,56 @@ class HistoryPage extends HookConsumerWidget {
                         child: RepaintBoundary(
                           child: Consumer(
                             builder: (context, ref, child) {
-                              final history = ref.watch(filteredHistoryProvider).value ?? [];
-                              return ListView.builder(
-                                padding: EdgeInsets.zero,
-                                itemCount: history.length,
-                                itemBuilder: (BuildContext context, int index) {
-                                  final item = history[index];
-                                  // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
-                                  String? shortcut;
-                                  if (item.pin != null) {
-                                    shortcut = item.pin;
-                                  } else if (index < 10) {
-                                    shortcut = '${(index + 1) % 10}';
-                                  }
+                              final pinnedItems = ref.watch(pinnedHistoryProvider).value ?? [];
+                              final unpinnedItems = ref.watch(unpinnedHistoryProvider).value ?? [];
+                              final allHistory = ref.watch(filteredHistoryProvider).value ?? [];
 
-                                  return _HistoryRow(
-                                    index: index,
-                                    item: item,
-                                    shortcut: shortcut,
-                                    selectionColor: isDark
-                                        ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
-                                        : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                    onTap: () => ref.read(historyControllerProvider.notifier).selectItem(index),
-                                    onHover: () => ref.read(historySelectedIndexProvider.notifier).value = index,
-                                    onPin: () => ref.read(historyControllerProvider.notifier).togglePin(index),
-                                    onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(index),
-                                  );
-                                },
+                              return CustomScrollView(
+                                slivers: [
+                                  SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, listIndex) {
+                                        final item = pinnedItems[listIndex];
+                                        final originalIndex = allHistory.indexOf(item);
+                                        return _HistoryRow(
+                                          index: originalIndex,
+                                          item: item,
+                                          shortcut: item.pin,
+                                          selectionColor: isDark
+                                              ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                                              : const Color(0xFF007AFF).withValues(alpha: 0.8),
+                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(originalIndex),
+                                          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = originalIndex,
+                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(originalIndex),
+                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(originalIndex),
+                                        );
+                                      },
+                                      childCount: pinnedItems.length,
+                                    ),
+                                  ),
+                                  SliverList(
+                                    delegate: SliverChildBuilderDelegate(
+                                      (context, listIndex) {
+                                        final item = unpinnedItems[listIndex];
+                                        final originalIndex = allHistory.indexOf(item);
+                                        final shortcut = listIndex < 10 ? '${(listIndex + 1) % 10}' : null;
+                                        return _HistoryRow(
+                                          index: originalIndex,
+                                          item: item,
+                                          shortcut: shortcut,
+                                          selectionColor: isDark
+                                              ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                                              : const Color(0xFF007AFF).withValues(alpha: 0.8),
+                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(originalIndex),
+                                          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = originalIndex,
+                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(originalIndex),
+                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(originalIndex),
+                                        );
+                                      },
+                                      childCount: unpinnedItems.length,
+                                    ),
+                                  ),
+                                ],
                               );
                             },
                           ),

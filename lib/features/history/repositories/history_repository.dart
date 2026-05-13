@@ -94,6 +94,89 @@ class HistoryRepository {
     });
   }
 
+  /// 监听并观察数据库中已固定的剪贴板条目。
+  Stream<List<HistoryItem>> watchPinnedEntries({
+    String? query,
+    String searchMode = 'exact',
+    required int limit,
+  }) {
+    final sortBy = _ref.read(sortByProvider);
+
+    final select = _db.select(_db.historyItems)..where((t) => t.pin.isNotNull());
+
+    select.orderBy([
+      (t) => OrderingTerm.asc(t.pin),
+      (t) {
+        switch (sortBy) {
+          case 'lastCopiedAt':
+            return OrderingTerm.desc(t.lastCopiedAt);
+          case 'firstCopiedAt':
+            return OrderingTerm.asc(t.firstCopiedAt);
+          case 'numberOfCopies':
+            return OrderingTerm.desc(t.numberOfCopies);
+          default:
+            return OrderingTerm.desc(t.lastCopiedAt);
+        }
+      },
+    ]);
+
+    select.limit(limit);
+
+    if (query == null || query.isEmpty) {
+      return select.watch();
+    }
+
+    return select.watch().map((entries) {
+      final mode = _parseSearchMode(searchMode);
+      return SearchService.searchHistoryItems(
+        query: query,
+        items: entries,
+        mode: mode,
+      );
+    });
+  }
+
+  /// 监听并观察数据库中未固定的剪贴板条目。
+  Stream<List<HistoryItem>> watchUnpinnedEntries({
+    String? query,
+    String searchMode = 'exact',
+    required int limit,
+  }) {
+    final sortBy = _ref.read(sortByProvider);
+
+    final select = _db.select(_db.historyItems)..where((t) => t.pin.isNull());
+
+    select.orderBy([
+      (t) {
+        switch (sortBy) {
+          case 'lastCopiedAt':
+            return OrderingTerm.desc(t.lastCopiedAt);
+          case 'firstCopiedAt':
+            return OrderingTerm.asc(t.firstCopiedAt);
+          case 'numberOfCopies':
+            return OrderingTerm.desc(t.numberOfCopies);
+          default:
+            return OrderingTerm.desc(t.lastCopiedAt);
+        }
+      },
+    ]);
+
+    select.limit(limit);
+
+    if (query == null || query.isEmpty) {
+      return select.watch();
+    }
+
+    return select.watch().map((entries) {
+      final mode = _parseSearchMode(searchMode);
+      return SearchService.searchHistoryItems(
+        query: query,
+        items: entries,
+        mode: mode,
+      );
+    });
+  }
+
   /// 解析搜索模式字符串为枚举。
   SearchMode _parseSearchMode(String mode) {
     switch (mode) {
