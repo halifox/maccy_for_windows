@@ -1,10 +1,10 @@
+import 'package:drift/drift.dart' as drift;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/database/database_provider.dart';
-import 'package:drift/drift.dart' as drift;
 
 /// 设置：置顶项目管理选项卡。
 ///
@@ -15,10 +15,7 @@ class PinsTab extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final db = ref.watch(appDatabaseProvider);
-    final pinnedItemsStream = useMemoized(
-      () => _watchPinnedItems(db),
-      [db],
-    );
+    final pinnedItemsStream = useMemoized(() => _watchPinnedItems(db), [db]);
     final pinnedItemsSnapshot = useStream(pinnedItemsStream);
     final selectedId = useState<int?>(null);
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
@@ -30,7 +27,7 @@ class PinsTab extends HookConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (items.isEmpty) 
+          if (items.isEmpty)
             Center(
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 64),
@@ -82,7 +79,7 @@ class PinsTab extends HookConsumerWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 12,
+                      vertical: 8,
                     ),
                     decoration: BoxDecoration(
                       color: isDark
@@ -102,9 +99,7 @@ class PinsTab extends HookConsumerWidget {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? Colors.white70
-                                  : Colors.black87,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
                         ),
@@ -116,9 +111,7 @@ class PinsTab extends HookConsumerWidget {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? Colors.white70
-                                  : Colors.black87,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
                         ),
@@ -130,9 +123,7 @@ class PinsTab extends HookConsumerWidget {
                             style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? Colors.white70
-                                  : Colors.black87,
+                              color: isDark ? Colors.white70 : Colors.black87,
                             ),
                           ),
                         ),
@@ -163,6 +154,9 @@ class PinsTab extends HookConsumerWidget {
                       },
                       onUpdateTitle: (newTitle) async {
                         await _updateItemTitle(db, item.id, newTitle);
+                      },
+                      onUpdateAlias: (newAlias) async {
+                        await _updateItemAlias(db, item.id, newAlias);
                       },
                     );
                   }),
@@ -196,14 +190,16 @@ class PinsTab extends HookConsumerWidget {
 
   /// 取消固定。
   Future<void> _unpinItem(AppDatabase db, int itemId) async {
-    await (db.update(db.historyItems)..where((t) => t.id.equals(itemId)))
-        .write(const HistoryItemsCompanion(pin: drift.Value(null)));
+    await (db.update(db.historyItems)..where((t) => t.id.equals(itemId))).write(
+      const HistoryItemsCompanion(pin: drift.Value(null)),
+    );
   }
 
   /// 更新固定快捷键。
   Future<void> _updateItemPin(AppDatabase db, int itemId, String newPin) async {
-    await (db.update(db.historyItems)..where((t) => t.id.equals(itemId)))
-        .write(HistoryItemsCompanion(pin: drift.Value(newPin)));
+    await (db.update(db.historyItems)..where((t) => t.id.equals(itemId))).write(
+      HistoryItemsCompanion(pin: drift.Value(newPin)),
+    );
   }
 
   /// 更新标题。
@@ -212,9 +208,23 @@ class PinsTab extends HookConsumerWidget {
     int itemId,
     String newTitle,
   ) async {
-    await (db.update(db.historyItems)..where((t) => t.id.equals(itemId)))
-        .write(HistoryItemsCompanion(title: drift.Value(newTitle)));
+    await (db.update(db.historyItems)..where((t) => t.id.equals(itemId))).write(
+      HistoryItemsCompanion(title: drift.Value(newTitle)),
+    );
   }
+}
+
+/// 更新别名。
+Future<void> _updateItemAlias(
+  AppDatabase db,
+  int itemId,
+  String newAlias,
+) async {
+  await (db.update(db.historyItems)..where((t) => t.id.equals(itemId))).write(
+    HistoryItemsCompanion(
+      alias: drift.Value(newAlias.isEmpty ? null : newAlias),
+    ),
+  );
 }
 
 /// 固定项表格行。
@@ -227,6 +237,7 @@ class _PinTableRow extends StatelessWidget {
     required this.onDelete,
     required this.onUpdatePin,
     required this.onUpdateTitle,
+    required this.onUpdateAlias,
   });
 
   final HistoryItem item;
@@ -236,81 +247,69 @@ class _PinTableRow extends StatelessWidget {
   final VoidCallback onDelete;
   final ValueChanged<String> onUpdatePin;
   final ValueChanged<String> onUpdateTitle;
+  final ValueChanged<String> onUpdateAlias;
 
   @override
   Widget build(BuildContext context) {
     final isDark = MediaQuery.of(context).platformBrightness == Brightness.dark;
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? (isDark
-                  ? Colors.blue.withValues(alpha: 0.2)
-                  : Colors.blue.withValues(alpha: 0.1))
-              : Colors.transparent,
-          border: Border(
-            bottom: isLast
-                ? BorderSide.none
-                : BorderSide(
-                    color: isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.black.withValues(alpha: 0.05),
-                  ),
+    return Padding(
+      padding: .symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const SizedBox(width: 8),
+          // Key column
+          _PinKeyPicker(
+            currentPin: item.pin ?? '',
+            onChanged: onUpdatePin,
           ),
-        ),
-        child: Row(
-          children: [
-            // Key column
-            SizedBox(
-              width: 80,
-              child: _PinKeyPicker(
-                currentPin: item.pin ?? '',
-                onChanged: onUpdatePin,
+
+          // SizedBox(
+          //   width: 80,
+          //   child: _PinKeyPicker(
+          //     currentPin: item.pin ?? '',
+          //     onChanged: onUpdatePin,
+          //   ),
+          // ),
+          const SizedBox(width: 8),
+          // Alias column
+          Expanded(
+            flex: 2,
+            child: _EditableTextField(
+              initialValue: item.alias ?? '',
+              onChanged: onUpdateAlias,
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Content column
+          Expanded(
+            flex: 3,
+            child: _EditableTextField(
+              initialValue: item.title,
+              onChanged: onUpdateTitle,
+            ),
+          ),
+          // Delete button
+          const SizedBox(width: 8),
+
+          CupertinoButton(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : Colors.black.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(6),
+            onPressed: onDelete,
+            minimumSize: Size.zero,
+            child: Text(
+              'delete',
+              style: TextStyle(
+                fontSize: 12,
+                color: isDark ? Colors.white : Colors.black87,
               ),
             ),
-            const SizedBox(width: 16),
-            // Alias column
-            Expanded(
-              flex: 2,
-              child: _EditableTextField(
-                initialValue: item.title,
-                onChanged: onUpdateTitle,
-              ),
-            ),
-            const SizedBox(width: 16),
-            // Content column
-            Expanded(
-              flex: 3,
-              child: Text(
-                item.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.7)
-                      : Colors.black.withValues(alpha: 0.7),
-                ),
-              ),
-            ),
-            // Delete button
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: onDelete,
-              minimumSize: const Size(24, 24),
-              child: Icon(
-                CupertinoIcons.xmark_circle_fill,
-                size: 20,
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.3)
-                    : Colors.black.withValues(alpha: 0.3),
-              ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
     );
   }
@@ -318,18 +317,43 @@ class _PinTableRow extends StatelessWidget {
 
 /// 固定快捷键选择器。
 class _PinKeyPicker extends StatelessWidget {
-  const _PinKeyPicker({
-    required this.currentPin,
-    required this.onChanged,
-  });
+  const _PinKeyPicker({required this.currentPin, required this.onChanged});
 
   final String currentPin;
   final ValueChanged<String> onChanged;
 
   static const _availablePins = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
-    'L', 'M', 'N', 'O', 'P', 'R', 'S', 'T', 'U', 'X', 'Y',
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+    'B',
+    'C',
+    'D',
+    'E',
+    'F',
+    'G',
+    'H',
+    'I',
+    'J',
+    'K',
+    'L',
+    'M',
+    'N',
+    'O',
+    'P',
+    'R',
+    'S',
+    'T',
+    'U',
+    'X',
+    'Y',
   ];
 
   @override
@@ -421,8 +445,8 @@ class _PinKeyPicker extends StatelessWidget {
                       states.contains(WidgetState.pressed)
                   ? Colors.white
                   : (isDark
-                      ? Colors.white.withValues(alpha: 0.9)
-                      : Colors.black87),
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : Colors.black87),
             ),
             shape: WidgetStatePropertyAll(
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
@@ -470,7 +494,7 @@ class _EditableTextField extends HookWidget {
     return CupertinoTextField(
       controller: controller,
       style: TextStyle(
-        fontSize: 13,
+        fontSize: 12,
         color: isDark ? Colors.white.withValues(alpha: 0.87) : Colors.black87,
       ),
       decoration: BoxDecoration(
@@ -484,7 +508,7 @@ class _EditableTextField extends HookWidget {
               : Colors.black.withValues(alpha: 0.1),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       onSubmitted: onChanged,
       onEditingComplete: () => onChanged(controller.text),
     );

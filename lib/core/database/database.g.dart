@@ -90,6 +90,15 @@ class $HistoryItemsTable extends HistoryItems
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _aliasMeta = const VerificationMeta('alias');
+  @override
+  late final GeneratedColumn<String> alias = GeneratedColumn<String>(
+    'alias',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -99,6 +108,7 @@ class $HistoryItemsTable extends HistoryItems
     numberOfCopies,
     pin,
     title,
+    alias,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -169,6 +179,12 @@ class $HistoryItemsTable extends HistoryItems
     } else if (isInserting) {
       context.missing(_titleMeta);
     }
+    if (data.containsKey('alias')) {
+      context.handle(
+        _aliasMeta,
+        alias.isAcceptableOrUnknown(data['alias']!, _aliasMeta),
+      );
+    }
     return context;
   }
 
@@ -206,6 +222,10 @@ class $HistoryItemsTable extends HistoryItems
         DriftSqlType.string,
         data['${effectivePrefix}title'],
       )!,
+      alias: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}alias'],
+      ),
     );
   }
 
@@ -223,6 +243,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
   final int numberOfCopies;
   final String? pin;
   final String title;
+  final String? alias;
   const HistoryItem({
     required this.id,
     this.application,
@@ -231,6 +252,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
     required this.numberOfCopies,
     this.pin,
     required this.title,
+    this.alias,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -246,6 +268,9 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
       map['pin'] = Variable<String>(pin);
     }
     map['title'] = Variable<String>(title);
+    if (!nullToAbsent || alias != null) {
+      map['alias'] = Variable<String>(alias);
+    }
     return map;
   }
 
@@ -260,6 +285,9 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
       numberOfCopies: Value(numberOfCopies),
       pin: pin == null && nullToAbsent ? const Value.absent() : Value(pin),
       title: Value(title),
+      alias: alias == null && nullToAbsent
+          ? const Value.absent()
+          : Value(alias),
     );
   }
 
@@ -276,6 +304,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
       numberOfCopies: serializer.fromJson<int>(json['numberOfCopies']),
       pin: serializer.fromJson<String?>(json['pin']),
       title: serializer.fromJson<String>(json['title']),
+      alias: serializer.fromJson<String?>(json['alias']),
     );
   }
   @override
@@ -289,6 +318,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
       'numberOfCopies': serializer.toJson<int>(numberOfCopies),
       'pin': serializer.toJson<String?>(pin),
       'title': serializer.toJson<String>(title),
+      'alias': serializer.toJson<String?>(alias),
     };
   }
 
@@ -300,6 +330,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
     int? numberOfCopies,
     Value<String?> pin = const Value.absent(),
     String? title,
+    Value<String?> alias = const Value.absent(),
   }) => HistoryItem(
     id: id ?? this.id,
     application: application.present ? application.value : this.application,
@@ -308,6 +339,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
     numberOfCopies: numberOfCopies ?? this.numberOfCopies,
     pin: pin.present ? pin.value : this.pin,
     title: title ?? this.title,
+    alias: alias.present ? alias.value : this.alias,
   );
   HistoryItem copyWithCompanion(HistoryItemsCompanion data) {
     return HistoryItem(
@@ -326,6 +358,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
           : this.numberOfCopies,
       pin: data.pin.present ? data.pin.value : this.pin,
       title: data.title.present ? data.title.value : this.title,
+      alias: data.alias.present ? data.alias.value : this.alias,
     );
   }
 
@@ -338,7 +371,8 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
           ..write('lastCopiedAt: $lastCopiedAt, ')
           ..write('numberOfCopies: $numberOfCopies, ')
           ..write('pin: $pin, ')
-          ..write('title: $title')
+          ..write('title: $title, ')
+          ..write('alias: $alias')
           ..write(')'))
         .toString();
   }
@@ -352,6 +386,7 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
     numberOfCopies,
     pin,
     title,
+    alias,
   );
   @override
   bool operator ==(Object other) =>
@@ -363,7 +398,8 @@ class HistoryItem extends DataClass implements Insertable<HistoryItem> {
           other.lastCopiedAt == this.lastCopiedAt &&
           other.numberOfCopies == this.numberOfCopies &&
           other.pin == this.pin &&
-          other.title == this.title);
+          other.title == this.title &&
+          other.alias == this.alias);
 }
 
 class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
@@ -374,6 +410,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
   final Value<int> numberOfCopies;
   final Value<String?> pin;
   final Value<String> title;
+  final Value<String?> alias;
   const HistoryItemsCompanion({
     this.id = const Value.absent(),
     this.application = const Value.absent(),
@@ -382,6 +419,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
     this.numberOfCopies = const Value.absent(),
     this.pin = const Value.absent(),
     this.title = const Value.absent(),
+    this.alias = const Value.absent(),
   });
   HistoryItemsCompanion.insert({
     this.id = const Value.absent(),
@@ -391,6 +429,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
     this.numberOfCopies = const Value.absent(),
     this.pin = const Value.absent(),
     required String title,
+    this.alias = const Value.absent(),
   }) : firstCopiedAt = Value(firstCopiedAt),
        lastCopiedAt = Value(lastCopiedAt),
        title = Value(title);
@@ -402,6 +441,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
     Expression<int>? numberOfCopies,
     Expression<String>? pin,
     Expression<String>? title,
+    Expression<String>? alias,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -411,6 +451,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
       if (numberOfCopies != null) 'number_of_copies': numberOfCopies,
       if (pin != null) 'pin': pin,
       if (title != null) 'title': title,
+      if (alias != null) 'alias': alias,
     });
   }
 
@@ -422,6 +463,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
     Value<int>? numberOfCopies,
     Value<String?>? pin,
     Value<String>? title,
+    Value<String?>? alias,
   }) {
     return HistoryItemsCompanion(
       id: id ?? this.id,
@@ -431,6 +473,7 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
       numberOfCopies: numberOfCopies ?? this.numberOfCopies,
       pin: pin ?? this.pin,
       title: title ?? this.title,
+      alias: alias ?? this.alias,
     );
   }
 
@@ -458,6 +501,9 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
     if (title.present) {
       map['title'] = Variable<String>(title.value);
     }
+    if (alias.present) {
+      map['alias'] = Variable<String>(alias.value);
+    }
     return map;
   }
 
@@ -470,7 +516,8 @@ class HistoryItemsCompanion extends UpdateCompanion<HistoryItem> {
           ..write('lastCopiedAt: $lastCopiedAt, ')
           ..write('numberOfCopies: $numberOfCopies, ')
           ..write('pin: $pin, ')
-          ..write('title: $title')
+          ..write('title: $title, ')
+          ..write('alias: $alias')
           ..write(')'))
         .toString();
   }
@@ -811,6 +858,7 @@ typedef $$HistoryItemsTableCreateCompanionBuilder =
       Value<int> numberOfCopies,
       Value<String?> pin,
       required String title,
+      Value<String?> alias,
     });
 typedef $$HistoryItemsTableUpdateCompanionBuilder =
     HistoryItemsCompanion Function({
@@ -821,6 +869,7 @@ typedef $$HistoryItemsTableUpdateCompanionBuilder =
       Value<int> numberOfCopies,
       Value<String?> pin,
       Value<String> title,
+      Value<String?> alias,
     });
 
 final class $$HistoryItemsTableReferences
@@ -899,6 +948,11 @@ class $$HistoryItemsTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get alias => $composableBuilder(
+    column: $table.alias,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> historyItemContentsRefs(
     Expression<bool> Function($$HistoryItemContentsTableFilterComposer f) f,
   ) {
@@ -968,6 +1022,11 @@ class $$HistoryItemsTableOrderingComposer
     column: $table.title,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get alias => $composableBuilder(
+    column: $table.alias,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$HistoryItemsTableAnnotationComposer
@@ -1007,6 +1066,9 @@ class $$HistoryItemsTableAnnotationComposer
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get alias =>
+      $composableBuilder(column: $table.alias, builder: (column) => column);
 
   Expression<T> historyItemContentsRefs<T extends Object>(
     Expression<T> Function($$HistoryItemContentsTableAnnotationComposer a) f,
@@ -1070,6 +1132,7 @@ class $$HistoryItemsTableTableManager
                 Value<int> numberOfCopies = const Value.absent(),
                 Value<String?> pin = const Value.absent(),
                 Value<String> title = const Value.absent(),
+                Value<String?> alias = const Value.absent(),
               }) => HistoryItemsCompanion(
                 id: id,
                 application: application,
@@ -1078,6 +1141,7 @@ class $$HistoryItemsTableTableManager
                 numberOfCopies: numberOfCopies,
                 pin: pin,
                 title: title,
+                alias: alias,
               ),
           createCompanionCallback:
               ({
@@ -1088,6 +1152,7 @@ class $$HistoryItemsTableTableManager
                 Value<int> numberOfCopies = const Value.absent(),
                 Value<String?> pin = const Value.absent(),
                 required String title,
+                Value<String?> alias = const Value.absent(),
               }) => HistoryItemsCompanion.insert(
                 id: id,
                 application: application,
@@ -1096,6 +1161,7 @@ class $$HistoryItemsTableTableManager
                 numberOfCopies: numberOfCopies,
                 pin: pin,
                 title: title,
+                alias: alias,
               ),
           withReferenceMapper: (p0) => p0
               .map(

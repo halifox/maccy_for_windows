@@ -16,6 +16,7 @@ part 'database.g.dart';
 /// [numberOfCopies] 复制次数统计，默认为 1。
 /// [pin] 固定快捷键，单字符 'b'-'y'（排除 a/q/v/w/z），null 表示未固定。
 /// [title] 显示标题。
+/// [alias] 别名，用于 pin 项的自定义显示名称。
 class HistoryItems extends Table {
   IntColumn get id => integer().autoIncrement()();
   TextColumn get application => text().nullable()();
@@ -24,6 +25,7 @@ class HistoryItems extends Table {
   IntColumn get numberOfCopies => integer().withDefault(const Constant(1))();
   TextColumn get pin => text().nullable().withLength(min: 1, max: 1)();
   TextColumn get title => text()();
+  TextColumn get alias => text().nullable()();
 }
 
 /// 历史条目内容表（对应 Maccy 的 HistoryItemContent）。
@@ -55,7 +57,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration {
@@ -67,6 +69,10 @@ class AppDatabase extends _$AppDatabase {
         if (from < 12) {
           // 从版本 11 升级到 12：移除 title 字段的 203 字符限制
           // 重建 history_items 表来移除 CHECK 约束
+        }
+        if (from < 13) {
+          // 从版本 12 升级到 13：添加 alias 字段
+          await m.addColumn(historyItems, historyItems.alias);
         }
       },
     );

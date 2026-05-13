@@ -442,9 +442,12 @@ class _HistoryRow extends HookConsumerWidget {
   }
 
   Widget buildContent(WidgetRef ref, bool isSelected, bool isDark) {
-    // 使用 title 字段显示内容
+    // 如果是 pin 项且有别名，显示别名；否则显示 title
+    final displayText = (item.pin != null && item.alias != null && item.alias!.isNotEmpty)
+        ? item.alias!
+        : item.title;
     return _TextContent(
-      content: item.title,
+      content: displayText,
       isSelected: isSelected,
       isDark: isDark,
     );
