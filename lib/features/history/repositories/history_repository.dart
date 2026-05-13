@@ -266,8 +266,32 @@ class HistoryRepository {
   Future<String?> getNextAvailablePin() async {
     // Maccy 的可用字符：b-y（排除 a/q/v/w/z）
     const availablePins = [
-      'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
-      'm', 'n', 'o', 'p', 'r', 's', 't', 'u', 'x', 'y'
+      'A',
+      'B',
+      'C',
+      'D',
+      'E',
+      'F',
+      'G',
+      'H',
+      'I',
+      'J',
+      'K',
+      'L',
+      'M',
+      'N',
+      'O',
+      'P',
+      'Q',
+      'R',
+      'S',
+      'T',
+      'U',
+      'V',
+      'W',
+      'X',
+      'Y',
+      'Z',
     ];
 
     final pinnedItems = await getPinnedItems();

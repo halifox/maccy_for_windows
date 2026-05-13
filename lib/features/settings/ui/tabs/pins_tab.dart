@@ -336,16 +336,6 @@ class _PinKeyPicker extends StatelessWidget {
   final ValueChanged<String> onChanged;
 
   static const _availablePins = [
-    '0',
-    '1',
-    '2',
-    '3',
-    '4',
-    '5',
-    '6',
-    '7',
-    '8',
-    '9',
     'A',
     'B',
     'C',
@@ -425,7 +415,7 @@ class _PinKeyPicker extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Alt+${currentPin.toUpperCase()}',
+                  'Alt+${currentPin}',
                   style: TextStyle(
                     fontSize: 13,
                     fontFamily: 'Courier New',
