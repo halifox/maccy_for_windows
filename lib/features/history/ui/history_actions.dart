@@ -3,11 +3,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
 import 'package:maccy/features/history/providers/popup_state_provider.dart';
+import 'package:maccy/features/history/repositories/history_repository.dart';
 import 'package:maccy/features/history/ui/history_intents.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
 
 class NavigateDownAction extends Action<NavigateDownIntent> {
   NavigateDownAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -20,14 +22,13 @@ class NavigateDownAction extends Action<NavigateDownIntent> {
 
     if (maxIdx < 0) return;
 
-    ref.read(historySelectedIndexProvider.notifier).update(
-      (val) => (val + 1).clamp(0, maxIdx),
-    );
+    ref.read(historySelectedIndexProvider.notifier).update((val) => (val + 1).clamp(0, maxIdx));
   }
 }
 
 class NavigateUpAction extends Action<NavigateUpIntent> {
   NavigateUpAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -40,14 +41,13 @@ class NavigateUpAction extends Action<NavigateUpIntent> {
 
     if (maxIdx < 0) return;
 
-    ref.read(historySelectedIndexProvider.notifier).update(
-      (val) => (val - 1).clamp(0, maxIdx),
-    );
+    ref.read(historySelectedIndexProvider.notifier).update((val) => (val - 1).clamp(0, maxIdx));
   }
 }
 
 class SelectItemAction extends Action<SelectItemIntent> {
   SelectItemAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -74,6 +74,7 @@ class SelectItemAction extends Action<SelectItemIntent> {
 
 class CloseWindowAction extends Action<CloseWindowIntent> {
   CloseWindowAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -85,6 +86,7 @@ class CloseWindowAction extends Action<CloseWindowIntent> {
 
 class TogglePinAction extends Action<TogglePinIntent> {
   TogglePinAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -99,6 +101,7 @@ class TogglePinAction extends Action<TogglePinIntent> {
 
 class OpenSettingsAction extends Action<OpenSettingsIntent> {
   OpenSettingsAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -109,6 +112,7 @@ class OpenSettingsAction extends Action<OpenSettingsIntent> {
 
 class QuitAppAction extends Action<QuitAppIntent> {
   QuitAppAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -119,6 +123,7 @@ class QuitAppAction extends Action<QuitAppIntent> {
 
 class QuickSelectAction extends Action<QuickSelectIntent> {
   QuickSelectAction(this.ref);
+
   final WidgetRef ref;
 
   @override
@@ -129,13 +134,18 @@ class QuickSelectAction extends Action<QuickSelectIntent> {
     }
   }
 }
+
 class QuickPinSelectAction extends Action<QuickPinSelectIntent> {
   QuickPinSelectAction(this.ref);
+
   final WidgetRef ref;
 
   @override
   void invoke(QuickPinSelectIntent intent) {
-   //todo 读取数据库找到有符合快捷键的然后实现  ref.read(historyControllerProvider.notifier).selectItem();
+    ref.read(historyRepositoryProvider).getItemByPin(intent.key).then((item) {
+      if (item != null) {
+        ref.read(historyControllerProvider.notifier).paste(item.id);
+      }
+    });
   }
 }
-

@@ -60,11 +60,7 @@ Stream<List<HistoryItem>> filteredHistory(Ref ref) {
   final limit = ref.watch(historyLimitProvider);
   final repository = ref.watch(historyRepositoryProvider);
 
-  return repository.watchEntries(
-    query: query,
-    searchMode: searchMode,
-    limit: limit,
-  );
+  return repository.watchEntries(query: query, searchMode: searchMode, limit: limit);
 }
 
 /// 历史记录交互控制器。
@@ -77,14 +73,7 @@ class HistoryController extends _$HistoryController {
   @override
   void build() {}
 
-  /// 执行条目选择操作。
-  ///
-  /// 将选中的 [index] 对应的内容存入系统剪贴板，并触发模拟粘贴指令。
-  Future<void> selectItem(int index) async {
-    final history = ref.read(filteredHistoryProvider).value ?? [];
-    if (index >= history.length) return;
-
-    final item = history[index];
+  Future<void> paste(int id) async {
     final repository = ref.read(historyRepositoryProvider);
     final clipboardManager = ref.read(appClipboardManagerProvider.notifier);
 
@@ -92,7 +81,7 @@ class HistoryController extends _$HistoryController {
     if (clipboard == null) return;
 
     // 获取该项的所有内容
-    final contents = await repository.getItemContents(item.id);
+    final contents = await repository.getItemContents(id);
 
     final itemWriter = DataWriterItem();
 
@@ -117,6 +106,17 @@ class HistoryController extends _$HistoryController {
     await clipboard.write([itemWriter]);
     await clipboardManager.simulatePaste();
     clipboardManager.isSelfUpdate = false;
+  }
+
+  /// 执行条目选择操作。
+  ///
+  /// 将选中的 [index] 对应的内容存入系统剪贴板，并触发模拟粘贴指令。
+  Future<void> selectItem(int index) async {
+    final history = ref.read(filteredHistoryProvider).value ?? [];
+    if (index >= history.length) return;
+
+    final item = history[index];
+    paste(item.id);
   }
 
   /// 选择下一项（用于循环模式）。
@@ -174,10 +174,7 @@ class HistoryController extends _$HistoryController {
   /// 手动添加历史条目（调试或扩展用）。
   Future<void> addItem(String content, {bool isPinned = false}) async {
     final repository = ref.read(historyRepositoryProvider);
-    final contentData = HistoryItemContentData(
-      type: 'text/plain',
-      value: Uint8List.fromList(utf8.encode(content)),
-    );
+    final contentData = HistoryItemContentData(type: 'text/plain', value: Uint8List.fromList(utf8.encode(content)));
     await repository.addOrUpdateEntry(
       contents: [contentData],
       title: content.length > 100 ? content.substring(0, 100) : content,

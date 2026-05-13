@@ -126,7 +126,7 @@ class HistoryPage extends HookConsumerWidget {
                                   // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
                                   String? shortcut;
                                   if (item.pin != null) {
-                                    shortcut = item.pin!.toUpperCase();
+                                    shortcut = item.pin;
                                   } else if (index < 10) {
                                     shortcut = '${(index + 1) % 10}';
                                   }
