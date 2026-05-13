@@ -129,4 +129,13 @@ class QuickSelectAction extends Action<QuickSelectIntent> {
     }
   }
 }
+class QuickPinSelectAction extends Action<QuickPinSelectIntent> {
+  QuickPinSelectAction(this.ref);
+  final WidgetRef ref;
+
+  @override
+  void invoke(QuickPinSelectIntent intent) {
+   //todo 读取数据库找到有符合快捷键的然后实现  ref.read(historyControllerProvider.notifier).selectItem();
+  }
+}
 

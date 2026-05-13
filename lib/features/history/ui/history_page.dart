@@ -90,6 +90,7 @@ class HistoryPage extends HookConsumerWidget {
             OpenSettingsIntent: OpenSettingsAction(ref),
             QuitAppIntent: QuitAppAction(ref),
             QuickSelectIntent: QuickSelectAction(ref),
+            QuickPinSelectIntent: QuickPinSelectAction(ref),
           },
           child: Focus(
             autofocus: true,
