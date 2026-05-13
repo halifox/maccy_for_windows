@@ -144,7 +144,7 @@ final autoCheckUpdatesProvider = pref<bool>('autoCheckUpdates', true);
 /// 唤起剪贴板历史面板的全局快捷键
 final hotkeyOpenProvider = prefJson<AppHotKeyConfig>(
   'hotkeyOpen',
-  const AppHotKeyConfig(modifiers: ['alt'], key: 'V'),
+  const AppHotKeyConfig(modifiers: ['control','alt'], key: 'V'),
   fromJson: AppHotKeyConfig.fromJson,
   toJson: (v) => v.toJson(),
 );
@@ -152,7 +152,7 @@ final hotkeyOpenProvider = prefJson<AppHotKeyConfig>(
 /// 快速置顶当前选中项的快捷键
 final hotkeyPinProvider = prefJson<AppHotKeyConfig>(
   'hotkeyPin',
-  const AppHotKeyConfig(modifiers: ['alt'], key: 'P'),
+  const AppHotKeyConfig(modifiers: ['control'], key: 'P'),
   fromJson: AppHotKeyConfig.fromJson,
   toJson: (v) => v.toJson(),
 );
@@ -160,7 +160,7 @@ final hotkeyPinProvider = prefJson<AppHotKeyConfig>(
 /// 快速删除当前选中项的快捷键
 final hotkeyDeleteProvider = prefJson<AppHotKeyConfig>(
   'hotkeyDelete',
-  const AppHotKeyConfig(modifiers: ['alt'], key: 'D'),
+  const AppHotKeyConfig(modifiers: ['control'], key: 'D'),
   fromJson: AppHotKeyConfig.fromJson,
   toJson: (v) => v.toJson(),
 );
