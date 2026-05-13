@@ -396,20 +396,9 @@ class _HistoryRow extends HookConsumerWidget {
 
     useEffect(() {
       if (isSelected) {
+        //todo HistoryRowKey 使用 provider
         HistoryRowKey = itemKey;
-        // WidgetsBinding.instance.addPostFrameCallback((_) {
-        //   final context = itemKey.currentContext;
-        //   if (context != null) {
-        //     Scrollable.ensureVisible(
-        //       context,
-        //       duration: const Duration(milliseconds: 150),
-        //       curve: Curves.easeOut,
-        //       alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-        //     );
-        //   }
-        // });
       }
-      return null;
     }, [isSelected]);
 
     useEffect(() {
