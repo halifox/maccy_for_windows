@@ -30,87 +30,67 @@ class HistoryPage extends HookConsumerWidget {
     final totalItems = ref.watch(filteredHistoryProvider.select((v) => v.value?.length ?? 0));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Match Maccy's exact background colors with transparency
-    final bgColor = useMemoized(
-      () => isDark ? const Color(0xFF1E1E1E).withValues(alpha: 0.85) : const Color(0xFFF5F5F5).withValues(alpha: 0.85),
-      [isDark],
-    );
-    // Match Maccy's accent color with 0.8 opacity
-    final highlightColor = isDark
-        ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
-        : const Color(0xFF007AFF).withValues(alpha: 0.8);
-
-    final shortcuts = useMemoized(
-      () => <ShortcutActivator, Intent>{
-        const SingleActivator(LogicalKeyboardKey.arrowDown): const NavigateDownIntent(),
-        const SingleActivator(LogicalKeyboardKey.arrowUp): const NavigateUpIntent(),
-        const SingleActivator(LogicalKeyboardKey.enter): const SelectItemIntent(),
-        const SingleActivator(LogicalKeyboardKey.escape): const CloseWindowIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyP, control: true): const TogglePinIntent(),
-        const SingleActivator(LogicalKeyboardKey.comma, control: true): const OpenSettingsIntent(),
-        const SingleActivator(LogicalKeyboardKey.keyQ, control: true): const QuitAppIntent(),
-        //quick
-        const SingleActivator(LogicalKeyboardKey.digit1, alt: true): const QuickSelectIntent(0),
-        const SingleActivator(LogicalKeyboardKey.digit2, alt: true): const QuickSelectIntent(1),
-        const SingleActivator(LogicalKeyboardKey.digit3, alt: true): const QuickSelectIntent(2),
-        const SingleActivator(LogicalKeyboardKey.digit4, alt: true): const QuickSelectIntent(3),
-        const SingleActivator(LogicalKeyboardKey.digit5, alt: true): const QuickSelectIntent(4),
-        const SingleActivator(LogicalKeyboardKey.digit6, alt: true): const QuickSelectIntent(5),
-        const SingleActivator(LogicalKeyboardKey.digit7, alt: true): const QuickSelectIntent(6),
-        const SingleActivator(LogicalKeyboardKey.digit8, alt: true): const QuickSelectIntent(7),
-        const SingleActivator(LogicalKeyboardKey.digit9, alt: true): const QuickSelectIntent(8),
-        const SingleActivator(LogicalKeyboardKey.digit0, alt: true): const QuickSelectIntent(9),
-        //quick pin
-        const SingleActivator(LogicalKeyboardKey.keyA, alt: true): const QuickPinSelectIntent('A'),
-        const SingleActivator(LogicalKeyboardKey.keyB, alt: true): const QuickPinSelectIntent('B'),
-        const SingleActivator(LogicalKeyboardKey.keyC, alt: true): const QuickPinSelectIntent('C'),
-        const SingleActivator(LogicalKeyboardKey.keyD, alt: true): const QuickPinSelectIntent('D'),
-        const SingleActivator(LogicalKeyboardKey.keyE, alt: true): const QuickPinSelectIntent('E'),
-        const SingleActivator(LogicalKeyboardKey.keyF, alt: true): const QuickPinSelectIntent('F'),
-        const SingleActivator(LogicalKeyboardKey.keyG, alt: true): const QuickPinSelectIntent('G'),
-        const SingleActivator(LogicalKeyboardKey.keyH, alt: true): const QuickPinSelectIntent('H'),
-        const SingleActivator(LogicalKeyboardKey.keyI, alt: true): const QuickPinSelectIntent('I'),
-        const SingleActivator(LogicalKeyboardKey.keyJ, alt: true): const QuickPinSelectIntent('J'),
-        const SingleActivator(LogicalKeyboardKey.keyK, alt: true): const QuickPinSelectIntent('K'),
-        const SingleActivator(LogicalKeyboardKey.keyL, alt: true): const QuickPinSelectIntent('L'),
-        const SingleActivator(LogicalKeyboardKey.keyM, alt: true): const QuickPinSelectIntent('M'),
-        const SingleActivator(LogicalKeyboardKey.keyN, alt: true): const QuickPinSelectIntent('N'),
-        const SingleActivator(LogicalKeyboardKey.keyO, alt: true): const QuickPinSelectIntent('O'),
-        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): const QuickPinSelectIntent('P'),
-        const SingleActivator(LogicalKeyboardKey.keyQ, alt: true): const QuickPinSelectIntent('Q'),
-        const SingleActivator(LogicalKeyboardKey.keyR, alt: true): const QuickPinSelectIntent('R'),
-        const SingleActivator(LogicalKeyboardKey.keyS, alt: true): const QuickPinSelectIntent('S'),
-        const SingleActivator(LogicalKeyboardKey.keyT, alt: true): const QuickPinSelectIntent('T'),
-        const SingleActivator(LogicalKeyboardKey.keyU, alt: true): const QuickPinSelectIntent('U'),
-        const SingleActivator(LogicalKeyboardKey.keyV, alt: true): const QuickPinSelectIntent('V'),
-        const SingleActivator(LogicalKeyboardKey.keyW, alt: true): const QuickPinSelectIntent('W'),
-        const SingleActivator(LogicalKeyboardKey.keyX, alt: true): const QuickPinSelectIntent('X'),
-        const SingleActivator(LogicalKeyboardKey.keyY, alt: true): const QuickPinSelectIntent('Y'),
-        const SingleActivator(LogicalKeyboardKey.keyZ, alt: true): const QuickPinSelectIntent('Z'),
-      },
-      [],
-    );
-
-    final actions = useMemoized(
-      () => <Type, Action<Intent>>{
-        NavigateDownIntent: NavigateDownAction(ref),
-        NavigateUpIntent: NavigateUpAction(ref),
-        SelectItemIntent: SelectItemAction(ref),
-        CloseWindowIntent: CloseWindowAction(ref),
-        TogglePinIntent: TogglePinAction(ref),
-        OpenSettingsIntent: OpenSettingsAction(ref),
-        QuitAppIntent: QuitAppAction(ref),
-        QuickSelectIntent: QuickSelectAction(ref),
-      },
-      [ref],
-    );
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Shortcuts(
-        shortcuts: shortcuts,
+        shortcuts: const <ShortcutActivator, Intent>{
+          SingleActivator(LogicalKeyboardKey.arrowDown): NavigateDownIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowUp): NavigateUpIntent(),
+          SingleActivator(LogicalKeyboardKey.enter): SelectItemIntent(),
+          SingleActivator(LogicalKeyboardKey.escape): CloseWindowIntent(),
+          SingleActivator(LogicalKeyboardKey.keyP, control: true): TogglePinIntent(),
+          SingleActivator(LogicalKeyboardKey.comma, control: true): OpenSettingsIntent(),
+          SingleActivator(LogicalKeyboardKey.keyQ, control: true): QuitAppIntent(),
+          //quick
+          SingleActivator(LogicalKeyboardKey.digit1, alt: true): QuickSelectIntent(0),
+          SingleActivator(LogicalKeyboardKey.digit2, alt: true): QuickSelectIntent(1),
+          SingleActivator(LogicalKeyboardKey.digit3, alt: true): QuickSelectIntent(2),
+          SingleActivator(LogicalKeyboardKey.digit4, alt: true): QuickSelectIntent(3),
+          SingleActivator(LogicalKeyboardKey.digit5, alt: true): QuickSelectIntent(4),
+          SingleActivator(LogicalKeyboardKey.digit6, alt: true): QuickSelectIntent(5),
+          SingleActivator(LogicalKeyboardKey.digit7, alt: true): QuickSelectIntent(6),
+          SingleActivator(LogicalKeyboardKey.digit8, alt: true): QuickSelectIntent(7),
+          SingleActivator(LogicalKeyboardKey.digit9, alt: true): QuickSelectIntent(8),
+          SingleActivator(LogicalKeyboardKey.digit0, alt: true): QuickSelectIntent(9),
+          //quick pin
+          SingleActivator(LogicalKeyboardKey.keyA, alt: true): QuickPinSelectIntent('A'),
+          SingleActivator(LogicalKeyboardKey.keyB, alt: true): QuickPinSelectIntent('B'),
+          SingleActivator(LogicalKeyboardKey.keyC, alt: true): QuickPinSelectIntent('C'),
+          SingleActivator(LogicalKeyboardKey.keyD, alt: true): QuickPinSelectIntent('D'),
+          SingleActivator(LogicalKeyboardKey.keyE, alt: true): QuickPinSelectIntent('E'),
+          SingleActivator(LogicalKeyboardKey.keyF, alt: true): QuickPinSelectIntent('F'),
+          SingleActivator(LogicalKeyboardKey.keyG, alt: true): QuickPinSelectIntent('G'),
+          SingleActivator(LogicalKeyboardKey.keyH, alt: true): QuickPinSelectIntent('H'),
+          SingleActivator(LogicalKeyboardKey.keyI, alt: true): QuickPinSelectIntent('I'),
+          SingleActivator(LogicalKeyboardKey.keyJ, alt: true): QuickPinSelectIntent('J'),
+          SingleActivator(LogicalKeyboardKey.keyK, alt: true): QuickPinSelectIntent('K'),
+          SingleActivator(LogicalKeyboardKey.keyL, alt: true): QuickPinSelectIntent('L'),
+          SingleActivator(LogicalKeyboardKey.keyM, alt: true): QuickPinSelectIntent('M'),
+          SingleActivator(LogicalKeyboardKey.keyN, alt: true): QuickPinSelectIntent('N'),
+          SingleActivator(LogicalKeyboardKey.keyO, alt: true): QuickPinSelectIntent('O'),
+          SingleActivator(LogicalKeyboardKey.keyP, alt: true): QuickPinSelectIntent('P'),
+          SingleActivator(LogicalKeyboardKey.keyQ, alt: true): QuickPinSelectIntent('Q'),
+          SingleActivator(LogicalKeyboardKey.keyR, alt: true): QuickPinSelectIntent('R'),
+          SingleActivator(LogicalKeyboardKey.keyS, alt: true): QuickPinSelectIntent('S'),
+          SingleActivator(LogicalKeyboardKey.keyT, alt: true): QuickPinSelectIntent('T'),
+          SingleActivator(LogicalKeyboardKey.keyU, alt: true): QuickPinSelectIntent('U'),
+          SingleActivator(LogicalKeyboardKey.keyV, alt: true): QuickPinSelectIntent('V'),
+          SingleActivator(LogicalKeyboardKey.keyW, alt: true): QuickPinSelectIntent('W'),
+          SingleActivator(LogicalKeyboardKey.keyX, alt: true): QuickPinSelectIntent('X'),
+          SingleActivator(LogicalKeyboardKey.keyY, alt: true): QuickPinSelectIntent('Y'),
+          SingleActivator(LogicalKeyboardKey.keyZ, alt: true): QuickPinSelectIntent('Z'),
+        },
         child: Actions(
-          actions: actions,
+          actions: <Type, Action<Intent>>{
+            NavigateDownIntent: NavigateDownAction(ref),
+            NavigateUpIntent: NavigateUpAction(ref),
+            SelectItemIntent: SelectItemAction(ref),
+            CloseWindowIntent: CloseWindowAction(ref),
+            TogglePinIntent: TogglePinAction(ref),
+            OpenSettingsIntent: OpenSettingsAction(ref),
+            QuitAppIntent: QuitAppAction(ref),
+            QuickSelectIntent: QuickSelectAction(ref),
+          },
           child: Focus(
             autofocus: true,
             child: ClipRRect(
@@ -119,7 +99,9 @@ class HistoryPage extends HookConsumerWidget {
                 filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: bgColor,
+                    color: isDark
+                        ? const Color(0xFF1E1E1E).withValues(alpha: 0.85)
+                        : const Color(0xFFF5F5F5).withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
                     border: Border.all(
                       color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
@@ -152,7 +134,9 @@ class HistoryPage extends HookConsumerWidget {
                                     index: index,
                                     item: item,
                                     shortcut: shortcut,
-                                    selectionColor: highlightColor,
+                                    selectionColor: isDark
+                                        ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                                        : const Color(0xFF007AFF).withValues(alpha: 0.8),
                                     onTap: () => ref.read(historyControllerProvider.notifier).selectItem(index),
                                     onHover: () => ref.read(historySelectedIndexProvider.notifier).value = index,
                                     onPin: () => ref.read(historyControllerProvider.notifier).togglePin(index),
@@ -164,7 +148,12 @@ class HistoryPage extends HookConsumerWidget {
                           ),
                         ),
                       ),
-                      _FooterMenu(totalItems: totalItems, highlightColor: highlightColor),
+                      _FooterMenu(
+                        totalItems: totalItems,
+                        highlightColor: isDark
+                            ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                            : const Color(0xFF007AFF).withValues(alpha: 0.8),
+                      ),
                     ],
                   ),
                 ),
