@@ -137,11 +137,16 @@ class PinsTab extends HookConsumerWidget {
                     final item = entry.value;
                     final isSelected = selectedId.value == item.id;
                     final isLast = index == items.length - 1;
+                    final usedPins = items
+                        .where((i) => i.id != item.id && i.pin != null)
+                        .map((i) => i.pin!)
+                        .toSet();
 
                     return _PinTableRow(
                       item: item,
                       isSelected: isSelected,
                       isLast: isLast,
+                      usedPins: usedPins,
                       onTap: () => selectedId.value = item.id,
                       onDelete: () async {
                         await _unpinItem(db, item.id);
@@ -233,6 +238,7 @@ class _PinTableRow extends StatelessWidget {
     required this.item,
     required this.isSelected,
     required this.isLast,
+    required this.usedPins,
     required this.onTap,
     required this.onDelete,
     required this.onUpdatePin,
@@ -243,6 +249,7 @@ class _PinTableRow extends StatelessWidget {
   final HistoryItem item;
   final bool isSelected;
   final bool isLast;
+  final Set<String> usedPins;
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final ValueChanged<String> onUpdatePin;
@@ -261,6 +268,7 @@ class _PinTableRow extends StatelessWidget {
           // Key column
           _PinKeyPicker(
             currentPin: item.pin ?? '',
+            usedPins: usedPins,
             onChanged: onUpdatePin,
           ),
 
@@ -317,9 +325,14 @@ class _PinTableRow extends StatelessWidget {
 
 /// 固定快捷键选择器。
 class _PinKeyPicker extends StatelessWidget {
-  const _PinKeyPicker({required this.currentPin, required this.onChanged});
+  const _PinKeyPicker({
+    required this.currentPin,
+    required this.usedPins,
+    required this.onChanged,
+  });
 
   final String currentPin;
+  final Set<String> usedPins;
   final ValueChanged<String> onChanged;
 
   static const _availablePins = [
@@ -333,6 +346,7 @@ class _PinKeyPicker extends StatelessWidget {
     '7',
     '8',
     '9',
+    'A',
     'B',
     'C',
     'D',
@@ -348,12 +362,16 @@ class _PinKeyPicker extends StatelessWidget {
     'N',
     'O',
     'P',
+    'Q',
     'R',
     'S',
     'T',
     'U',
+    'V',
+    'W',
     'X',
     'Y',
+    'Z',
   ];
 
   @override
@@ -427,7 +445,9 @@ class _PinKeyPicker extends StatelessWidget {
           ),
         );
       },
-      menuChildren: _availablePins.map((pin) {
+      menuChildren: _availablePins
+          .where((pin) => !usedPins.contains(pin))
+          .map((pin) {
         return MenuItemButton(
           onPressed: () => onChanged(pin),
           style: ButtonStyle(
