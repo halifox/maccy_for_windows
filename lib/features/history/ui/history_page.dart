@@ -132,43 +132,40 @@ class HistoryPage extends HookConsumerWidget {
                               return CustomScrollView(
                                 slivers: [
                                   SliverList(
-                                    delegate: SliverChildBuilderDelegate(
-                                      (context, listIndex) {
-                                        final item = pinnedItems[listIndex];
-                                        return _HistoryRow(
-                                          item: item,
-                                          shortcut: item.pin,
-                                          selectionColor: isDark
-                                              ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
-                                              : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
-                                          onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
-                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
-                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(item.id),
-                                        );
-                                      },
-                                      childCount: pinnedItems.length,
-                                    ),
+                                    delegate: SliverChildBuilderDelegate((context, listIndex) {
+                                      final item = pinnedItems[listIndex];
+                                      return _HistoryRow(
+                                        item: item,
+                                        shortcut: item.pin,
+                                        selectionColor: isDark
+                                            ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                                            : const Color(0xFF007AFF).withValues(alpha: 0.8),
+                                        onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
+                                        onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
+                                        onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
+                                        onDelete: () =>
+                                            ref.read(historyControllerProvider.notifier).deleteItem(item.id),
+                                      );
+                                    }, childCount: pinnedItems.length),
                                   ),
+                                  const SliverToBoxAdapter(child: Divider(thickness: 1, height: 1)),
                                   SliverList(
-                                    delegate: SliverChildBuilderDelegate(
-                                      (context, listIndex) {
-                                        final item = unpinnedItems[listIndex];
-                                        final shortcut = listIndex < 10 ? '${(listIndex + 1) % 10}' : null;
-                                        return _HistoryRow(
-                                          item: item,
-                                          shortcut: shortcut,
-                                          selectionColor: isDark
-                                              ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
-                                              : const Color(0xFF007AFF).withValues(alpha: 0.8),
-                                          onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
-                                          onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
-                                          onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
-                                          onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(item.id),
-                                        );
-                                      },
-                                      childCount: unpinnedItems.length,
-                                    ),
+                                    delegate: SliverChildBuilderDelegate((context, listIndex) {
+                                      final item = unpinnedItems[listIndex];
+                                      final shortcut = listIndex < 10 ? '${(listIndex + 1) % 10}' : null;
+                                      return _HistoryRow(
+                                        item: item,
+                                        shortcut: shortcut,
+                                        selectionColor: isDark
+                                            ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
+                                            : const Color(0xFF007AFF).withValues(alpha: 0.8),
+                                        onTap: () => ref.read(historyControllerProvider.notifier).selectItem(item.id),
+                                        onHover: () => ref.read(historySelectedIdProvider.notifier).value = item.id,
+                                        onPin: () => ref.read(historyControllerProvider.notifier).togglePin(item.id),
+                                        onDelete: () =>
+                                            ref.read(historyControllerProvider.notifier).deleteItem(item.id),
+                                      );
+                                    }, childCount: unpinnedItems.length),
                                   ),
                                 ],
                               );
