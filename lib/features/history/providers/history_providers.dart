@@ -294,16 +294,12 @@ class HistoryController extends _$HistoryController {
           }
         }
       // Alt+P to pin/unpin selected item
-      case LogicalKeyboardKey.keyP when isAltPressed:
+      case LogicalKeyboardKey.keyP when isCtrlPressed:
         if (selectedIndex < totalItems) {
           togglePin(selectedIndex);
         }
       // Alt+D or Alt+Backspace to delete selected item
-      case LogicalKeyboardKey.keyD when isAltPressed:
-      case LogicalKeyboardKey.backspace when isAltPressed:
-        if (selectedIndex < totalItems) {
-          deleteItem(selectedIndex);
-        }
+      case LogicalKeyboardKey.keyD when isCtrlPressed:
       // Ctrl+, to open settings
       case LogicalKeyboardKey.comma when isCtrlPressed:
         ref.read(appWindowManagerProvider.notifier).showSettings();
