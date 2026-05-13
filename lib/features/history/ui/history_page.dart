@@ -5,18 +5,17 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
+import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:maccy/core/constants/ui_constants.dart';
 import 'package:maccy/core/database/database.dart';
 import 'package:maccy/core/managers/window_manager_provider.dart';
 import 'package:maccy/core/utils/text_formatter.dart';
 import 'package:maccy/features/history/providers/history_providers.dart';
-import 'package:maccy/features/history/ui/widgets/preview_popover.dart';
-import 'package:maccy/features/history/ui/widgets/keyboard_shortcut_widget.dart';
-import 'package:maccy/features/history/ui/history_intents.dart';
 import 'package:maccy/features/history/ui/history_actions.dart';
-import 'package:maccy/features/history/ui/modifier_key_handler.dart';
+import 'package:maccy/features/history/ui/history_intents.dart';
+import 'package:maccy/features/history/ui/widgets/keyboard_shortcut_widget.dart';
+import 'package:maccy/features/history/ui/widgets/preview_popover.dart';
 import 'package:maccy/features/settings/providers/settings_provider.dart';
-import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 历史记录主页面。
 ///
@@ -28,16 +27,12 @@ class HistoryPage extends HookConsumerWidget {
   /// 构建历史记录页面 UI。
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final totalItems = ref.watch(
-      filteredHistoryProvider.select((v) => v.value?.length ?? 0),
-    );
+    final totalItems = ref.watch(filteredHistoryProvider.select((v) => v.value?.length ?? 0));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Match Maccy's exact background colors with transparency
     final bgColor = useMemoized(
-      () => isDark
-          ? const Color(0xFF1E1E1E).withValues(alpha: 0.85)
-          : const Color(0xFFF5F5F5).withValues(alpha: 0.85),
+      () => isDark ? const Color(0xFF1E1E1E).withValues(alpha: 0.85) : const Color(0xFFF5F5F5).withValues(alpha: 0.85),
       [isDark],
     );
     // Match Maccy's accent color with 0.8 opacity
@@ -45,140 +40,132 @@ class HistoryPage extends HookConsumerWidget {
         ? const Color(0xFF0A84FF).withValues(alpha: 0.8)
         : const Color(0xFF007AFF).withValues(alpha: 0.8);
 
-    final shortcuts = useMemoized(() => <ShortcutActivator, Intent>{
-      const SingleActivator(LogicalKeyboardKey.arrowDown): const NavigateDownIntent(),
-      const SingleActivator(LogicalKeyboardKey.arrowUp): const NavigateUpIntent(),
-      const SingleActivator(LogicalKeyboardKey.enter): const SelectItemIntent(),
-      const SingleActivator(LogicalKeyboardKey.escape): const CloseWindowIntent(),
-      const SingleActivator(LogicalKeyboardKey.keyP, control: true): const TogglePinIntent(),
-      const SingleActivator(LogicalKeyboardKey.comma, control: true): const OpenSettingsIntent(),
-      const SingleActivator(LogicalKeyboardKey.keyQ, control: true): const QuitAppIntent(),
-      //quick
-      const SingleActivator(LogicalKeyboardKey.digit1, alt: true): const QuickSelectIntent(0),
-      const SingleActivator(LogicalKeyboardKey.digit2, alt: true): const QuickSelectIntent(1),
-      const SingleActivator(LogicalKeyboardKey.digit3, alt: true): const QuickSelectIntent(2),
-      const SingleActivator(LogicalKeyboardKey.digit4, alt: true): const QuickSelectIntent(3),
-      const SingleActivator(LogicalKeyboardKey.digit5, alt: true): const QuickSelectIntent(4),
-      const SingleActivator(LogicalKeyboardKey.digit6, alt: true): const QuickSelectIntent(5),
-      const SingleActivator(LogicalKeyboardKey.digit7, alt: true): const QuickSelectIntent(6),
-      const SingleActivator(LogicalKeyboardKey.digit8, alt: true): const QuickSelectIntent(7),
-      const SingleActivator(LogicalKeyboardKey.digit9, alt: true): const QuickSelectIntent(8),
-      const SingleActivator(LogicalKeyboardKey.digit0, alt: true): const QuickSelectIntent(9),
-      //quick pin
-      const SingleActivator(LogicalKeyboardKey.keyA, alt: true): const QuickPinSelectIntent('A'),
-      const SingleActivator(LogicalKeyboardKey.keyB, alt: true): const QuickPinSelectIntent('B'),
-      const SingleActivator(LogicalKeyboardKey.keyC, alt: true): const QuickPinSelectIntent('C'),
-      const SingleActivator(LogicalKeyboardKey.keyD, alt: true): const QuickPinSelectIntent('D'),
-      const SingleActivator(LogicalKeyboardKey.keyE, alt: true): const QuickPinSelectIntent('E'),
-      const SingleActivator(LogicalKeyboardKey.keyF, alt: true): const QuickPinSelectIntent('F'),
-      const SingleActivator(LogicalKeyboardKey.keyG, alt: true): const QuickPinSelectIntent('G'),
-      const SingleActivator(LogicalKeyboardKey.keyH, alt: true): const QuickPinSelectIntent('H'),
-      const SingleActivator(LogicalKeyboardKey.keyI, alt: true): const QuickPinSelectIntent('I'),
-      const SingleActivator(LogicalKeyboardKey.keyJ, alt: true): const QuickPinSelectIntent('J'),
-      const SingleActivator(LogicalKeyboardKey.keyK, alt: true): const QuickPinSelectIntent('K'),
-      const SingleActivator(LogicalKeyboardKey.keyL, alt: true): const QuickPinSelectIntent('L'),
-      const SingleActivator(LogicalKeyboardKey.keyM, alt: true): const QuickPinSelectIntent('M'),
-      const SingleActivator(LogicalKeyboardKey.keyN, alt: true): const QuickPinSelectIntent('N'),
-      const SingleActivator(LogicalKeyboardKey.keyO, alt: true): const QuickPinSelectIntent('O'),
-      const SingleActivator(LogicalKeyboardKey.keyP, alt: true): const QuickPinSelectIntent('P'),
-      const SingleActivator(LogicalKeyboardKey.keyQ, alt: true): const QuickPinSelectIntent('Q'),
-      const SingleActivator(LogicalKeyboardKey.keyR, alt: true): const QuickPinSelectIntent('R'),
-      const SingleActivator(LogicalKeyboardKey.keyS, alt: true): const QuickPinSelectIntent('S'),
-      const SingleActivator(LogicalKeyboardKey.keyT, alt: true): const QuickPinSelectIntent('T'),
-      const SingleActivator(LogicalKeyboardKey.keyU, alt: true): const QuickPinSelectIntent('U'),
-      const SingleActivator(LogicalKeyboardKey.keyV, alt: true): const QuickPinSelectIntent('V'),
-      const SingleActivator(LogicalKeyboardKey.keyW, alt: true): const QuickPinSelectIntent('W'),
-      const SingleActivator(LogicalKeyboardKey.keyX, alt: true): const QuickPinSelectIntent('X'),
-      const SingleActivator(LogicalKeyboardKey.keyY, alt: true): const QuickPinSelectIntent('Y'),
-      const SingleActivator(LogicalKeyboardKey.keyZ, alt: true): const QuickPinSelectIntent('Z'),
-    }, []);
+    final shortcuts = useMemoized(
+      () => <ShortcutActivator, Intent>{
+        const SingleActivator(LogicalKeyboardKey.arrowDown): const NavigateDownIntent(),
+        const SingleActivator(LogicalKeyboardKey.arrowUp): const NavigateUpIntent(),
+        const SingleActivator(LogicalKeyboardKey.enter): const SelectItemIntent(),
+        const SingleActivator(LogicalKeyboardKey.escape): const CloseWindowIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyP, control: true): const TogglePinIntent(),
+        const SingleActivator(LogicalKeyboardKey.comma, control: true): const OpenSettingsIntent(),
+        const SingleActivator(LogicalKeyboardKey.keyQ, control: true): const QuitAppIntent(),
+        //quick
+        const SingleActivator(LogicalKeyboardKey.digit1, alt: true): const QuickSelectIntent(0),
+        const SingleActivator(LogicalKeyboardKey.digit2, alt: true): const QuickSelectIntent(1),
+        const SingleActivator(LogicalKeyboardKey.digit3, alt: true): const QuickSelectIntent(2),
+        const SingleActivator(LogicalKeyboardKey.digit4, alt: true): const QuickSelectIntent(3),
+        const SingleActivator(LogicalKeyboardKey.digit5, alt: true): const QuickSelectIntent(4),
+        const SingleActivator(LogicalKeyboardKey.digit6, alt: true): const QuickSelectIntent(5),
+        const SingleActivator(LogicalKeyboardKey.digit7, alt: true): const QuickSelectIntent(6),
+        const SingleActivator(LogicalKeyboardKey.digit8, alt: true): const QuickSelectIntent(7),
+        const SingleActivator(LogicalKeyboardKey.digit9, alt: true): const QuickSelectIntent(8),
+        const SingleActivator(LogicalKeyboardKey.digit0, alt: true): const QuickSelectIntent(9),
+        //quick pin
+        const SingleActivator(LogicalKeyboardKey.keyA, alt: true): const QuickPinSelectIntent('A'),
+        const SingleActivator(LogicalKeyboardKey.keyB, alt: true): const QuickPinSelectIntent('B'),
+        const SingleActivator(LogicalKeyboardKey.keyC, alt: true): const QuickPinSelectIntent('C'),
+        const SingleActivator(LogicalKeyboardKey.keyD, alt: true): const QuickPinSelectIntent('D'),
+        const SingleActivator(LogicalKeyboardKey.keyE, alt: true): const QuickPinSelectIntent('E'),
+        const SingleActivator(LogicalKeyboardKey.keyF, alt: true): const QuickPinSelectIntent('F'),
+        const SingleActivator(LogicalKeyboardKey.keyG, alt: true): const QuickPinSelectIntent('G'),
+        const SingleActivator(LogicalKeyboardKey.keyH, alt: true): const QuickPinSelectIntent('H'),
+        const SingleActivator(LogicalKeyboardKey.keyI, alt: true): const QuickPinSelectIntent('I'),
+        const SingleActivator(LogicalKeyboardKey.keyJ, alt: true): const QuickPinSelectIntent('J'),
+        const SingleActivator(LogicalKeyboardKey.keyK, alt: true): const QuickPinSelectIntent('K'),
+        const SingleActivator(LogicalKeyboardKey.keyL, alt: true): const QuickPinSelectIntent('L'),
+        const SingleActivator(LogicalKeyboardKey.keyM, alt: true): const QuickPinSelectIntent('M'),
+        const SingleActivator(LogicalKeyboardKey.keyN, alt: true): const QuickPinSelectIntent('N'),
+        const SingleActivator(LogicalKeyboardKey.keyO, alt: true): const QuickPinSelectIntent('O'),
+        const SingleActivator(LogicalKeyboardKey.keyP, alt: true): const QuickPinSelectIntent('P'),
+        const SingleActivator(LogicalKeyboardKey.keyQ, alt: true): const QuickPinSelectIntent('Q'),
+        const SingleActivator(LogicalKeyboardKey.keyR, alt: true): const QuickPinSelectIntent('R'),
+        const SingleActivator(LogicalKeyboardKey.keyS, alt: true): const QuickPinSelectIntent('S'),
+        const SingleActivator(LogicalKeyboardKey.keyT, alt: true): const QuickPinSelectIntent('T'),
+        const SingleActivator(LogicalKeyboardKey.keyU, alt: true): const QuickPinSelectIntent('U'),
+        const SingleActivator(LogicalKeyboardKey.keyV, alt: true): const QuickPinSelectIntent('V'),
+        const SingleActivator(LogicalKeyboardKey.keyW, alt: true): const QuickPinSelectIntent('W'),
+        const SingleActivator(LogicalKeyboardKey.keyX, alt: true): const QuickPinSelectIntent('X'),
+        const SingleActivator(LogicalKeyboardKey.keyY, alt: true): const QuickPinSelectIntent('Y'),
+        const SingleActivator(LogicalKeyboardKey.keyZ, alt: true): const QuickPinSelectIntent('Z'),
+      },
+      [],
+    );
 
-    final actions = useMemoized(() => <Type, Action<Intent>>{
-      NavigateDownIntent: NavigateDownAction(ref),
-      NavigateUpIntent: NavigateUpAction(ref),
-      SelectItemIntent: SelectItemAction(ref),
-      CloseWindowIntent: CloseWindowAction(ref),
-      TogglePinIntent: TogglePinAction(ref),
-      OpenSettingsIntent: OpenSettingsAction(ref),
-      QuitAppIntent: QuitAppAction(ref),
-      QuickSelectIntent: QuickSelectAction(ref),
-    }, [ref]);
+    final actions = useMemoized(
+      () => <Type, Action<Intent>>{
+        NavigateDownIntent: NavigateDownAction(ref),
+        NavigateUpIntent: NavigateUpAction(ref),
+        SelectItemIntent: SelectItemAction(ref),
+        CloseWindowIntent: CloseWindowAction(ref),
+        TogglePinIntent: TogglePinAction(ref),
+        OpenSettingsIntent: OpenSettingsAction(ref),
+        QuitAppIntent: QuitAppAction(ref),
+        QuickSelectIntent: QuickSelectAction(ref),
+      },
+      [ref],
+    );
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: ModifierKeyHandler(
-        child: Shortcuts(
-          shortcuts: shortcuts,
-          child: Actions(
-            actions: actions,
-            child: Focus(
-              autofocus: true,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: bgColor,
-                      borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
-                      border: Border.all(
-                        color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
-                        width: 0.5,
-                      ),
+      body: Shortcuts(
+        shortcuts: shortcuts,
+        child: Actions(
+          actions: actions,
+          child: Focus(
+            autofocus: true,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
+                    border: Border.all(
+                      color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.black12,
+                      width: 0.5,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const _HistoryHeader(),
-                        Expanded(
-                          child: RepaintBoundary(
-                            child: Consumer(
-                              builder: (context, ref, child) {
-                                final history =
-                                    ref.watch(filteredHistoryProvider).value ?? [];
-                                return ListView.builder(
-                                  padding: EdgeInsets.zero,
-                                  itemCount: history.length,
-                                  itemBuilder: (BuildContext context, int index) {
-                                    final item = history[index];
-                                    // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
-                                    String? shortcut;
-                                    if (item.pin != null) {
-                                      shortcut = item.pin!.toUpperCase();
-                                    } else if (index < 10) {
-                                      shortcut = '${(index + 1) % 10}';
-                                    }
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const _HistoryHeader(),
+                      Expanded(
+                        child: RepaintBoundary(
+                          child: Consumer(
+                            builder: (context, ref, child) {
+                              final history = ref.watch(filteredHistoryProvider).value ?? [];
+                              return ListView.builder(
+                                padding: EdgeInsets.zero,
+                                itemCount: history.length,
+                                itemBuilder: (BuildContext context, int index) {
+                                  final item = history[index];
+                                  // 显示快捷键：固定项显示 pin 字符，前10个非固定项显示数字
+                                  String? shortcut;
+                                  if (item.pin != null) {
+                                    shortcut = item.pin!.toUpperCase();
+                                  } else if (index < 10) {
+                                    shortcut = '${(index + 1) % 10}';
+                                  }
 
-                                    return _HistoryRow(
-                                      index: index,
-                                      item: item,
-                                      shortcut: shortcut,
-                                      selectionColor: highlightColor,
-                                      onTap: () => ref
-                                          .read(historyControllerProvider.notifier)
-                                          .selectItem(index),
-                                      onHover: () => ref
-                                          .read(historySelectedIndexProvider.notifier)
-                                          .value = index,
-                                      onPin: () => ref
-                                          .read(historyControllerProvider.notifier)
-                                          .togglePin(index),
-                                      onDelete: () => ref
-                                          .read(historyControllerProvider.notifier)
-                                          .deleteItem(index),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
+                                  return _HistoryRow(
+                                    index: index,
+                                    item: item,
+                                    shortcut: shortcut,
+                                    selectionColor: highlightColor,
+                                    onTap: () => ref.read(historyControllerProvider.notifier).selectItem(index),
+                                    onHover: () => ref.read(historySelectedIndexProvider.notifier).value = index,
+                                    onPin: () => ref.read(historyControllerProvider.notifier).togglePin(index),
+                                    onDelete: () => ref.read(historyControllerProvider.notifier).deleteItem(index),
+                                  );
+                                },
+                              );
+                            },
                           ),
                         ),
-                        _FooterMenu(
-                          totalItems: totalItems,
-                          highlightColor: highlightColor,
-                        ),
-                      ],
-                    ),
+                      ),
+                      _FooterMenu(totalItems: totalItems, highlightColor: highlightColor),
+                    ],
                   ),
                 ),
               ),
@@ -221,10 +208,8 @@ class _FooterMenu extends ConsumerWidget {
           label: 'Clear History',
           shortcut: 'Alt+Win+Del',
           selectionColor: highlightColor,
-          onTap: () =>
-              ref.read(historyControllerProvider.notifier).clearHistory(),
-          onHover: () =>
-              ref.read(historySelectedIndexProvider.notifier).value = totalItems,
+          onTap: () => ref.read(historyControllerProvider.notifier).clearHistory(),
+          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = totalItems,
         ),
         _MenuRow(
           index: totalItems + 1,
@@ -234,9 +219,7 @@ class _FooterMenu extends ConsumerWidget {
           onTap: () {
             ref.read(appWindowManagerProvider.notifier).showSettings();
           },
-          onHover: () => ref
-              .read(historySelectedIndexProvider.notifier)
-              .value = totalItems + 1,
+          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = totalItems + 1,
         ),
         _MenuRow(
           index: totalItems + 2,
@@ -244,9 +227,7 @@ class _FooterMenu extends ConsumerWidget {
           shortcut: 'Ctrl+Q',
           selectionColor: highlightColor,
           onTap: () => ref.read(historyControllerProvider.notifier).quitApp(),
-          onHover: () => ref
-              .read(historySelectedIndexProvider.notifier)
-              .value = totalItems + 2,
+          onHover: () => ref.read(historySelectedIndexProvider.notifier).value = totalItems + 2,
         ),
         const SizedBox(height: 4),
       ],
@@ -295,23 +276,20 @@ class _HistoryHeader extends HookConsumerWidget {
       child: Container(
         height: MaccyUIConstants.searchFieldHeight,
         decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.1)
-              : Colors.black.withValues(alpha: 0.06),
+          color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.06),
           borderRadius: BorderRadius.circular(MaccyUIConstants.searchFieldCornerRadius),
         ),
         child: Row(
           children: [
             // 搜索图标
             Padding(
-              padding: const EdgeInsets.only(
-                left: MaccyUIConstants.searchFieldInternalHorizontalPadding,
-              ),
+              padding: const EdgeInsets.only(left: MaccyUIConstants.searchFieldInternalHorizontalPadding),
               child: Icon(
                 Icons.search,
                 size: MaccyUIConstants.searchFieldIconSize,
-                color: (isDark ? Colors.white : Colors.black)
-                    .withValues(alpha: MaccyUIConstants.searchFieldIconOpacity),
+                color: (isDark ? Colors.white : Colors.black).withValues(
+                  alpha: MaccyUIConstants.searchFieldIconOpacity,
+                ),
               ),
             ),
             // 输入框
@@ -352,14 +330,13 @@ class _HistoryHeader extends HookConsumerWidget {
                   ref.read(historySelectedIndexProvider.notifier).value = 0;
                 },
                 child: Padding(
-                  padding: const EdgeInsets.only(
-                    right: MaccyUIConstants.searchFieldInternalHorizontalPadding,
-                  ),
+                  padding: const EdgeInsets.only(right: MaccyUIConstants.searchFieldInternalHorizontalPadding),
                   child: Icon(
                     Icons.cancel,
                     size: MaccyUIConstants.searchFieldIconSize,
-                    color: (isDark ? Colors.white : Colors.black)
-                        .withValues(alpha: MaccyUIConstants.searchFieldClearButtonOpacity),
+                    color: (isDark ? Colors.white : Colors.black).withValues(
+                      alpha: MaccyUIConstants.searchFieldClearButtonOpacity,
+                    ),
                   ),
                 ),
               ),
@@ -430,9 +407,7 @@ class _HistoryRow extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isSelected = ref.watch(
-      historySelectedIndexProvider.select((val) => val == index),
-    );
+    final isSelected = ref.watch(historySelectedIndexProvider.select((val) => val == index));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final previewDelay = ref.watch(previewDelayProvider);
 
@@ -476,29 +451,18 @@ class _HistoryRow extends HookConsumerWidget {
           onTap: onTap,
           child: Container(
             height: MaccyUIConstants.itemHeight,
-            padding: const EdgeInsets.symmetric(
-              horizontal: MaccyUIConstants.contentLeadingPadding,
-              vertical: 0,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: MaccyUIConstants.contentLeadingPadding, vertical: 0),
             decoration: BoxDecoration(
               color: isSelected ? selectionColor : Colors.transparent,
               borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: buildContent(ref, isSelected, isDark),
-                ),
+                Expanded(child: buildContent(ref, isSelected, isDark)),
                 if (shortcut != null)
                   Padding(
-                    padding: const EdgeInsets.only(
-                      right: MaccyUIConstants.shortcutTrailingPadding,
-                    ),
-                    child: KeyboardShortcutWidget(
-                      shortcut: 'Alt+$shortcut',
-                      isSelected: isSelected,
-                      isDark: isDark,
-                    ),
+                    padding: const EdgeInsets.only(right: MaccyUIConstants.shortcutTrailingPadding),
+                    child: KeyboardShortcutWidget(shortcut: 'Alt+$shortcut', isSelected: isSelected, isDark: isDark),
                   )
                 else
                   const SizedBox(width: MaccyUIConstants.shortcutPlaceholderWidth),
@@ -512,23 +476,13 @@ class _HistoryRow extends HookConsumerWidget {
 
   Widget buildContent(WidgetRef ref, bool isSelected, bool isDark) {
     // 如果是 pin 项且有别名，显示别名；否则显示 title
-    final displayText = (item.pin != null && item.alias != null && item.alias!.isNotEmpty)
-        ? item.alias!
-        : item.title;
-    return _TextContent(
-      content: displayText,
-      isSelected: isSelected,
-      isDark: isDark,
-    );
+    final displayText = (item.pin != null && item.alias != null && item.alias!.isNotEmpty) ? item.alias! : item.title;
+    return _TextContent(content: displayText, isSelected: isSelected, isDark: isDark);
   }
 }
 
 class _TextContent extends HookConsumerWidget {
-  const _TextContent({
-    required this.content,
-    required this.isSelected,
-    required this.isDark,
-  });
+  const _TextContent({required this.content, required this.isSelected, required this.isDark});
 
   final String content;
   final bool isSelected;
@@ -542,10 +496,7 @@ class _TextContent extends HookConsumerWidget {
 
     final displayContent = useMemoized(() {
       // 使用 TextFormatter 格式化特殊字符
-      String text = TextFormatter.formatForDisplay(
-        content,
-        showSpecialChars: showSpecialChars,
-      );
+      String text = TextFormatter.formatForDisplay(content, showSpecialChars: showSpecialChars);
 
       // 限制长度
       if (text.length > 1000) text = text.substring(0, 1000);
@@ -561,12 +512,8 @@ class _TextContent extends HookConsumerWidget {
     final spans = useMemoized(() {
       final baseStyle = TextStyle(
         fontSize: MaccyUIConstants.primaryFontSize,
-        fontFamily: Platform.isWindows
-            ? MaccyUIConstants.systemFontFamilyWindows
-            : MaccyUIConstants.systemFontFamily,
-        color: isSelected
-            ? Colors.white
-            : (isDark ? Colors.white : Colors.black87),
+        fontFamily: Platform.isWindows ? MaccyUIConstants.systemFontFamilyWindows : MaccyUIConstants.systemFontFamily,
+        color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87),
       );
 
       if (searchQuery.isEmpty) {
@@ -587,28 +534,16 @@ class _TextContent extends HookConsumerWidget {
 
       while (idx != -1) {
         if (idx > start) {
-          result.add(
-            TextSpan(
-              text: displayContent.substring(start, idx),
-              style: baseStyle,
-            ),
-          );
+          result.add(TextSpan(text: displayContent.substring(start, idx), style: baseStyle));
         }
 
-        final matchText = displayContent.substring(
-          idx,
-          idx + searchQuery.length,
-        );
+        final matchText = displayContent.substring(idx, idx + searchQuery.length);
         result.add(
           TextSpan(
             text: matchText,
             style: baseStyle.copyWith(
-              fontWeight: highlightMode == 'bold' || isSelected
-                  ? FontWeight.bold
-                  : FontWeight.w600,
-              color: highlightMode == 'color' && !isSelected
-                  ? matchColor
-                  : null,
+              fontWeight: highlightMode == 'bold' || isSelected ? FontWeight.bold : FontWeight.w600,
+              color: highlightMode == 'color' && !isSelected ? matchColor : null,
             ),
           ),
         );
@@ -618,18 +553,12 @@ class _TextContent extends HookConsumerWidget {
       }
 
       if (start < displayContent.length) {
-        result.add(
-          TextSpan(text: displayContent.substring(start), style: baseStyle),
-        );
+        result.add(TextSpan(text: displayContent.substring(start), style: baseStyle));
       }
       return result;
     }, [displayContent, searchQuery, highlightMode, isSelected, isDark]);
 
-    return Text.rich(
-      TextSpan(children: spans),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    );
+    return Text.rich(TextSpan(children: spans), maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 }
 
@@ -661,9 +590,7 @@ class _MenuRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isSelected = ref.watch(
-      historySelectedIndexProvider.select((val) => val == index),
-    );
+    final isSelected = ref.watch(historySelectedIndexProvider.select((val) => val == index));
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return MouseRegion(
       onHover: (_) => onHover(),
@@ -671,9 +598,7 @@ class _MenuRow extends ConsumerWidget {
         onTap: onTap,
         child: Container(
           height: MaccyUIConstants.itemHeight,
-          padding: const EdgeInsets.symmetric(
-            horizontal: MaccyUIConstants.contentLeadingPadding,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: MaccyUIConstants.contentLeadingPadding),
           decoration: BoxDecoration(
             color: isSelected ? selectionColor : Colors.transparent,
             borderRadius: BorderRadius.circular(MaccyUIConstants.cornerRadius),
@@ -688,22 +613,14 @@ class _MenuRow extends ConsumerWidget {
                     fontFamily: Platform.isWindows
                         ? MaccyUIConstants.systemFontFamilyWindows
                         : MaccyUIConstants.systemFontFamily,
-                    color: isSelected
-                        ? Colors.white
-                        : (isDark ? Colors.white : Colors.black87),
+                    color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87),
                   ),
                 ),
               ),
               if (shortcut != null)
                 Padding(
-                  padding: const EdgeInsets.only(
-                    right: MaccyUIConstants.shortcutTrailingPadding,
-                  ),
-                  child: KeyboardShortcutWidget(
-                    shortcut: shortcut!,
-                    isSelected: isSelected,
-                    isDark: isDark,
-                  ),
+                  padding: const EdgeInsets.only(right: MaccyUIConstants.shortcutTrailingPadding),
+                  child: KeyboardShortcutWidget(shortcut: shortcut!, isSelected: isSelected, isDark: isDark),
                 )
               else
                 const SizedBox(width: MaccyUIConstants.shortcutPlaceholderWidth),

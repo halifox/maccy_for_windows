@@ -30,5 +30,12 @@ class QuitAppIntent extends Intent {
 
 class QuickSelectIntent extends Intent {
   const QuickSelectIntent(this.index);
+
   final int index;
+}
+
+class QuickPinSelectIntent extends Intent {
+  const QuickPinSelectIntent(this.key);
+
+  final String key;
 }
