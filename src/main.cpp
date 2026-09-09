@@ -33,7 +33,7 @@ std::filesystem::path GetDatabasePath() {
     }
 
     const std::filesystem::path path =
-        std::filesystem::path(local_app_data) / L"LowMemApp" / L"lowmem.db";
+        std::filesystem::path(local_app_data) / L"Clipboard" / L"app.db";
     CoTaskMemFree(local_app_data);
     return path;
 }
@@ -42,7 +42,7 @@ std::filesystem::path GetDatabasePath() {
 
 class MainWindow : public CWindowImpl<MainWindow> {
 public:
-    DECLARE_WND_CLASS_EX(L"LowMemAppWindow", CS_HREDRAW | CS_VREDRAW, COLOR_WINDOW)
+    DECLARE_WND_CLASS_EX(L"ClipboardWindow", CS_HREDRAW | CS_VREDRAW, COLOR_WINDOW)
 
     BEGIN_MSG_MAP(MainWindow)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
@@ -61,7 +61,7 @@ public:
         m_notifyIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
         m_notifyIcon.uCallbackMessage = kTrayIconMessage;
         m_notifyIcon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
-        lstrcpynW(m_notifyIcon.szTip, L"LowMemApp", ARRAYSIZE(m_notifyIcon.szTip));
+        lstrcpynW(m_notifyIcon.szTip, L"Clipboard", ARRAYSIZE(m_notifyIcon.szTip));
 
         m_trayIconAdded = Shell_NotifyIconW(NIM_ADD, &m_notifyIcon) == TRUE;
         return m_trayIconAdded;
@@ -217,7 +217,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         Database database(GetDatabasePath());
         MainWindow window;
 
-        if (!window.Create(nullptr, CWindow::rcDefault, L"LowMemApp", WS_OVERLAPPEDWINDOW)) {
+        if (!window.Create(nullptr, CWindow::rcDefault, L"Clipboard", WS_OVERLAPPEDWINDOW)) {
             _Module.Term();
             return 1;
         }
