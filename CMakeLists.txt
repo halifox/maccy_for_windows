@@ -4,6 +4,7 @@ project(app VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_library(sqlite3 STATIC
         third_party/sqlite/sqlite3.c
@@ -20,6 +21,8 @@ target_compile_definitions(sqlite3 PRIVATE
 add_executable(app WIN32
         src/main.cpp
         src/Database.cpp
+        src/Settings.cpp
+        src/SettingsWindow.cpp
 )
 
 set_target_properties(app PROPERTIES
@@ -35,9 +38,17 @@ target_link_libraries(app PRIVATE
         user32
         gdi32
         shell32
+        advapi32
+        comdlg32
+        comctl32
+        ole32
 )
 
 target_compile_definitions(app PRIVATE UNICODE _UNICODE)
+
+if(MSVC)
+    target_compile_options(app PRIVATE /utf-8)
+endif()
 
 include(GNUInstallDirs)
 
