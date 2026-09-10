@@ -23,6 +23,7 @@ add_executable(app WIN32
         src/Database.cpp
         src/Settings.cpp
         src/SettingsWindow.cpp
+        src/SettingsWindow.rc
 )
 
 set_target_properties(app PROPERTIES

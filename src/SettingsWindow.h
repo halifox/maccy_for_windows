@@ -9,45 +9,99 @@
 #include <atlbase.h>
 #include <atlapp.h>
 #include <atlctrls.h>
+#include <atlframe.h>
 #include <atlwin.h>
 
 #include "Database.h"
 #include "Settings.h"
+#include "resource.h"
 
 constexpr UINT kSettingsChangedMessage = WM_APP + 20;
 
-class SettingsWindow : public CWindowImpl<SettingsWindow> {
+// A page is a real child window of the tab control.  Keeping its layout and
+// scroll state here prevents the settings window from mixing tab-local and
+// parent-window coordinates.
+class SettingsPageWindow : public CWindowImpl<SettingsPageWindow> {
 public:
-    SettingsWindow(Database &database, HWND owner);
+    DECLARE_WND_CLASS_EX(L"ClipboardSettingsPage", CS_HREDRAW | CS_VREDRAW, COLOR_BTNFACE)
 
-    DECLARE_WND_CLASS_EX(L"ClipboardSettingsWindow", CS_HREDRAW | CS_VREDRAW, COLOR_BTNFACE)
+    struct LayoutControl {
+        HWND window = nullptr;
+        RECT design{};
+        bool stretch_width = false;
+        bool stretch_height = false;
+        bool combo = false;
+    };
+
+    void Configure(HWND owner, bool scrollable, int design_width, int design_height);
+    void AddLayout(HWND window, RECT design, bool stretch_width, bool stretch_height, bool combo);
+    void SetContentSize(int design_width, int design_height);
+    void LayoutControls();
+    int Scale(int value) const noexcept;
+
+    BEGIN_MSG_MAP(SettingsPageWindow)
+        MESSAGE_HANDLER(WM_SIZE, OnSize)
+        MESSAGE_HANDLER(WM_VSCROLL, OnVScroll)
+        MESSAGE_HANDLER(WM_MOUSEWHEEL, OnMouseWheel)
+        MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
+        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
+        MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
+    END_MSG_MAP()
+
+private:
+    void UpdateDpi();
+    void SetScrollPosition(int position);
+    void ScrollBy(int delta);
+    int MaxScrollPosition(const RECT &client) const;
+
+    LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnVScroll(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnMouseWheel(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
+
+    HWND m_owner = nullptr;
+    std::vector<LayoutControl> m_controls;
+    int m_designWidth = 760;
+    int m_designHeight = 520;
+    bool m_scrollable = false;
+    int m_scrollY = 0;
+    UINT m_dpi = USER_DEFAULT_SCREEN_DPI;
+};
+
+class SettingsWindow : public CDialogImpl<SettingsWindow>, public CDialogResize<SettingsWindow> {
+public:
+    enum { IDD = IDD_SETTINGS };
+
+    SettingsWindow(Database &database, HWND owner);
 
     bool CreateOrShow();
     void DestroyForOwner();
     bool IsOpen() const noexcept { return m_hWnd != nullptr && IsWindowVisible(); }
     HWND Window() const noexcept { return m_hWnd; }
 
+    BEGIN_DLGRESIZE_MAP(SettingsWindow)
+        DLGRESIZE_CONTROL(IDC_SETTINGS_TABS, DLSZ_SIZE_X | DLSZ_SIZE_Y)
+    END_DLGRESIZE_MAP()
+
     BEGIN_MSG_MAP(SettingsWindow)
-        MESSAGE_HANDLER(WM_CREATE, OnCreate)
+        MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
+        MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
+        MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+        CHAIN_MSG_MAP(CDialogResize<SettingsWindow>)
     END_MSG_MAP()
 
 private:
-    struct LayoutControl {
-        HWND window = nullptr;
-        RECT relative{};
-        bool stretch_width = false;
-        bool stretch_height = false;
-        bool combo = false;
-    };
-
     static constexpr int kPageCount = 6;
 
     HWND AddStatic(int page, const wchar_t *text, RECT relative, DWORD style = SS_LEFT);
+    HWND AddSectionHeading(int page, const wchar_t *text, RECT relative);
     HWND AddButton(int page, const wchar_t *text, int id, RECT relative, DWORD style = BS_PUSHBUTTON);
     HWND AddCheckBox(int page, const wchar_t *text, int id, RECT relative);
     HWND AddEdit(int page, int id, RECT relative, DWORD style = ES_AUTOHSCROLL);
@@ -64,6 +118,7 @@ private:
     );
 
     void CreateTabs();
+    bool CreatePageWindows();
     void CreateGeneralPage();
     void CreateAppearancePage();
     void CreateStoragePage();
@@ -98,8 +153,10 @@ private:
     void CheckForUpdatesNow();
     void ResetPopupPosition();
 
-    LRESULT OnCreate(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
@@ -108,11 +165,11 @@ private:
     Database &m_database;
     HWND m_owner = nullptr;
     CTabCtrl m_tabs;
-    HWND m_tabWindow = nullptr;
-    std::array<std::vector<LayoutControl>, kPageCount> m_pageControls;
+    std::array<SettingsPageWindow, kPageCount> m_pages;
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;
+    HFONT m_sectionFont = nullptr;
 
     AppSettings m_settings{};
 
@@ -154,7 +211,7 @@ private:
     HWND m_sSortBy = nullptr;
     HWND m_sStorageSize = nullptr;
 
-    // Ignore page. The three Maccy sub-tabs use one small editor/list pair.
+    // Ignore page. The three Maccy sub-tabs use one editor/list pair.
     CTabCtrl m_ignoreTabs;
     HWND m_ignoreTabWindow = nullptr;
     HWND m_iList = nullptr;
