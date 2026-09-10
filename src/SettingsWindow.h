@@ -42,6 +42,7 @@ private:
         RECT relative{};
         bool stretch_width = false;
         bool stretch_height = false;
+        bool combo = false;
     };
 
     static constexpr int kPageCount = 6;
@@ -53,7 +54,14 @@ private:
     HWND AddCombo(int page, int id, RECT relative);
     HWND AddList(int page, int id, RECT relative, bool stretch_height = true);
     HWND AddHotKey(int page, int id, RECT relative);
-    void AddLayout(int page, HWND window, RECT relative, bool stretch_width = false, bool stretch_height = false);
+    void AddLayout(
+        int page,
+        HWND window,
+        RECT relative,
+        bool stretch_width = false,
+        bool stretch_height = false,
+        bool combo = false
+    );
 
     void CreateTabs();
     void CreateGeneralPage();

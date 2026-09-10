@@ -83,6 +83,12 @@ constexpr int kPageIgnore = 3;
 constexpr int kPagePins = 4;
 constexpr int kPageAdvanced = 5;
 
+// A Win32 drop-down combo box uses its creation/layout height for the full
+// expanded control, including the list that is normally hidden.  Keep enough
+// room for several rows so the list does not collapse to zero height when the
+// visible selection field is only about 30 pixels tall.
+constexpr int kComboTotalHeight = 180;
+
 std::wstring ReadWindowText(HWND window) {
     if (window == nullptr) {
         return {};
@@ -210,14 +216,15 @@ void SettingsWindow::AddLayout(
     HWND window,
     RECT relative,
     bool stretch_width,
-    bool stretch_height
+    bool stretch_height,
+    bool combo
 ) {
     if (window == nullptr || page < 0 || page >= kPageCount) {
         return;
     }
     SetControlFont(window);
     m_pageControls[static_cast<size_t>(page)].push_back(
-        LayoutControl{window, relative, stretch_width, stretch_height}
+        LayoutControl{window, relative, stretch_width, stretch_height, combo}
     );
 }
 
@@ -269,15 +276,25 @@ HWND SettingsWindow::AddEdit(int page, int id, RECT relative, DWORD style) {
 
 HWND SettingsWindow::AddCombo(int page, int id, RECT relative) {
     CComboBox control;
+    // Do not create a drop-down combo with CWindow::rcDefault.  For a
+    // CBS_DROPDOWNLIST control, Windows treats the creation height as the
+    // height of the expanded combo box.  A zero-sized default rect therefore
+    // creates a combo whose drop-down list has no height, even after the
+    // visible selection field is laid out later.
+    const int initial_width = std::max<int>(
+        1,
+        static_cast<int>(relative.right - relative.left)
+    );
+    RECT initial_rect{0, 0, initial_width, kComboTotalHeight};
     const HWND window = control.Create(
         m_hWnd,
-        CWindow::rcDefault,
+        initial_rect,
         nullptr,
         WS_CHILD | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
         0,
         id
     );
-    AddLayout(page, window, relative);
+    AddLayout(page, window, relative, false, false, true);
     return window;
 }
 
@@ -539,6 +556,15 @@ void SettingsWindow::LayoutControls() {
             target.bottom = layout.stretch_height
                 ? page.bottom - layout.relative.bottom
                 : page.top + layout.relative.bottom;
+            if (layout.combo && !layout.stretch_height) {
+                // The normal field remains visually sized by the combo box
+                // font, while the control's total height reserves the native
+                // drop-down list area.
+                target.bottom = target.top + std::max<LONG>(
+                    static_cast<LONG>(kComboTotalHeight),
+                    target.bottom - target.top
+                );
+            }
             ::SetWindowPos(
                 layout.window,
                 nullptr,
