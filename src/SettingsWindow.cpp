@@ -90,6 +90,13 @@ constexpr int kPageAdvanced = 5;
 constexpr int kMinimumSettingsWidth = 840;
 constexpr int kMinimumSettingsHeight = 640;
 
+constexpr int kPagePadding = 16;
+constexpr int kLayoutGap = 8;
+constexpr int kControlHeight = 30;
+constexpr int kMinimumLabelWidth = 110;
+constexpr int kDefaultInputWidth = 180;
+constexpr int kDefaultListHeight = 180;
+
 // A Win32 drop-down combo box uses its creation/layout height for the full
 // expanded control, including the list that is normally hidden.  Keep enough
 // room for several rows so the list does not collapse to zero height when the
@@ -177,6 +184,39 @@ void SetControlFont(HWND window) {
     }
 }
 
+using LayoutOptions = SettingsPageWindow::LayoutOptions;
+
+LayoutOptions FillWidth(int minimum_height = 0) {
+    LayoutOptions options;
+    options.fill_width = true;
+    options.minimum_height = minimum_height;
+    return options;
+}
+
+LayoutOptions FillHeight(int minimum_height) {
+    LayoutOptions options = FillWidth(minimum_height);
+    options.fill_height = true;
+    return options;
+}
+
+LayoutOptions LabelCell() {
+    LayoutOptions options;
+    options.label = true;
+    return options;
+}
+
+LayoutOptions FixedWidth(int width) {
+    LayoutOptions options;
+    options.width = width;
+    return options;
+}
+
+LayoutOptions SectionBlock() {
+    LayoutOptions options = FillWidth(28);
+    options.section = true;
+    return options;
+}
+
 std::wstring PinDisplay(const ClipboardItem &item) {
     std::wstring value = item.pin + L"  |  " + item.title;
     if (!item.content.empty()) {
@@ -205,13 +245,16 @@ std::wstring PinTextContent(const ClipboardItem &item) {
 
 } // namespace
 
-void SettingsPageWindow::Configure(HWND owner, bool scrollable, int design_width, int design_height) {
+void SettingsPageWindow::Configure(HWND owner, bool scrollable, int minimum_content_height) {
     m_owner = owner;
     m_scrollable = scrollable;
-    m_designWidth = std::max(1, design_width);
-    m_designHeight = std::max(1, design_height);
+    m_minimumContentHeight = std::max(0, minimum_content_height);
+    m_contentHeight = 0;
     m_scrollY = 0;
     m_dpi = USER_DEFAULT_SCREEN_DPI;
+    m_layout.clear();
+    m_activeRow.clear();
+    m_rowOpen = false;
 }
 
 int SettingsPageWindow::Scale(int value) const noexcept {
@@ -232,22 +275,53 @@ void SettingsPageWindow::UpdateDpi() {
     }
 }
 
-void SettingsPageWindow::AddLayout(
-    HWND window,
-    RECT design,
-    bool stretch_width,
-    bool stretch_height,
-    bool combo
-) {
+void SettingsPageWindow::BeginRow(int gap) {
+    if (m_rowOpen) {
+        EndRow();
+    }
+    m_activeRow.clear();
+    m_activeRowGap = std::max(0, gap);
+    m_rowOpen = true;
+}
+
+void SettingsPageWindow::EndRow() {
+    if (!m_rowOpen) {
+        return;
+    }
+
+    LayoutItem item;
+    item.kind = LayoutItem::Kind::Row;
+    item.cells = std::move(m_activeRow);
+    item.gap = m_activeRowGap;
+    m_layout.push_back(std::move(item));
+    m_activeRow.clear();
+    m_rowOpen = false;
+}
+
+void SettingsPageWindow::AddLayout(HWND window, LayoutOptions options) {
     if (window == nullptr) {
         return;
     }
-    m_controls.push_back(LayoutControl{window, design, stretch_width, stretch_height, combo});
+    if (m_rowOpen) {
+        m_activeRow.push_back(LayoutCell{window, options});
+        return;
+    }
+
+    LayoutItem item;
+    item.kind = LayoutItem::Kind::Block;
+    item.window = window;
+    item.options = options;
+    m_layout.push_back(std::move(item));
 }
 
-void SettingsPageWindow::SetContentSize(int design_width, int design_height) {
-    m_designWidth = std::max(1, design_width);
-    m_designHeight = std::max(1, design_height);
+void SettingsPageWindow::AddSpacer(LayoutOptions options) {
+    if (m_rowOpen) {
+        m_activeRow.push_back(LayoutCell{nullptr, options});
+    }
+}
+
+void SettingsPageWindow::SetContentSize(int minimum_content_height) {
+    m_minimumContentHeight = std::max(0, minimum_content_height);
     LayoutControls();
 }
 
@@ -255,7 +329,8 @@ int SettingsPageWindow::MaxScrollPosition(const RECT &client) const {
     if (!m_scrollable) {
         return 0;
     }
-    return std::max(0, Scale(m_designHeight) - static_cast<int>(client.bottom));
+    const int content_height = std::max(m_contentHeight, Scale(m_minimumContentHeight));
+    return std::max(0, content_height - static_cast<int>(client.bottom));
 }
 
 void SettingsPageWindow::SetScrollPosition(int position) {
@@ -275,55 +350,374 @@ void SettingsPageWindow::ScrollBy(int delta) {
     SetScrollPosition(m_scrollY + delta);
 }
 
+bool SettingsPageWindow::IsExplicitlyVisible(HWND window) const noexcept {
+    if (window == nullptr || !::IsWindow(window)) {
+        return false;
+    }
+    return (::GetWindowLongPtrW(window, GWL_STYLE) & WS_VISIBLE) != 0;
+}
+
+int SettingsPageWindow::MeasureTextWidth(HWND window) const {
+    if (window == nullptr) {
+        return 0;
+    }
+    const std::wstring text = ReadWindowText(window);
+    if (text.empty()) {
+        return 0;
+    }
+
+    HDC dc = ::GetDC(window);
+    if (dc == nullptr) {
+        return 0;
+    }
+    HFONT font = reinterpret_cast<HFONT>(::SendMessageW(window, WM_GETFONT, 0, 0));
+    HGDIOBJ previous = font == nullptr ? nullptr : ::SelectObject(dc, font);
+    SIZE size{};
+    ::GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()), &size);
+    if (previous != nullptr) {
+        ::SelectObject(dc, previous);
+    }
+    ::ReleaseDC(window, dc);
+    return std::max(0, static_cast<int>(size.cx));
+}
+
+int SettingsPageWindow::MeasureTextHeight(HWND window, int width) const {
+    if (window == nullptr || width <= 0) {
+        return Scale(kControlHeight);
+    }
+    const std::wstring text = ReadWindowText(window);
+    if (text.empty()) {
+        return Scale(kControlHeight);
+    }
+
+    HDC dc = ::GetDC(window);
+    if (dc == nullptr) {
+        return Scale(kControlHeight);
+    }
+    HFONT font = reinterpret_cast<HFONT>(::SendMessageW(window, WM_GETFONT, 0, 0));
+    HGDIOBJ previous = font == nullptr ? nullptr : ::SelectObject(dc, font);
+    RECT measured{0, 0, width, 0};
+    UINT flags = DT_CALCRECT | DT_WORDBREAK;
+    const LONG style = static_cast<LONG>(::GetWindowLongPtrW(window, GWL_STYLE));
+    if ((style & SS_NOPREFIX) != 0) {
+        flags |= DT_NOPREFIX;
+    }
+    ::DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measured, flags);
+    if (previous != nullptr) {
+        ::SelectObject(dc, previous);
+    }
+    ::ReleaseDC(window, dc);
+
+    const int padding = Scale(4);
+    const int text_height = static_cast<int>(measured.bottom - measured.top);
+    return std::max(Scale(kControlHeight), text_height + padding);
+}
+
+int SettingsPageWindow::MeasureCellWidth(const LayoutCell &cell) const {
+    if (cell.window == nullptr) {
+        return 0;
+    }
+    if (cell.options.width > 0) {
+        return Scale(cell.options.width);
+    }
+
+    wchar_t class_name[64]{};
+    ::GetClassNameW(cell.window, class_name, static_cast<int>(std::size(class_name)));
+    const std::wstring class_name_text(class_name);
+    const int text_width = MeasureTextWidth(cell.window);
+    if (cell.options.label) {
+        return text_width + Scale(8);
+    }
+    if (class_name_text == L"Button") {
+        return text_width + Scale(28);
+    }
+    if (class_name_text == L"Static") {
+        return text_width + Scale(8);
+    }
+    if (class_name_text == L"msctls_hotkey32") {
+        return Scale(190);
+    }
+    if (class_name_text == L"ComboBox" || class_name_text == L"Edit") {
+        return Scale(kDefaultInputWidth);
+    }
+    return Scale(kDefaultInputWidth);
+}
+
+int SettingsPageWindow::MeasureCellHeight(const LayoutCell &cell, int width) const {
+    if (cell.window == nullptr) {
+        return cell.options.minimum_height > 0 ? Scale(cell.options.minimum_height) : 0;
+    }
+
+    wchar_t class_name[64]{};
+    ::GetClassNameW(cell.window, class_name, static_cast<int>(std::size(class_name)));
+    const std::wstring class_name_text(class_name);
+    int height = Scale(kControlHeight);
+    if (class_name_text == L"ComboBox") {
+        height = Scale(kControlHeight);
+    } else if (class_name_text == L"ListBox") {
+        height = Scale(std::max(kDefaultListHeight, cell.options.minimum_height));
+    } else if (class_name_text == L"Edit") {
+        const LONG style = static_cast<LONG>(::GetWindowLongPtrW(cell.window, GWL_STYLE));
+        if ((style & ES_MULTILINE) != 0) {
+            height = Scale(std::max(120, cell.options.minimum_height));
+        }
+    } else {
+        int text_width = width;
+        if (class_name_text == L"Button") {
+            text_width = std::max(1, width - Scale(28));
+        }
+        height = MeasureTextHeight(cell.window, text_width);
+    }
+    return std::max(height, Scale(cell.options.minimum_height));
+}
+
 void SettingsPageWindow::LayoutControls() {
     if (m_hWnd == nullptr) {
         return;
+    }
+    if (m_rowOpen) {
+        EndRow();
     }
 
     UpdateDpi();
     RECT client{};
     ::GetClientRect(m_hWnd, &client);
-    const int content_height = std::max(
-        static_cast<int>(client.bottom),
-        Scale(m_designHeight)
-    );
+    const int left = Scale(kPagePadding);
+    const int right = std::max(left, static_cast<int>(client.right) - Scale(kPagePadding));
+    const int content_width = std::max(1, right - left);
+    const int item_gap = Scale(kLayoutGap);
+
+    struct MeasuredCell {
+        LayoutCell cell;
+        int width = 0;
+        int height = 0;
+    };
+    struct MeasuredItem {
+        const LayoutItem *item = nullptr;
+        std::vector<MeasuredCell> cells;
+        int height = 0;
+        bool stretch_height = false;
+        bool visible = false;
+    };
+
+    int label_width = Scale(kMinimumLabelWidth);
+    for (const LayoutItem &item : m_layout) {
+        if (item.kind != LayoutItem::Kind::Row) {
+            continue;
+        }
+        for (const LayoutCell &cell : item.cells) {
+            if (cell.window != nullptr && cell.options.label && IsExplicitlyVisible(cell.window)) {
+                label_width = std::max(label_width, MeasureCellWidth(cell));
+            }
+        }
+    }
+
+    std::vector<MeasuredItem> measured;
+    measured.reserve(m_layout.size());
+    int fixed_height = 0;
+    int flexible_count = 0;
+
+    for (const LayoutItem &item : m_layout) {
+        MeasuredItem result;
+        result.item = &item;
+        if (item.kind == LayoutItem::Kind::Block) {
+            if (!IsExplicitlyVisible(item.window)) {
+                measured.push_back(std::move(result));
+                continue;
+            }
+            LayoutCell cell{item.window, item.options};
+            const int width = item.options.width > 0
+                ? Scale(item.options.width)
+                : (item.options.fill_width ? content_width : MeasureCellWidth(cell));
+            result.cells.push_back(MeasuredCell{
+                cell,
+                std::max(1, std::min(width, content_width)),
+                MeasureCellHeight(cell, std::max(1, std::min(width, content_width)))
+            });
+            result.height = result.cells.front().height;
+            result.stretch_height = item.options.fill_height;
+            result.visible = true;
+        } else {
+            std::vector<LayoutCell> visible_cells;
+            for (const LayoutCell &cell : item.cells) {
+                if (cell.window == nullptr || IsExplicitlyVisible(cell.window)) {
+                    visible_cells.push_back(cell);
+                }
+            }
+            if (visible_cells.empty()) {
+                measured.push_back(std::move(result));
+                continue;
+            }
+
+            const int gap = Scale(item.gap);
+            const int available = std::max(1, content_width - gap * (static_cast<int>(visible_cells.size()) - 1));
+            int fixed_width = 0;
+            int flexible_cells = 0;
+            std::vector<int> widths;
+            widths.reserve(visible_cells.size());
+            for (const LayoutCell &cell : visible_cells) {
+                int width = 0;
+                if (cell.window == nullptr) {
+                    if (cell.options.fill_width) {
+                        ++flexible_cells;
+                    }
+                } else if (cell.options.label) {
+                    width = label_width;
+                } else if (cell.options.width > 0) {
+                    width = Scale(cell.options.width);
+                } else if (cell.options.fill_width) {
+                    ++flexible_cells;
+                } else {
+                    width = MeasureCellWidth(cell);
+                }
+                widths.push_back(width);
+                fixed_width += width;
+            }
+
+            const int remaining = std::max(0, available - fixed_width);
+            if (flexible_cells > 0) {
+                int flex_width = remaining / flexible_cells;
+                int flex_remainder = remaining % flexible_cells;
+                for (size_t index = 0; index < visible_cells.size(); ++index) {
+                    if (!visible_cells[index].options.fill_width) {
+                        continue;
+                    }
+                    widths[index] = flex_width + (flex_remainder-- > 0 ? 1 : 0);
+                }
+            } else if (fixed_width > available) {
+                int shrinkable = 0;
+                for (size_t index = 0; index < visible_cells.size(); ++index) {
+                    if (visible_cells[index].window != nullptr &&
+                        visible_cells[index].options.width == 0 &&
+                        !visible_cells[index].options.label) {
+                        ++shrinkable;
+                    }
+                }
+                if (shrinkable > 0) {
+                    const int shrink = (fixed_width - available + shrinkable - 1) / shrinkable;
+                    for (size_t index = 0; index < visible_cells.size(); ++index) {
+                        if (visible_cells[index].window != nullptr &&
+                            visible_cells[index].options.width == 0 &&
+                            !visible_cells[index].options.label) {
+                            widths[index] = std::max(1, widths[index] - shrink);
+                        }
+                    }
+                }
+            }
+
+            for (size_t index = 0; index < visible_cells.size(); ++index) {
+                const int width = std::max(1, widths[index]);
+                result.cells.push_back(MeasuredCell{
+                    visible_cells[index],
+                    width,
+                    MeasureCellHeight(visible_cells[index], width)
+                });
+                result.height = std::max(result.height, result.cells.back().height);
+                result.stretch_height = result.stretch_height || visible_cells[index].options.fill_height;
+            }
+            result.visible = true;
+        }
+
+        if (result.visible) {
+            if (result.item->options.minimum_height > 0) {
+                result.height = std::max(result.height, Scale(result.item->options.minimum_height));
+            }
+            fixed_height += result.height;
+            if (result.stretch_height) {
+                ++flexible_count;
+            }
+        }
+        measured.push_back(std::move(result));
+    }
+
+    int visible_items = 0;
+    for (const MeasuredItem &item : measured) {
+        if (item.visible) {
+            ++visible_items;
+        }
+    }
+    const int vertical_gaps = std::max(0, visible_items - 1) * item_gap;
+    const int top_padding = Scale(kPagePadding);
+    const int bottom_padding = Scale(kPagePadding);
+    const int available_height = std::max(0, static_cast<int>(client.bottom) - top_padding - bottom_padding - vertical_gaps);
+    const int extra_height = std::max(0, available_height - fixed_height);
+    if (flexible_count > 0 && extra_height > 0) {
+        int remaining_extra = extra_height;
+        int remaining_flexible = flexible_count;
+        for (MeasuredItem &item : measured) {
+            if (!item.visible || !item.stretch_height) {
+                continue;
+            }
+            const int extra = remaining_extra / remaining_flexible;
+            item.height += extra;
+            remaining_extra -= extra;
+            --remaining_flexible;
+        }
+    }
+
+    int calculated_height = top_padding + bottom_padding + vertical_gaps;
+    for (const MeasuredItem &item : measured) {
+        if (item.visible) {
+            calculated_height += item.height;
+        }
+    }
+    m_contentHeight = std::max(calculated_height, Scale(m_minimumContentHeight));
     m_scrollY = std::clamp(m_scrollY, 0, MaxScrollPosition(client));
 
     SCROLLINFO scroll_info{sizeof(scroll_info)};
     scroll_info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
     scroll_info.nMin = 0;
-    scroll_info.nMax = std::max(0, content_height - 1);
+    scroll_info.nMax = std::max(0, m_contentHeight - 1);
     scroll_info.nPage = static_cast<UINT>(std::max<LONG>(0, client.bottom));
     scroll_info.nPos = m_scrollY;
     ::SetScrollInfo(m_hWnd, SB_VERT, &scroll_info, TRUE);
-    ::ShowScrollBar(m_hWnd, SB_VERT, m_scrollable && content_height > client.bottom);
+    ::ShowScrollBar(m_hWnd, SB_VERT, m_scrollable && m_contentHeight > client.bottom);
 
-    for (const LayoutControl &layout : m_controls) {
-        RECT target{};
-        target.left = Scale(layout.design.left);
-        target.top = Scale(layout.design.top) - m_scrollY;
-        target.right = layout.stretch_width
-            ? client.right - Scale(layout.design.right)
-            : Scale(layout.design.right);
-        target.bottom = layout.stretch_height
-            ? content_height - Scale(layout.design.bottom) - m_scrollY
-            : Scale(layout.design.bottom) - m_scrollY;
-        if (layout.combo && !layout.stretch_height) {
-            target.bottom = target.top + std::max(
-                Scale(kComboTotalHeight),
-                static_cast<int>(target.bottom - target.top)
-            );
+    int top = top_padding - m_scrollY;
+    for (const MeasuredItem &item : measured) {
+        if (!item.visible) {
+            continue;
         }
-
-        ::SetWindowPos(
-            layout.window,
-            nullptr,
-            target.left,
-            target.top,
-            std::max<int>(0, target.right - target.left),
-            std::max<int>(0, target.bottom - target.top),
-            SWP_NOZORDER | SWP_NOACTIVATE
-        );
+        if (item.item->kind == LayoutItem::Kind::Block) {
+            const MeasuredCell &cell = item.cells.front();
+            const int height = item.height;
+            const int actual_height = cell.cell.options.combo
+                ? std::max(Scale(kComboTotalHeight), height)
+                : height;
+            ::SetWindowPos(
+                cell.cell.window,
+                nullptr,
+                left,
+                top,
+                cell.width,
+                actual_height,
+                SWP_NOZORDER | SWP_NOACTIVATE
+            );
+        } else {
+            int x = left;
+            const int gap = Scale(item.item->gap);
+            for (const MeasuredCell &cell : item.cells) {
+                if (cell.cell.window != nullptr) {
+                    const int cell_top = cell.cell.options.combo
+                        ? top
+                        : top + std::max(0, (item.height - cell.height) / 2);
+                    const int actual_height = cell.cell.options.combo
+                        ? std::max(Scale(kComboTotalHeight), cell.height)
+                        : (cell.cell.options.fill_height ? item.height : cell.height);
+                    ::SetWindowPos(
+                        cell.cell.window,
+                        nullptr,
+                        x,
+                        cell_top,
+                        cell.width,
+                        actual_height,
+                        SWP_NOZORDER | SWP_NOACTIVATE
+                    );
+                }
+                x += cell.width + gap;
+            }
+        }
+        top += item.height + item_gap;
     }
 }
 
@@ -471,22 +865,36 @@ void SettingsWindow::DestroyForOwner() {
     }
 }
 
-void SettingsWindow::AddLayout(
-    int page,
-    HWND window,
-    RECT relative,
-    bool stretch_width,
-    bool stretch_height,
-    bool combo
-) {
+void SettingsWindow::BeginRow(int page, int gap) {
+    if (page < 0 || page >= kPageCount) {
+        return;
+    }
+    m_pages[static_cast<size_t>(page)].BeginRow(gap);
+}
+
+void SettingsWindow::EndRow(int page) {
+    if (page < 0 || page >= kPageCount) {
+        return;
+    }
+    m_pages[static_cast<size_t>(page)].EndRow();
+}
+
+void SettingsWindow::AddLayout(int page, HWND window, LayoutOptions options) {
     if (window == nullptr || page < 0 || page >= kPageCount) {
         return;
     }
     SetControlFont(window);
-    m_pages[static_cast<size_t>(page)].AddLayout(window, relative, stretch_width, stretch_height, combo);
+    m_pages[static_cast<size_t>(page)].AddLayout(window, options);
 }
 
-HWND SettingsWindow::AddStatic(int page, const wchar_t *text, RECT relative, DWORD style) {
+void SettingsWindow::AddSpacer(int page, LayoutOptions options) {
+    if (page < 0 || page >= kPageCount) {
+        return;
+    }
+    m_pages[static_cast<size_t>(page)].AddSpacer(options);
+}
+
+HWND SettingsWindow::AddStatic(int page, const wchar_t *text, DWORD style, LayoutOptions options) {
     CStatic control;
     const HWND window = control.Create(
         m_pages[static_cast<size_t>(page)].m_hWnd,
@@ -496,19 +904,25 @@ HWND SettingsWindow::AddStatic(int page, const wchar_t *text, RECT relative, DWO
         0U,
         0U
     );
-    AddLayout(page, window, relative);
+    AddLayout(page, window, options);
     return window;
 }
 
-HWND SettingsWindow::AddSectionHeading(int page, const wchar_t *text, RECT relative) {
-    const HWND window = AddStatic(page, text, relative, SS_LEFT | SS_NOPREFIX);
+HWND SettingsWindow::AddSectionHeading(int page, const wchar_t *text) {
+    const HWND window = AddStatic(page, text, SS_LEFT | SS_NOPREFIX, SectionBlock());
     if (window != nullptr && m_sectionFont != nullptr) {
         ::SendMessageW(window, WM_SETFONT, reinterpret_cast<WPARAM>(m_sectionFont), TRUE);
     }
     return window;
 }
 
-HWND SettingsWindow::AddButton(int page, const wchar_t *text, int id, RECT relative, DWORD style) {
+HWND SettingsWindow::AddButton(
+    int page,
+    const wchar_t *text,
+    int id,
+    DWORD style,
+    LayoutOptions options
+) {
     CButton control;
     const HWND window = control.Create(
         m_pages[static_cast<size_t>(page)].m_hWnd,
@@ -518,15 +932,21 @@ HWND SettingsWindow::AddButton(int page, const wchar_t *text, int id, RECT relat
         0,
         static_cast<UINT>(id)
     );
-    AddLayout(page, window, relative);
+    AddLayout(page, window, options);
     return window;
 }
 
-HWND SettingsWindow::AddCheckBox(int page, const wchar_t *text, int id, RECT relative) {
-    return AddButton(page, text, id, relative, BS_AUTOCHECKBOX | BS_LEFT | BS_VCENTER);
+HWND SettingsWindow::AddCheckBox(int page, const wchar_t *text, int id, LayoutOptions options) {
+    return AddButton(
+        page,
+        text,
+        id,
+        BS_AUTOCHECKBOX | BS_LEFT | BS_VCENTER | BS_MULTILINE,
+        options
+    );
 }
 
-HWND SettingsWindow::AddEdit(int page, int id, RECT relative, DWORD style) {
+HWND SettingsWindow::AddEdit(int page, int id, DWORD style, LayoutOptions options) {
     CEdit control;
     const HWND window = control.Create(
         m_pages[static_cast<size_t>(page)].m_hWnd,
@@ -536,21 +956,22 @@ HWND SettingsWindow::AddEdit(int page, int id, RECT relative, DWORD style) {
         WS_EX_CLIENTEDGE,
         id
     );
-    AddLayout(page, window, relative);
+    AddLayout(page, window, options);
     return window;
 }
 
-HWND SettingsWindow::AddCombo(int page, int id, RECT relative) {
+HWND SettingsWindow::AddCombo(int page, int id, LayoutOptions options) {
     CComboBox control;
     // Do not create a drop-down combo with CWindow::rcDefault.  For a
     // CBS_DROPDOWNLIST control, Windows treats the creation height as the
     // height of the expanded combo box.  A zero-sized default rect therefore
     // creates a combo whose drop-down list has no height, even after the
     // visible selection field is laid out later.
+    options.combo = true;
     const int initial_width = std::max<int>(
         1,
         m_pages[static_cast<size_t>(page)].Scale(
-            static_cast<int>(relative.right - relative.left)
+            options.width > 0 ? options.width : kDefaultInputWidth
         )
     );
     RECT initial_rect{
@@ -567,11 +988,11 @@ HWND SettingsWindow::AddCombo(int page, int id, RECT relative) {
         0,
         id
     );
-    AddLayout(page, window, relative, false, false, true);
+    AddLayout(page, window, options);
     return window;
 }
 
-HWND SettingsWindow::AddList(int page, int id, RECT relative, bool stretch_height) {
+HWND SettingsWindow::AddList(int page, int id, LayoutOptions options) {
     CListBox control;
     const HWND window = control.Create(
         m_pages[static_cast<size_t>(page)].m_hWnd,
@@ -581,14 +1002,11 @@ HWND SettingsWindow::AddList(int page, int id, RECT relative, bool stretch_heigh
         WS_EX_CLIENTEDGE,
         id
     );
-    // Lists use the available page width.  The caller chooses whether the
-    // list also owns the available vertical space.
-    relative.right = 8;
-    AddLayout(page, window, relative, true, stretch_height);
+    AddLayout(page, window, options);
     return window;
 }
 
-HWND SettingsWindow::AddHotKey(int page, int id, RECT relative) {
+HWND SettingsWindow::AddHotKey(int page, int id, LayoutOptions options) {
     CHotKeyCtrl control;
     const HWND window = control.Create(
         m_pages[static_cast<size_t>(page)].m_hWnd,
@@ -598,7 +1016,7 @@ HWND SettingsWindow::AddHotKey(int page, int id, RECT relative) {
         WS_EX_CLIENTEDGE,
         id
     );
-    AddLayout(page, window, relative);
+    AddLayout(page, window, options);
     return window;
 }
 
@@ -623,14 +1041,12 @@ bool SettingsWindow::CreatePageWindows() {
     }
 
     const std::array<bool, kPageCount> scrollable = {false, true, false, true, true, false};
-    const std::array<int, kPageCount> heights = {540, 660, 380, 560, 600, 360};
     for (int page = 0; page < kPageCount; ++page) {
         SettingsPageWindow &page_window = m_pages[static_cast<size_t>(page)];
         page_window.Configure(
             m_hWnd,
             scrollable[static_cast<size_t>(page)],
-            760,
-            heights[static_cast<size_t>(page)]
+            0
         );
         const DWORD style = WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
             (scrollable[static_cast<size_t>(page)] ? WS_VSCROLL : 0U);
@@ -649,119 +1065,173 @@ bool SettingsWindow::CreatePageWindows() {
 }
 
 void SettingsWindow::CreateGeneralPage() {
-    AddSectionHeading(kPageGeneral, L"启动与更新", {16, 8, 740, 32});
-    m_gLaunch = AddCheckBox(kPageGeneral, L"登录 Windows 时启动", kGLaunch, {16, 42, 320, 70});
-    m_gUpdates = AddCheckBox(kPageGeneral, L"自动检查更新（仅保存选项）", kGUpdates, {16, 76, 380, 104});
-    AddButton(kPageGeneral, L"立即检查", kGCheckNow, {400, 74, 500, 104});
+    AddSectionHeading(kPageGeneral, L"启动与更新");
+    m_gLaunch = AddCheckBox(kPageGeneral, L"登录 Windows 时启动", kGLaunch, FillWidth());
+    BeginRow(kPageGeneral);
+    m_gUpdates = AddCheckBox(
+        kPageGeneral,
+        L"自动检查更新（仅保存选项）",
+        kGUpdates,
+        FillWidth()
+    );
+    AddButton(kPageGeneral, L"立即检查", kGCheckNow, BS_PUSHBUTTON, FixedWidth(100));
+    EndRow(kPageGeneral);
     AddStatic(
         kPageGeneral,
         L"Windows 版本没有 Sparkle 更新服务；“立即检查”会打开项目发布页。",
-        {16, 112, 740, 145},
-        SS_LEFT | SS_NOPREFIX
+        SS_LEFT | SS_NOPREFIX,
+        FillWidth()
     );
-    AddSectionHeading(kPageGeneral, L"快捷键", {16, 162, 740, 186});
-    AddStatic(kPageGeneral, L"打开：", {16, 190, 120, 216});
-    m_gOpenHotKey = AddHotKey(kPageGeneral, kGOpenHotKey, {140, 188, 330, 218});
-    AddStatic(kPageGeneral, L"置顶：", {16, 226, 120, 252});
-    m_gPinHotKey = AddHotKey(kPageGeneral, kGPinHotKey, {140, 224, 330, 254});
-    AddStatic(kPageGeneral, L"删除：", {16, 262, 120, 288});
-    m_gDeleteHotKey = AddHotKey(kPageGeneral, kGDeleteHotKey, {140, 260, 330, 290});
-    AddStatic(kPageGeneral, L"预览：", {16, 298, 120, 324});
-    m_gPreviewHotKey = AddHotKey(kPageGeneral, kGPreviewHotKey, {140, 296, 330, 326});
+    AddSectionHeading(kPageGeneral, L"快捷键");
+    BeginRow(kPageGeneral);
+    AddStatic(kPageGeneral, L"打开：", SS_LEFT, LabelCell());
+    m_gOpenHotKey = AddHotKey(kPageGeneral, kGOpenHotKey, FixedWidth(190));
+    EndRow(kPageGeneral);
+    BeginRow(kPageGeneral);
+    AddStatic(kPageGeneral, L"置顶：", SS_LEFT, LabelCell());
+    m_gPinHotKey = AddHotKey(kPageGeneral, kGPinHotKey, FixedWidth(190));
+    EndRow(kPageGeneral);
+    BeginRow(kPageGeneral);
+    AddStatic(kPageGeneral, L"删除：", SS_LEFT, LabelCell());
+    m_gDeleteHotKey = AddHotKey(kPageGeneral, kGDeleteHotKey, FixedWidth(190));
+    EndRow(kPageGeneral);
+    BeginRow(kPageGeneral);
+    AddStatic(kPageGeneral, L"预览：", SS_LEFT, LabelCell());
+    m_gPreviewHotKey = AddHotKey(kPageGeneral, kGPreviewHotKey, FixedWidth(190));
+    EndRow(kPageGeneral);
 
-    AddSectionHeading(kPageGeneral, L"行为", {16, 346, 740, 370});
-    AddStatic(kPageGeneral, L"搜索模式：", {16, 378, 150, 404});
-    m_gSearchMode = AddCombo(kPageGeneral, kGSearchMode, {170, 374, 430, 404});
+    AddSectionHeading(kPageGeneral, L"行为");
+    BeginRow(kPageGeneral);
+    AddStatic(kPageGeneral, L"搜索模式：", SS_LEFT, LabelCell());
+    m_gSearchMode = AddCombo(kPageGeneral, kGSearchMode, FixedWidth(260));
+    EndRow(kPageGeneral);
     AddComboItem(m_gSearchMode, L"精确（不区分大小写）");
     AddComboItem(m_gSearchMode, L"模糊");
     AddComboItem(m_gSearchMode, L"正则表达式");
     AddComboItem(m_gSearchMode, L"混合（精确→正则→模糊）");
 
-    m_gPasteByDefault = AddCheckBox(kPageGeneral, L"选择项目后自动粘贴", kGPasteByDefault, {16, 416, 330, 444});
-    m_gRemoveFormatting = AddCheckBox(kPageGeneral, L"默认粘贴为纯文本（去除格式）", kGRemoveFormatting, {16, 450, 390, 478});
-    AddButton(kPageGeneral, L"Windows 通知和声音设置", kGNotifications, {16, 494, 270, 526});
+    m_gPasteByDefault = AddCheckBox(kPageGeneral, L"选择项目后自动粘贴", kGPasteByDefault, FillWidth());
+    m_gRemoveFormatting = AddCheckBox(
+        kPageGeneral,
+        L"默认粘贴为纯文本（去除格式）",
+        kGRemoveFormatting,
+        FillWidth()
+    );
+    AddButton(kPageGeneral, L"Windows 通知和声音设置", kGNotifications, BS_PUSHBUTTON, FixedWidth(250));
 }
 
 void SettingsWindow::CreateAppearancePage() {
-    AddSectionHeading(kPageAppearance, L"弹出窗口", {16, 8, 740, 32});
-    AddStatic(kPageAppearance, L"弹出位置：", {16, 46, 140, 74});
-    m_aPopupPosition = AddCombo(kPageAppearance, kAPopupPosition, {150, 42, 360, 72});
+    AddSectionHeading(kPageAppearance, L"弹出窗口");
+    BeginRow(kPageAppearance);
+    AddStatic(kPageAppearance, L"弹出位置：", SS_LEFT, LabelCell());
+    m_aPopupPosition = AddCombo(kPageAppearance, kAPopupPosition, FixedWidth(160));
     AddComboItem(m_aPopupPosition, L"光标附近");
     AddComboItem(m_aPopupPosition, L"托盘图标附近");
     AddComboItem(m_aPopupPosition, L"目标窗口中心");
     AddComboItem(m_aPopupPosition, L"屏幕中心");
     AddComboItem(m_aPopupPosition, L"上次位置");
-    AddStatic(kPageAppearance, L"屏幕：", {390, 46, 445, 74});
-    m_aPopupScreen = AddCombo(kPageAppearance, kAPopupScreen, {450, 42, 610, 72});
-    AddButton(kPageAppearance, L"重置位置", kAResetPosition, {620, 42, 740, 72});
+    AddStatic(kPageAppearance, L"屏幕：", SS_LEFT, LabelCell());
+    m_aPopupScreen = AddCombo(kPageAppearance, kAPopupScreen, FixedWidth(160));
+    AddButton(kPageAppearance, L"重置位置", kAResetPosition, BS_PUSHBUTTON, FixedWidth(100));
+    EndRow(kPageAppearance);
 
-    AddStatic(kPageAppearance, L"置顶项目位置：", {16, 84, 170, 112});
-    m_aPinTo = AddCombo(kPageAppearance, kAPinTo, {190, 80, 350, 110});
+    BeginRow(kPageAppearance);
+    AddStatic(kPageAppearance, L"置顶项目位置：", SS_LEFT, LabelCell());
+    m_aPinTo = AddCombo(kPageAppearance, kAPinTo, FixedWidth(160));
+    EndRow(kPageAppearance);
     AddComboItem(m_aPinTo, L"顶部");
     AddComboItem(m_aPinTo, L"底部");
 
-    AddSectionHeading(kPageAppearance, L"预览", {16, 132, 740, 156});
-    AddStatic(kPageAppearance, L"图片最大高度：", {16, 170, 170, 196});
-    m_aImageHeight = AddEdit(kPageAppearance, kAImageHeight, {190, 166, 280, 196}, ES_NUMBER);
-    AddStatic(kPageAppearance, L"像素（1–200）", {290, 170, 410, 196});
-    m_aOpenPreview = AddCheckBox(kPageAppearance, L"自动打开预览", kAOpenPreview, {16, 208, 280, 236});
-    AddStatic(kPageAppearance, L"预览延迟：", {16, 246, 170, 272});
-    m_aPreviewDelay = AddEdit(kPageAppearance, kAPreviewDelay, {190, 242, 280, 272}, ES_NUMBER);
-    AddStatic(kPageAppearance, L"毫秒（200–100000）", {290, 246, 450, 272});
+    AddSectionHeading(kPageAppearance, L"预览");
+    BeginRow(kPageAppearance);
+    AddStatic(kPageAppearance, L"图片最大高度：", SS_LEFT, LabelCell());
+    m_aImageHeight = AddEdit(kPageAppearance, kAImageHeight, ES_NUMBER, FixedWidth(90));
+    AddStatic(kPageAppearance, L"像素（1–200）");
+    EndRow(kPageAppearance);
+    m_aOpenPreview = AddCheckBox(kPageAppearance, L"自动打开预览", kAOpenPreview, FillWidth());
+    BeginRow(kPageAppearance);
+    AddStatic(kPageAppearance, L"预览延迟：", SS_LEFT, LabelCell());
+    m_aPreviewDelay = AddEdit(kPageAppearance, kAPreviewDelay, ES_NUMBER, FixedWidth(90));
+    AddStatic(kPageAppearance, L"毫秒（200–100000）");
+    EndRow(kPageAppearance);
 
-    AddSectionHeading(kPageAppearance, L"搜索结果显示", {16, 300, 740, 324});
-    AddStatic(kPageAppearance, L"搜索匹配样式：", {16, 338, 170, 364});
-    m_aHighlight = AddCombo(kPageAppearance, kAHighlight, {190, 334, 350, 364});
+    AddSectionHeading(kPageAppearance, L"搜索结果显示");
+    BeginRow(kPageAppearance);
+    AddStatic(kPageAppearance, L"搜索匹配样式：", SS_LEFT, LabelCell());
+    m_aHighlight = AddCombo(kPageAppearance, kAHighlight, FixedWidth(160));
+    EndRow(kPageAppearance);
     AddComboItem(m_aHighlight, L"颜色");
     AddComboItem(m_aHighlight, L"粗体");
     AddComboItem(m_aHighlight, L"斜体");
     AddComboItem(m_aHighlight, L"下划线");
 
-    AddStatic(kPageAppearance, L"托盘图标：", {16, 378, 140, 404});
-    m_aMenuIcon = AddCombo(kPageAppearance, kAMenuIcon, {150, 374, 350, 404});
+    BeginRow(kPageAppearance);
+    AddStatic(kPageAppearance, L"托盘图标：", SS_LEFT, LabelCell());
+    m_aMenuIcon = AddCombo(kPageAppearance, kAMenuIcon, FixedWidth(180));
     AddComboItem(m_aMenuIcon, L"Maccy");
     AddComboItem(m_aMenuIcon, L"剪贴板");
     AddComboItem(m_aMenuIcon, L"剪刀");
     AddComboItem(m_aMenuIcon, L"回形针");
-    m_aShowStatus = AddCheckBox(kPageAppearance, L"显示托盘图标", kAShowStatus, {380, 374, 540, 404});
-    m_aShowRecent = AddCheckBox(kPageAppearance, L"在托盘提示中显示最近复制内容", kAShowRecent, {16, 416, 400, 444});
-    m_aShowSearch = AddCheckBox(kPageAppearance, L"显示搜索框", kAShowSearch, {16, 450, 190, 478});
-    m_aSearchVisibility = AddCombo(kPageAppearance, kASearchVisibility, {210, 446, 390, 476});
+    m_aShowStatus = AddCheckBox(kPageAppearance, L"显示托盘图标", kAShowStatus, FillWidth());
+    EndRow(kPageAppearance);
+    m_aShowRecent = AddCheckBox(
+        kPageAppearance,
+        L"在托盘提示中显示最近复制内容",
+        kAShowRecent,
+        FillWidth()
+    );
+    BeginRow(kPageAppearance);
+    m_aShowSearch = AddCheckBox(kPageAppearance, L"显示搜索框", kAShowSearch, FillWidth());
+    m_aSearchVisibility = AddCombo(kPageAppearance, kASearchVisibility, FixedWidth(160));
+    EndRow(kPageAppearance);
     AddComboItem(m_aSearchVisibility, L"始终显示");
     AddComboItem(m_aSearchVisibility, L"搜索时显示");
-    m_aShowTitle = AddCheckBox(kPageAppearance, L"在搜索框前显示标题", kAShowTitle, {16, 484, 300, 512});
-    m_aShowIcons = AddCheckBox(kPageAppearance, L"显示来源程序图标", kAShowIcons, {16, 518, 300, 546});
-    m_aShowSwatch = AddCheckBox(kPageAppearance, L"显示十六进制颜色色块", kAShowSwatch, {320, 518, 580, 546});
-    m_aShowSpecial = AddCheckBox(kPageAppearance, L"显示换行、制表符和首尾空格符号", kAShowSpecial, {16, 552, 390, 580});
-    m_aShowFooter = AddCheckBox(kPageAppearance, L"显示底部状态栏", kAShowFooter, {16, 586, 270, 614});
+    m_aShowTitle = AddCheckBox(kPageAppearance, L"在搜索框前显示标题", kAShowTitle, FillWidth());
+    BeginRow(kPageAppearance);
+    m_aShowIcons = AddCheckBox(kPageAppearance, L"显示来源程序图标", kAShowIcons, FillWidth());
+    m_aShowSwatch = AddCheckBox(kPageAppearance, L"显示十六进制颜色色块", kAShowSwatch, FillWidth());
+    EndRow(kPageAppearance);
+    m_aShowSpecial = AddCheckBox(
+        kPageAppearance,
+        L"显示换行、制表符和首尾空格符号",
+        kAShowSpecial,
+        FillWidth()
+    );
+    m_aShowFooter = AddCheckBox(kPageAppearance, L"显示底部状态栏", kAShowFooter, FillWidth());
 }
 
 void SettingsWindow::CreateStoragePage() {
-    AddSectionHeading(kPageStorage, L"保存类型", {16, 8, 740, 32});
-    m_sSaveFiles = AddCheckBox(kPageStorage, L"文件（CF_HDROP）", kSSaveFiles, {24, 44, 280, 72});
-    m_sSaveImages = AddCheckBox(kPageStorage, L"图片（DIB/DIBV5）", kSSaveImages, {24, 78, 280, 106});
-    m_sSaveText = AddCheckBox(kPageStorage, L"文本（Unicode/HTML/RTF）", kSSaveText, {24, 112, 330, 140});
+    AddSectionHeading(kPageStorage, L"保存类型");
+    m_sSaveFiles = AddCheckBox(kPageStorage, L"文件（CF_HDROP）", kSSaveFiles, FillWidth());
+    m_sSaveImages = AddCheckBox(kPageStorage, L"图片（DIB/DIBV5）", kSSaveImages, FillWidth());
+    m_sSaveText = AddCheckBox(kPageStorage, L"文本（Unicode/HTML/RTF）", kSSaveText, FillWidth());
     AddStatic(
         kPageStorage,
         L"关闭某种类型后，新的剪贴板内容不会保存该类型；已有历史不会被删除。",
-        {16, 150, 740, 194},
-        SS_LEFT | SS_NOPREFIX
+        SS_LEFT | SS_NOPREFIX,
+        FillWidth()
     );
-    AddSectionHeading(kPageStorage, L"历史", {16, 220, 740, 244});
-    AddStatic(kPageStorage, L"保留历史数量：", {16, 260, 170, 286});
-    m_sHistorySize = AddEdit(kPageStorage, kSHistorySize, {190, 256, 280, 286}, ES_NUMBER);
-    AddStatic(kPageStorage, L"条（1–999，不含置顶项）", {290, 260, 520, 286});
-    AddStatic(kPageStorage, L"排序：", {16, 298, 120, 324});
-    m_sSortBy = AddCombo(kPageStorage, kSSortBy, {190, 294, 400, 324});
+    AddSectionHeading(kPageStorage, L"历史");
+    BeginRow(kPageStorage);
+    AddStatic(kPageStorage, L"保留历史数量：", SS_LEFT, LabelCell());
+    m_sHistorySize = AddEdit(kPageStorage, kSHistorySize, ES_NUMBER, FixedWidth(90));
+    AddStatic(kPageStorage, L"条（1–999，不含置顶项）");
+    EndRow(kPageStorage);
+    BeginRow(kPageStorage);
+    AddStatic(kPageStorage, L"排序：", SS_LEFT, LabelCell());
+    m_sSortBy = AddCombo(kPageStorage, kSSortBy, FixedWidth(210));
+    EndRow(kPageStorage);
     AddComboItem(m_sSortBy, L"最近复制时间");
     AddComboItem(m_sSortBy, L"首次复制时间");
     AddComboItem(m_sSortBy, L"复制次数");
-    AddStatic(kPageStorage, L"当前数据库大小：", {16, 338, 190, 364});
-    m_sStorageSize = AddStatic(kPageStorage, L"", {205, 338, 380, 364});
+    BeginRow(kPageStorage);
+    AddStatic(kPageStorage, L"当前数据库大小：", SS_LEFT, LabelCell());
+    m_sStorageSize = AddStatic(kPageStorage, L"", SS_LEFT, FillWidth());
+    EndRow(kPageStorage);
 }
 
 void SettingsWindow::CreateIgnorePage() {
-    AddSectionHeading(kPageIgnore, L"忽略规则", {16, 8, 740, 32});
+    AddSectionHeading(kPageIgnore, L"忽略规则");
     m_ignoreTabWindow = m_ignoreTabs.Create(
         m_pages[kPageIgnore].m_hWnd,
         CWindow::rcDefault,
@@ -770,7 +1240,7 @@ void SettingsWindow::CreateIgnorePage() {
         0,
         kIgnoreTabs
     );
-    AddLayout(kPageIgnore, m_ignoreTabWindow, {8, 42, 8, 78}, true, false);
+    AddLayout(kPageIgnore, m_ignoreTabWindow, FillWidth(34));
     const std::array<const wchar_t *, 3> names = {L"应用程序", L"剪贴板格式", L"正则表达式"};
     for (const wchar_t *name : names) {
         TCITEMW item{};
@@ -778,56 +1248,83 @@ void SettingsWindow::CreateIgnorePage() {
         item.pszText = const_cast<wchar_t *>(name);
         m_ignoreTabs.InsertItem(m_ignoreTabs.GetItemCount(), &item);
     }
-    m_iList = AddList(kPageIgnore, kIList, {8, 88, 8, 330}, false);
-    m_iEdit = AddEdit(kPageIgnore, kIEdit, {8, 346, 430, 376});
-    AddButton(kPageIgnore, L"添加", kIAdd, {440, 344, 510, 376});
-    AddButton(kPageIgnore, L"浏览…", kIBrowse, {516, 344, 586, 376});
-    AddButton(kPageIgnore, L"修改", kIUpdate, {592, 344, 662, 376});
-    AddButton(kPageIgnore, L"删除", kIRemove, {668, 344, 738, 376});
-    AddButton(kPageIgnore, L"恢复默认", kIReset, {592, 384, 738, 416});
-    m_iWhitelist = AddCheckBox(kPageIgnore, L"仅忽略列表中的应用（白名单）", kIWhitelist, {8, 384, 330, 416});
-    m_iDescription = AddStatic(kPageIgnore, L"", {8, 434, 752, 530}, SS_LEFT | SS_NOPREFIX);
+    m_iList = AddList(kPageIgnore, kIList, FillHeight(220));
+    BeginRow(kPageIgnore);
+    m_iEdit = AddEdit(kPageIgnore, kIEdit, ES_AUTOHSCROLL, FillWidth());
+    AddButton(kPageIgnore, L"添加", kIAdd, BS_PUSHBUTTON, FixedWidth(70));
+    AddButton(kPageIgnore, L"浏览…", kIBrowse, BS_PUSHBUTTON, FixedWidth(70));
+    AddButton(kPageIgnore, L"修改", kIUpdate, BS_PUSHBUTTON, FixedWidth(70));
+    AddButton(kPageIgnore, L"删除", kIRemove, BS_PUSHBUTTON, FixedWidth(70));
+    EndRow(kPageIgnore);
+    BeginRow(kPageIgnore);
+    m_iWhitelist = AddCheckBox(kPageIgnore, L"仅忽略列表中的应用（白名单）", kIWhitelist, FillWidth());
+    AddButton(kPageIgnore, L"恢复默认", kIReset, BS_PUSHBUTTON, FixedWidth(146));
+    EndRow(kPageIgnore);
+    m_iDescription = AddStatic(
+        kPageIgnore,
+        L"",
+        SS_LEFT | SS_NOPREFIX,
+        FillWidth()
+    );
 }
 
 void SettingsWindow::CreatePinsPage() {
-    AddSectionHeading(kPagePins, L"置顶项目", {16, 8, 740, 32});
-    m_pList = AddList(kPagePins, kPList, {8, 42, 8, 230}, false);
-    AddStatic(kPagePins, L"按键：", {8, 250, 100, 276});
-    m_pKey = AddEdit(kPagePins, kPKey, {120, 246, 280, 276});
-    AddStatic(kPagePins, L"标题：", {8, 286, 100, 312});
-    m_pTitle = AddEdit(kPagePins, kPTitle, {120, 282, 752, 312}, ES_AUTOHSCROLL);
-    AddStatic(kPagePins, L"内容：", {8, 322, 100, 348});
-    m_pContent = AddEdit(kPagePins, kPContent, {120, 318, 752, 470}, ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL);
+    AddSectionHeading(kPagePins, L"置顶项目");
+    m_pList = AddList(kPagePins, kPList, FillHeight(180));
+    BeginRow(kPagePins);
+    AddStatic(kPagePins, L"按键：", SS_LEFT, LabelCell());
+    m_pKey = AddEdit(kPagePins, kPKey, ES_AUTOHSCROLL, FixedWidth(160));
+    EndRow(kPagePins);
+    BeginRow(kPagePins);
+    AddStatic(kPagePins, L"标题：", SS_LEFT, LabelCell());
+    m_pTitle = AddEdit(kPagePins, kPTitle, ES_AUTOHSCROLL, FillWidth());
+    EndRow(kPagePins);
+    BeginRow(kPagePins);
+    AddStatic(kPagePins, L"内容：", SS_LEFT, LabelCell());
+    m_pContent = AddEdit(
+        kPagePins,
+        kPContent,
+        ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
+        FillWidth(140)
+    );
+    EndRow(kPagePins);
     m_pContentHint = AddStatic(
         kPagePins,
         L"只能编辑纯文本；图片和文件可以修改按键与标题，但内容保持原样。",
-        {8, 480, 752, 520},
-        SS_LEFT | SS_NOPREFIX
+        SS_LEFT | SS_NOPREFIX,
+        FillWidth()
     );
-    AddButton(kPagePins, L"保存置顶项", kPSave, {560, 536, 660, 568});
-    AddButton(kPagePins, L"删除置顶项", kPDelete, {670, 536, 752, 568});
+    BeginRow(kPagePins);
+    AddSpacer(kPagePins, FillWidth());
+    AddButton(kPagePins, L"保存置顶项", kPSave, BS_PUSHBUTTON, FixedWidth(100));
+    AddButton(kPagePins, L"删除置顶项", kPDelete, BS_PUSHBUTTON, FixedWidth(90));
+    EndRow(kPagePins);
 }
 
 void SettingsWindow::CreateAdvancedPage() {
-    AddSectionHeading(kPageAdvanced, L"复制行为", {16, 8, 740, 32});
-    m_xIgnoreEvents = AddCheckBox(kPageAdvanced, L"暂时忽略所有新的复制", kXIgnoreEvents, {16, 44, 330, 72});
+    AddSectionHeading(kPageAdvanced, L"复制行为");
+    m_xIgnoreEvents = AddCheckBox(kPageAdvanced, L"暂时忽略所有新的复制", kXIgnoreEvents, FillWidth());
     AddStatic(
         kPageAdvanced,
         L"开启后不会记录新的剪贴板变化；“只忽略下一次”会在下一次变化后自动关闭。",
-        {16, 82, 740, 126},
-        SS_LEFT | SS_NOPREFIX
+        SS_LEFT | SS_NOPREFIX,
+        FillWidth()
     );
-    m_xIgnoreNext = AddCheckBox(kPageAdvanced, L"只忽略下一次复制", kXIgnoreNext, {16, 140, 300, 168});
+    m_xIgnoreNext = AddCheckBox(kPageAdvanced, L"只忽略下一次复制", kXIgnoreNext, FillWidth());
     AddStatic(
         kPageAdvanced,
         L"macOS 中可通过 Option 点击菜单图标临时切换；Windows 版提供此处的等价设置。",
-        {16, 178, 740, 222},
-        SS_LEFT | SS_NOPREFIX
+        SS_LEFT | SS_NOPREFIX,
+        FillWidth()
     );
-    m_xClearOnQuit = AddCheckBox(kPageAdvanced, L"退出时清空历史", kXClearOnQuit, {16, 256, 300, 284});
-    AddStatic(kPageAdvanced, L"只删除未置顶项目。", {320, 256, 520, 284});
-    m_xClearClipboard = AddCheckBox(kPageAdvanced, L"同时清空系统剪贴板", kXClearClipboard, {16, 298, 330, 326});
-    AddStatic(kPageAdvanced, L"启用后，清空历史也会调用 EmptyClipboard。", {350, 298, 650, 326});
+    BeginRow(kPageAdvanced);
+    m_xClearOnQuit = AddCheckBox(kPageAdvanced, L"退出时清空历史", kXClearOnQuit, FillWidth());
+    AddStatic(kPageAdvanced, L"只删除未置顶项目。");
+    EndRow(kPageAdvanced);
+    BeginRow(kPageAdvanced);
+    m_xClearClipboard = AddCheckBox(kPageAdvanced, L"同时清空系统剪贴板", kXClearClipboard, FillWidth());
+    AddStatic(kPageAdvanced, L"启用后，清空历史也会调用 EmptyClipboard。");
+    EndRow(kPageAdvanced);
 }
 
 RECT SettingsWindow::PageRect() const {

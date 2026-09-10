@@ -18,24 +18,50 @@
 
 constexpr UINT kSettingsChangedMessage = WM_APP + 20;
 
-// A page is a real child window of the tab control.  Keeping its layout and
-// scroll state here prevents the settings window from mixing tab-local and
-// parent-window coordinates.
+// A page is a real child window of the tab control.  Keeping its semantic
+// layout and scroll state here prevents the settings window from mixing
+// tab-local and parent-window coordinates.  Pages describe blocks and rows;
+// this class measures and positions the native Win32 controls.
 class SettingsPageWindow : public CWindowImpl<SettingsPageWindow> {
 public:
     DECLARE_WND_CLASS_EX(L"ClipboardSettingsPage", CS_HREDRAW | CS_VREDRAW, COLOR_BTNFACE)
 
-    struct LayoutControl {
-        HWND window = nullptr;
-        RECT design{};
-        bool stretch_width = false;
-        bool stretch_height = false;
+    struct LayoutOptions {
+        // Widths and heights are expressed in 96-DPI logical pixels.  A zero
+        // width means that the layout engine measures the control's content.
+        int width = 0;
+        int minimum_height = 0;
+        bool fill_width = false;
+        bool fill_height = false;
+        bool label = false;
+        bool section = false;
         bool combo = false;
     };
 
-    void Configure(HWND owner, bool scrollable, int design_width, int design_height);
-    void AddLayout(HWND window, RECT design, bool stretch_width, bool stretch_height, bool combo);
-    void SetContentSize(int design_width, int design_height);
+    struct LayoutCell {
+        HWND window = nullptr;
+        LayoutOptions options{};
+    };
+
+    struct LayoutItem {
+        enum class Kind {
+            Block,
+            Row,
+        };
+
+        Kind kind = Kind::Block;
+        HWND window = nullptr;
+        LayoutOptions options{};
+        std::vector<LayoutCell> cells;
+        int gap = 8;
+    };
+
+    void Configure(HWND owner, bool scrollable, int minimum_content_height);
+    void BeginRow(int gap = 8);
+    void EndRow();
+    void AddLayout(HWND window, LayoutOptions options = {});
+    void AddSpacer(LayoutOptions options = {});
+    void SetContentSize(int minimum_content_height);
     void LayoutControls();
     int Scale(int value) const noexcept;
 
@@ -53,6 +79,11 @@ private:
     void SetScrollPosition(int position);
     void ScrollBy(int delta);
     int MaxScrollPosition(const RECT &client) const;
+    bool IsExplicitlyVisible(HWND window) const noexcept;
+    int MeasureTextWidth(HWND window) const;
+    int MeasureTextHeight(HWND window, int width) const;
+    int MeasureCellWidth(const LayoutCell &cell) const;
+    int MeasureCellHeight(const LayoutCell &cell, int width) const;
 
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnVScroll(UINT, WPARAM, LPARAM, BOOL &handled);
@@ -62,9 +93,12 @@ private:
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
 
     HWND m_owner = nullptr;
-    std::vector<LayoutControl> m_controls;
-    int m_designWidth = 760;
-    int m_designHeight = 520;
+    std::vector<LayoutItem> m_layout;
+    std::vector<LayoutCell> m_activeRow;
+    int m_activeRowGap = 8;
+    bool m_rowOpen = false;
+    int m_minimumContentHeight = 0;
+    int m_contentHeight = 0;
     bool m_scrollable = false;
     int m_scrollY = 0;
     UINT m_dpi = USER_DEFAULT_SCREEN_DPI;
@@ -100,22 +134,40 @@ public:
 private:
     static constexpr int kPageCount = 6;
 
-    HWND AddStatic(int page, const wchar_t *text, RECT relative, DWORD style = SS_LEFT);
-    HWND AddSectionHeading(int page, const wchar_t *text, RECT relative);
-    HWND AddButton(int page, const wchar_t *text, int id, RECT relative, DWORD style = BS_PUSHBUTTON);
-    HWND AddCheckBox(int page, const wchar_t *text, int id, RECT relative);
-    HWND AddEdit(int page, int id, RECT relative, DWORD style = ES_AUTOHSCROLL);
-    HWND AddCombo(int page, int id, RECT relative);
-    HWND AddList(int page, int id, RECT relative, bool stretch_height = true);
-    HWND AddHotKey(int page, int id, RECT relative);
+    using LayoutOptions = SettingsPageWindow::LayoutOptions;
+
+    void BeginRow(int page, int gap = 8);
+    void EndRow(int page);
+    HWND AddStatic(
+        int page,
+        const wchar_t *text,
+        DWORD style = SS_LEFT,
+        LayoutOptions options = {}
+    );
+    HWND AddSectionHeading(int page, const wchar_t *text);
+    HWND AddButton(
+        int page,
+        const wchar_t *text,
+        int id,
+        DWORD style = BS_PUSHBUTTON,
+        LayoutOptions options = {}
+    );
+    HWND AddCheckBox(
+        int page,
+        const wchar_t *text,
+        int id,
+        LayoutOptions options = {}
+    );
+    HWND AddEdit(int page, int id, DWORD style = ES_AUTOHSCROLL, LayoutOptions options = {});
+    HWND AddCombo(int page, int id, LayoutOptions options = {});
+    HWND AddList(int page, int id, LayoutOptions options = {});
+    HWND AddHotKey(int page, int id, LayoutOptions options = {});
     void AddLayout(
         int page,
         HWND window,
-        RECT relative,
-        bool stretch_width = false,
-        bool stretch_height = false,
-        bool combo = false
+        LayoutOptions options = {}
     );
+    void AddSpacer(int page, LayoutOptions options = {});
 
     void CreateTabs();
     bool CreatePageWindows();
