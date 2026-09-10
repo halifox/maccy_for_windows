@@ -84,24 +84,24 @@ constexpr int kPageStorage = 2;
 constexpr int kPageIgnore = 3;
 constexpr int kPagePins = 4;
 constexpr int kPageAdvanced = 5;
-// The page coordinate system is 760 logical pixels wide.  Reserve space for
-// the dialog frame and the tab control inset so the right-most controls still
-// fit at the minimum window size.
-constexpr int kMinimumSettingsWidth = 840;
-constexpr int kMinimumSettingsHeight = 640;
+// Keep the native dialog compact while leaving enough room for the widest
+// settings row at the default DPI.  The page layout remains responsive when
+// the user makes the window larger.
+constexpr int kMinimumSettingsWidth = 720;
+constexpr int kMinimumSettingsHeight = 520;
 
-constexpr int kPagePadding = 16;
-constexpr int kLayoutGap = 8;
-constexpr int kControlHeight = 30;
-constexpr int kMinimumLabelWidth = 110;
-constexpr int kDefaultInputWidth = 180;
-constexpr int kDefaultListHeight = 180;
+constexpr int kPagePadding = 12;
+constexpr int kLayoutGap = 6;
+constexpr int kControlHeight = 26;
+constexpr int kSectionHeight = 24;
+constexpr int kMinimumLabelWidth = 96;
+constexpr int kDefaultInputWidth = 150;
+constexpr int kDefaultListHeight = 150;
 
 // A Win32 drop-down combo box uses its creation/layout height for the full
 // expanded control, including the list that is normally hidden.  Keep enough
-// room for several rows so the list does not collapse to zero height when the
-// visible selection field is only about 30 pixels tall.
-constexpr int kComboTotalHeight = 180;
+// room for several rows without making the compact settings page oversized.
+constexpr int kComboTotalHeight = 144;
 
 UINT WindowDpi(HWND window) {
     if (window != nullptr) {
@@ -212,7 +212,7 @@ LayoutOptions FixedWidth(int width) {
 }
 
 LayoutOptions SectionBlock() {
-    LayoutOptions options = FillWidth(28);
+    LayoutOptions options = FillWidth(kSectionHeight);
     options.section = true;
     return options;
 }
@@ -1074,7 +1074,7 @@ void SettingsWindow::CreateGeneralPage() {
         kGUpdates,
         FillWidth()
     );
-    AddButton(kPageGeneral, L"立即检查", kGCheckNow, BS_PUSHBUTTON, FixedWidth(100));
+    AddButton(kPageGeneral, L"立即检查", kGCheckNow, BS_PUSHBUTTON, FixedWidth(88));
     EndRow(kPageGeneral);
     AddStatic(
         kPageGeneral,
@@ -1085,25 +1085,25 @@ void SettingsWindow::CreateGeneralPage() {
     AddSectionHeading(kPageGeneral, L"快捷键");
     BeginRow(kPageGeneral);
     AddStatic(kPageGeneral, L"打开：", SS_LEFT, LabelCell());
-    m_gOpenHotKey = AddHotKey(kPageGeneral, kGOpenHotKey, FixedWidth(190));
+    m_gOpenHotKey = AddHotKey(kPageGeneral, kGOpenHotKey, FixedWidth(170));
     EndRow(kPageGeneral);
     BeginRow(kPageGeneral);
     AddStatic(kPageGeneral, L"置顶：", SS_LEFT, LabelCell());
-    m_gPinHotKey = AddHotKey(kPageGeneral, kGPinHotKey, FixedWidth(190));
+    m_gPinHotKey = AddHotKey(kPageGeneral, kGPinHotKey, FixedWidth(170));
     EndRow(kPageGeneral);
     BeginRow(kPageGeneral);
     AddStatic(kPageGeneral, L"删除：", SS_LEFT, LabelCell());
-    m_gDeleteHotKey = AddHotKey(kPageGeneral, kGDeleteHotKey, FixedWidth(190));
+    m_gDeleteHotKey = AddHotKey(kPageGeneral, kGDeleteHotKey, FixedWidth(170));
     EndRow(kPageGeneral);
     BeginRow(kPageGeneral);
     AddStatic(kPageGeneral, L"预览：", SS_LEFT, LabelCell());
-    m_gPreviewHotKey = AddHotKey(kPageGeneral, kGPreviewHotKey, FixedWidth(190));
+    m_gPreviewHotKey = AddHotKey(kPageGeneral, kGPreviewHotKey, FixedWidth(170));
     EndRow(kPageGeneral);
 
     AddSectionHeading(kPageGeneral, L"行为");
     BeginRow(kPageGeneral);
     AddStatic(kPageGeneral, L"搜索模式：", SS_LEFT, LabelCell());
-    m_gSearchMode = AddCombo(kPageGeneral, kGSearchMode, FixedWidth(260));
+    m_gSearchMode = AddCombo(kPageGeneral, kGSearchMode, FixedWidth(220));
     EndRow(kPageGeneral);
     AddComboItem(m_gSearchMode, L"精确（不区分大小写）");
     AddComboItem(m_gSearchMode, L"模糊");
@@ -1117,27 +1117,27 @@ void SettingsWindow::CreateGeneralPage() {
         kGRemoveFormatting,
         FillWidth()
     );
-    AddButton(kPageGeneral, L"Windows 通知和声音设置", kGNotifications, BS_PUSHBUTTON, FixedWidth(250));
+    AddButton(kPageGeneral, L"Windows 通知和声音设置", kGNotifications, BS_PUSHBUTTON, FixedWidth(220));
 }
 
 void SettingsWindow::CreateAppearancePage() {
     AddSectionHeading(kPageAppearance, L"弹出窗口");
     BeginRow(kPageAppearance);
     AddStatic(kPageAppearance, L"弹出位置：", SS_LEFT, LabelCell());
-    m_aPopupPosition = AddCombo(kPageAppearance, kAPopupPosition, FixedWidth(160));
+    m_aPopupPosition = AddCombo(kPageAppearance, kAPopupPosition, FixedWidth(140));
     AddComboItem(m_aPopupPosition, L"光标附近");
     AddComboItem(m_aPopupPosition, L"托盘图标附近");
     AddComboItem(m_aPopupPosition, L"目标窗口中心");
     AddComboItem(m_aPopupPosition, L"屏幕中心");
     AddComboItem(m_aPopupPosition, L"上次位置");
     AddStatic(kPageAppearance, L"屏幕：", SS_LEFT, LabelCell());
-    m_aPopupScreen = AddCombo(kPageAppearance, kAPopupScreen, FixedWidth(160));
-    AddButton(kPageAppearance, L"重置位置", kAResetPosition, BS_PUSHBUTTON, FixedWidth(100));
+    m_aPopupScreen = AddCombo(kPageAppearance, kAPopupScreen, FixedWidth(140));
+    AddButton(kPageAppearance, L"重置位置", kAResetPosition, BS_PUSHBUTTON, FixedWidth(88));
     EndRow(kPageAppearance);
 
     BeginRow(kPageAppearance);
     AddStatic(kPageAppearance, L"置顶项目位置：", SS_LEFT, LabelCell());
-    m_aPinTo = AddCombo(kPageAppearance, kAPinTo, FixedWidth(160));
+    m_aPinTo = AddCombo(kPageAppearance, kAPinTo, FixedWidth(140));
     EndRow(kPageAppearance);
     AddComboItem(m_aPinTo, L"顶部");
     AddComboItem(m_aPinTo, L"底部");
@@ -1145,20 +1145,20 @@ void SettingsWindow::CreateAppearancePage() {
     AddSectionHeading(kPageAppearance, L"预览");
     BeginRow(kPageAppearance);
     AddStatic(kPageAppearance, L"图片最大高度：", SS_LEFT, LabelCell());
-    m_aImageHeight = AddEdit(kPageAppearance, kAImageHeight, ES_NUMBER, FixedWidth(90));
+    m_aImageHeight = AddEdit(kPageAppearance, kAImageHeight, ES_NUMBER, FixedWidth(72));
     AddStatic(kPageAppearance, L"像素（1–200）");
     EndRow(kPageAppearance);
     m_aOpenPreview = AddCheckBox(kPageAppearance, L"自动打开预览", kAOpenPreview, FillWidth());
     BeginRow(kPageAppearance);
     AddStatic(kPageAppearance, L"预览延迟：", SS_LEFT, LabelCell());
-    m_aPreviewDelay = AddEdit(kPageAppearance, kAPreviewDelay, ES_NUMBER, FixedWidth(90));
+    m_aPreviewDelay = AddEdit(kPageAppearance, kAPreviewDelay, ES_NUMBER, FixedWidth(72));
     AddStatic(kPageAppearance, L"毫秒（200–100000）");
     EndRow(kPageAppearance);
 
     AddSectionHeading(kPageAppearance, L"搜索结果显示");
     BeginRow(kPageAppearance);
     AddStatic(kPageAppearance, L"搜索匹配样式：", SS_LEFT, LabelCell());
-    m_aHighlight = AddCombo(kPageAppearance, kAHighlight, FixedWidth(160));
+    m_aHighlight = AddCombo(kPageAppearance, kAHighlight, FixedWidth(140));
     EndRow(kPageAppearance);
     AddComboItem(m_aHighlight, L"颜色");
     AddComboItem(m_aHighlight, L"粗体");
@@ -1167,7 +1167,7 @@ void SettingsWindow::CreateAppearancePage() {
 
     BeginRow(kPageAppearance);
     AddStatic(kPageAppearance, L"托盘图标：", SS_LEFT, LabelCell());
-    m_aMenuIcon = AddCombo(kPageAppearance, kAMenuIcon, FixedWidth(180));
+    m_aMenuIcon = AddCombo(kPageAppearance, kAMenuIcon, FixedWidth(150));
     AddComboItem(m_aMenuIcon, L"Maccy");
     AddComboItem(m_aMenuIcon, L"剪贴板");
     AddComboItem(m_aMenuIcon, L"剪刀");
@@ -1182,7 +1182,7 @@ void SettingsWindow::CreateAppearancePage() {
     );
     BeginRow(kPageAppearance);
     m_aShowSearch = AddCheckBox(kPageAppearance, L"显示搜索框", kAShowSearch, FillWidth());
-    m_aSearchVisibility = AddCombo(kPageAppearance, kASearchVisibility, FixedWidth(160));
+    m_aSearchVisibility = AddCombo(kPageAppearance, kASearchVisibility, FixedWidth(140));
     EndRow(kPageAppearance);
     AddComboItem(m_aSearchVisibility, L"始终显示");
     AddComboItem(m_aSearchVisibility, L"搜索时显示");
@@ -1214,12 +1214,12 @@ void SettingsWindow::CreateStoragePage() {
     AddSectionHeading(kPageStorage, L"历史");
     BeginRow(kPageStorage);
     AddStatic(kPageStorage, L"保留历史数量：", SS_LEFT, LabelCell());
-    m_sHistorySize = AddEdit(kPageStorage, kSHistorySize, ES_NUMBER, FixedWidth(90));
+    m_sHistorySize = AddEdit(kPageStorage, kSHistorySize, ES_NUMBER, FixedWidth(72));
     AddStatic(kPageStorage, L"条（1–999，不含置顶项）");
     EndRow(kPageStorage);
     BeginRow(kPageStorage);
     AddStatic(kPageStorage, L"排序：", SS_LEFT, LabelCell());
-    m_sSortBy = AddCombo(kPageStorage, kSSortBy, FixedWidth(210));
+    m_sSortBy = AddCombo(kPageStorage, kSSortBy, FixedWidth(180));
     EndRow(kPageStorage);
     AddComboItem(m_sSortBy, L"最近复制时间");
     AddComboItem(m_sSortBy, L"首次复制时间");
@@ -1248,17 +1248,17 @@ void SettingsWindow::CreateIgnorePage() {
         item.pszText = const_cast<wchar_t *>(name);
         m_ignoreTabs.InsertItem(m_ignoreTabs.GetItemCount(), &item);
     }
-    m_iList = AddList(kPageIgnore, kIList, FillHeight(220));
+    m_iList = AddList(kPageIgnore, kIList, FillHeight(170));
     BeginRow(kPageIgnore);
     m_iEdit = AddEdit(kPageIgnore, kIEdit, ES_AUTOHSCROLL, FillWidth());
-    AddButton(kPageIgnore, L"添加", kIAdd, BS_PUSHBUTTON, FixedWidth(70));
-    AddButton(kPageIgnore, L"浏览…", kIBrowse, BS_PUSHBUTTON, FixedWidth(70));
-    AddButton(kPageIgnore, L"修改", kIUpdate, BS_PUSHBUTTON, FixedWidth(70));
-    AddButton(kPageIgnore, L"删除", kIRemove, BS_PUSHBUTTON, FixedWidth(70));
+    AddButton(kPageIgnore, L"添加", kIAdd, BS_PUSHBUTTON, FixedWidth(64));
+    AddButton(kPageIgnore, L"浏览…", kIBrowse, BS_PUSHBUTTON, FixedWidth(64));
+    AddButton(kPageIgnore, L"修改", kIUpdate, BS_PUSHBUTTON, FixedWidth(64));
+    AddButton(kPageIgnore, L"删除", kIRemove, BS_PUSHBUTTON, FixedWidth(64));
     EndRow(kPageIgnore);
     BeginRow(kPageIgnore);
     m_iWhitelist = AddCheckBox(kPageIgnore, L"仅忽略列表中的应用（白名单）", kIWhitelist, FillWidth());
-    AddButton(kPageIgnore, L"恢复默认", kIReset, BS_PUSHBUTTON, FixedWidth(146));
+    AddButton(kPageIgnore, L"恢复默认", kIReset, BS_PUSHBUTTON, FixedWidth(126));
     EndRow(kPageIgnore);
     m_iDescription = AddStatic(
         kPageIgnore,
@@ -1270,10 +1270,10 @@ void SettingsWindow::CreateIgnorePage() {
 
 void SettingsWindow::CreatePinsPage() {
     AddSectionHeading(kPagePins, L"置顶项目");
-    m_pList = AddList(kPagePins, kPList, FillHeight(180));
+    m_pList = AddList(kPagePins, kPList, FillHeight(150));
     BeginRow(kPagePins);
     AddStatic(kPagePins, L"按键：", SS_LEFT, LabelCell());
-    m_pKey = AddEdit(kPagePins, kPKey, ES_AUTOHSCROLL, FixedWidth(160));
+    m_pKey = AddEdit(kPagePins, kPKey, ES_AUTOHSCROLL, FixedWidth(140));
     EndRow(kPagePins);
     BeginRow(kPagePins);
     AddStatic(kPagePins, L"标题：", SS_LEFT, LabelCell());
@@ -1285,7 +1285,7 @@ void SettingsWindow::CreatePinsPage() {
         kPagePins,
         kPContent,
         ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-        FillWidth(140)
+        FillWidth(120)
     );
     EndRow(kPagePins);
     m_pContentHint = AddStatic(
@@ -1296,8 +1296,8 @@ void SettingsWindow::CreatePinsPage() {
     );
     BeginRow(kPagePins);
     AddSpacer(kPagePins, FillWidth());
-    AddButton(kPagePins, L"保存置顶项", kPSave, BS_PUSHBUTTON, FixedWidth(100));
-    AddButton(kPagePins, L"删除置顶项", kPDelete, BS_PUSHBUTTON, FixedWidth(90));
+    AddButton(kPagePins, L"保存置顶项", kPSave, BS_PUSHBUTTON, FixedWidth(90));
+    AddButton(kPagePins, L"删除置顶项", kPDelete, BS_PUSHBUTTON, FixedWidth(80));
     EndRow(kPagePins);
 }
 
