@@ -431,14 +431,18 @@ public:
         return m_trayIconAdded;
     }
 
-    void ShowMainWindow() {
+    void ShowMainWindow(bool from_hotkey = false) {
         CaptureTargetWindow();
         ::SetWindowTextW(m_search, L"");
         m_searchQuery.clear();
         KillTimer(kSearchTimerId);
         HidePreview();
         RefreshHistory(L"");
-        PositionPopup();
+        if (from_hotkey) {
+            PositionPopupNearTarget();
+        } else {
+            PositionPopup();
+        }
 
         m_popupVisible = true;
         ShowWindow(SW_SHOW);
@@ -704,6 +708,32 @@ private:
         return search.result != nullptr
             ? search.result
             : MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+    }
+
+    void PositionPopupNearTarget() {
+        RECT target{};
+        const bool has_target = m_targetWindow != nullptr
+            && ::IsWindow(m_targetWindow)
+            && ::GetWindowRect(m_targetWindow, &target) == TRUE;
+
+        POINT cursor{};
+        ::GetCursorPos(&cursor);
+        const HMONITOR monitor = has_target
+            ? ::MonitorFromWindow(m_targetWindow, MONITOR_DEFAULTTONEAREST)
+            : SelectedMonitor();
+        MONITORINFO monitor_info{sizeof(monitor_info)};
+        if (monitor == nullptr || !::GetMonitorInfoW(monitor, &monitor_info)) {
+            return;
+        }
+
+        const RECT &work_area = monitor_info.rcWork;
+        int x = has_target ? target.left : cursor.x;
+        int y = has_target ? target.top : cursor.y - kPopupHeight;
+        const LONG max_x = std::max<LONG>(work_area.left, work_area.right - kPopupWidth);
+        const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - kPopupHeight);
+        x = std::clamp(x, static_cast<int>(work_area.left), static_cast<int>(max_x));
+        y = std::clamp(y, static_cast<int>(work_area.top), static_cast<int>(max_y));
+        ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, kPopupWidth, kPopupHeight, SWP_NOACTIVATE);
     }
 
     void PositionPopup() {
@@ -2142,7 +2172,7 @@ private:
         if (m_popupVisible) {
             HideMainWindow();
         } else {
-            ShowMainWindow();
+            ShowMainWindow(true);
         }
         return 0;
     }
