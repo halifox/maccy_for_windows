@@ -13,8 +13,9 @@
 
 namespace {
 
-constexpr int kPreviewWindowWidth = 450;
 constexpr int kPreviewWindowHeight = 390;
+constexpr int kMinimumPreviewWindowWidth = 260;
+constexpr int kMaximumPreviewWindowWidth = 1200;
 constexpr int kPreviewWindowMargin = 8;
 constexpr int kPreviewContentGap = 8;
 constexpr int kPreviewStatusHeight = 40;
@@ -271,7 +272,8 @@ std::wstring FormatCopyTime(sqlite3_int64 milliseconds) {
 
 } // namespace
 
-bool PreviewWindow::Initialize(HWND owner) {
+bool PreviewWindow::Initialize(HWND owner, int width) {
+    m_width = std::clamp(width, kMinimumPreviewWindowWidth, kMaximumPreviewWindowWidth);
     const HWND window = Create(owner);
     if (window == nullptr) {
         return false;
@@ -281,12 +283,34 @@ bool PreviewWindow::Initialize(HWND owner) {
         nullptr,
         0,
         0,
-        kPreviewWindowWidth,
+        m_width,
         kPreviewWindowHeight,
         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
     );
     LayoutControls();
     return true;
+}
+
+void PreviewWindow::SetWidth(int width) {
+    m_width = std::clamp(width, kMinimumPreviewWindowWidth, kMaximumPreviewWindowWidth);
+    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+        return;
+    }
+
+    RECT rect{};
+    if (!::GetWindowRect(m_hWnd, &rect)) {
+        return;
+    }
+    ::SetWindowPos(
+        m_hWnd,
+        nullptr,
+        0,
+        0,
+        m_width,
+        std::max(1L, rect.bottom - rect.top),
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
+    );
+    LayoutControls();
 }
 
 void PreviewWindow::ClearBitmap() {

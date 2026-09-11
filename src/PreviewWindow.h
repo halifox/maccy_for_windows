@@ -23,7 +23,8 @@ public:
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
     END_MSG_MAP()
 
-    bool Initialize(HWND owner);
+    bool Initialize(HWND owner, int width = 450);
+    void SetWidth(int width);
     void SetItem(const ClipboardItem &item);
     void Hide();
     bool IsVisible() const noexcept;
@@ -48,4 +49,5 @@ private:
     HBITMAP m_bitmap = nullptr;
     int m_bitmapWidth = 0;
     int m_bitmapHeight = 0;
+    int m_width = 450;
 };

@@ -68,15 +68,20 @@ struct AppSettings {
     PopupPosition popup_position = PopupPosition::WindowTopLeft;
     int popup_screen = 0; // 0 = active screen, otherwise monitor index + 1
     PinPosition pin_to = PinPosition::Top;
+    int window_width = 450;
+    int window_height = 520;
     int image_max_height = 40;
     bool open_preview_automatically = true;
     int preview_delay = 1500;
+    int preview_width = 450;
     HighlightMatch highlight_match = HighlightMatch::Bold;
     std::wstring menu_icon = L"maccy";
     bool show_in_status_bar = true;
     bool show_recent_copy_in_menu_bar = false;
     bool show_search = true;
     SearchVisibility search_visibility = SearchVisibility::Always;
+    bool show_title = true;
+    bool show_footer = true;
     bool show_special_symbols = true;
     bool show_application_icons = false;
     bool show_hex_color_swatch = true;

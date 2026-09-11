@@ -3,16 +3,21 @@
 #include <windows.h>
 #include "resource.h"
 
-// The history popup deliberately contains only the search field and history
-// list; it has no caption or extra status controls.
+// The history popup deliberately has no caption. Its title and footer are
+// content-area options controlled by AppSettings, and its border is used for
+// native edge resizing.
 IDD_HISTORY DIALOGEX 0, 0, 366, 277
-STYLE WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
+STYLE WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
 EXSTYLE WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_CONTROLPARENT
 FONT 9, "Segoe UI"
 BEGIN
     // No ES_MULTILINE: the search field is intentionally a single-line edit control.
     EDITTEXT IDC_HISTORY_SEARCH, 5, 5, 357, 18, ES_AUTOHSCROLL | WS_TABSTOP | WS_VISIBLE, WS_EX_CLIENTEDGE
-    LISTBOX IDC_HISTORY_LIST, 5, 24, 357, 248, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | LBS_OWNERDRAWFIXED | LBS_DISABLENOSCROLL | WS_VSCROLL | WS_TABSTOP | WS_VISIBLE | WS_BORDER, WS_EX_CLIENTEDGE
+    LISTBOX IDC_HISTORY_LIST, 5, 24, 357, 220, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | LBS_OWNERDRAWFIXED | LBS_DISABLENOSCROLL | WS_VSCROLL | WS_TABSTOP | WS_VISIBLE | WS_BORDER, WS_EX_CLIENTEDGE
+    PUSHBUTTON "清空", IDC_HISTORY_CLEAR, 5, 250, 82, 18, WS_TABSTOP
+    PUSHBUTTON "设置", IDC_HISTORY_SETTINGS, 91, 250, 82, 18, WS_TABSTOP
+    PUSHBUTTON "暂停记录", IDC_HISTORY_IGNORE, 177, 250, 82, 18, WS_TABSTOP
+    PUSHBUTTON "退出", IDC_HISTORY_EXIT, 263, 250, 82, 18, WS_TABSTOP
 END
 
 // The preview is a separate owned popup. The image and text controls share

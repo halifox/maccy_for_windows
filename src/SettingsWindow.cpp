@@ -32,19 +32,24 @@ enum SettingsControlId : int {
     kGNotifications,
 
     kAPopupPosition = IDC_A_POPUP_POSITION,
-    kAPopupScreen,
-    kAResetPosition,
-    kAPinTo,
-    kAImageHeight,
-    kAOpenPreview,
-    kAPreviewDelay,
-    kAHighlight,
-    kAMenuIcon,
-    kAShowStatus,
-    kAShowRecent,
-    kAShowSearch,
-    kASearchVisibility,
-    kAShowSpecial,
+    kAPopupScreen = IDC_A_POPUP_SCREEN,
+    kAResetPosition = IDC_A_RESET_POSITION,
+    kAPinTo = IDC_A_PIN_TO,
+    kAWindowWidth = IDC_A_WINDOW_WIDTH,
+    kAWindowHeight = IDC_A_WINDOW_HEIGHT,
+    kAImageHeight = IDC_A_IMAGE_HEIGHT,
+    kAOpenPreview = IDC_A_OPEN_PREVIEW,
+    kAPreviewDelay = IDC_A_PREVIEW_DELAY,
+    kAPreviewWidth = IDC_A_PREVIEW_WIDTH,
+    kAHighlight = IDC_A_HIGHLIGHT,
+    kAMenuIcon = IDC_A_MENU_ICON,
+    kAShowStatus = IDC_A_SHOW_STATUS,
+    kAShowRecent = IDC_A_SHOW_RECENT,
+    kAShowSearch = IDC_A_SHOW_SEARCH,
+    kASearchVisibility = IDC_A_SEARCH_VISIBILITY,
+    kAShowTitle = IDC_A_SHOW_TITLE,
+    kAShowFooter = IDC_A_SHOW_FOOTER,
+    kAShowSpecial = IDC_A_SHOW_SPECIAL,
     kAShowIcons = IDC_A_SHOW_ICONS,
     kAShowSwatch = IDC_A_SHOW_SWATCH,
 
@@ -402,15 +407,20 @@ void SettingsWindow::BindControls() {
     m_aPopupPosition = get(kPageAppearance, kAPopupPosition);
     m_aPopupScreen = get(kPageAppearance, kAPopupScreen);
     m_aPinTo = get(kPageAppearance, kAPinTo);
+    m_aWindowWidth = get(kPageAppearance, kAWindowWidth);
+    m_aWindowHeight = get(kPageAppearance, kAWindowHeight);
     m_aImageHeight = get(kPageAppearance, kAImageHeight);
     m_aOpenPreview = get(kPageAppearance, kAOpenPreview);
     m_aPreviewDelay = get(kPageAppearance, kAPreviewDelay);
+    m_aPreviewWidth = get(kPageAppearance, kAPreviewWidth);
     m_aHighlight = get(kPageAppearance, kAHighlight);
     m_aMenuIcon = get(kPageAppearance, kAMenuIcon);
     m_aShowStatus = get(kPageAppearance, kAShowStatus);
     m_aShowRecent = get(kPageAppearance, kAShowRecent);
     m_aShowSearch = get(kPageAppearance, kAShowSearch);
     m_aSearchVisibility = get(kPageAppearance, kASearchVisibility);
+    m_aShowTitle = get(kPageAppearance, kAShowTitle);
+    m_aShowFooter = get(kPageAppearance, kAShowFooter);
     m_aShowSpecial = get(kPageAppearance, kAShowSpecial);
     m_aShowIcons = get(kPageAppearance, kAShowIcons);
     m_aShowSwatch = get(kPageAppearance, kAShowSwatch);
@@ -622,9 +632,12 @@ void SettingsWindow::LoadAppearanceControls() {
     }
     SelectCombo(m_aPopupScreen, std::clamp(m_settings.popup_screen, 0, monitor_count));
     SelectCombo(m_aPinTo, static_cast<int>(m_settings.pin_to));
+    ::SetWindowTextW(m_aWindowWidth, std::to_wstring(m_settings.window_width).c_str());
+    ::SetWindowTextW(m_aWindowHeight, std::to_wstring(m_settings.window_height).c_str());
     ::SetWindowTextW(m_aImageHeight, std::to_wstring(m_settings.image_max_height).c_str());
     SetCheck(m_aOpenPreview, m_settings.open_preview_automatically);
     ::SetWindowTextW(m_aPreviewDelay, std::to_wstring(m_settings.preview_delay).c_str());
+    ::SetWindowTextW(m_aPreviewWidth, std::to_wstring(m_settings.preview_width).c_str());
     SelectCombo(m_aHighlight, static_cast<int>(m_settings.highlight_match));
 
     const std::array<std::wstring, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
@@ -640,6 +653,8 @@ void SettingsWindow::LoadAppearanceControls() {
     SetCheck(m_aShowRecent, m_settings.show_recent_copy_in_menu_bar);
     SetCheck(m_aShowSearch, m_settings.show_search);
     SelectCombo(m_aSearchVisibility, static_cast<int>(m_settings.search_visibility));
+    SetCheck(m_aShowTitle, m_settings.show_title);
+    SetCheck(m_aShowFooter, m_settings.show_footer);
     SetCheck(m_aShowSpecial, m_settings.show_special_symbols);
     SetCheck(m_aShowIcons, m_settings.show_application_icons);
     SetCheck(m_aShowSwatch, m_settings.show_hex_color_swatch);
@@ -759,6 +774,18 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             m_settings.popup_position = static_cast<PopupPosition>(ComboSelection(m_aPopupPosition));
             m_settings.popup_screen = ComboSelection(m_aPopupScreen);
             m_settings.pin_to = static_cast<PinPosition>(ComboSelection(m_aPinTo));
+            m_settings.window_width = ReadValidatedInteger(
+                m_aWindowWidth,
+                m_settings.window_width,
+                320,
+                1600
+            );
+            m_settings.window_height = ReadValidatedInteger(
+                m_aWindowHeight,
+                m_settings.window_height,
+                260,
+                1200
+            );
             m_settings.image_max_height = ReadValidatedInteger(
                 m_aImageHeight,
                 m_settings.image_max_height,
@@ -772,6 +799,12 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
                 200,
                 100000
             );
+            m_settings.preview_width = ReadValidatedInteger(
+                m_aPreviewWidth,
+                m_settings.preview_width,
+                260,
+                1200
+            );
             m_settings.highlight_match = static_cast<HighlightMatch>(ComboSelection(m_aHighlight));
             const std::array<const wchar_t *, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
             m_settings.menu_icon = icons[static_cast<size_t>(std::clamp(ComboSelection(m_aMenuIcon), 0, 3))];
@@ -779,6 +812,8 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             m_settings.show_recent_copy_in_menu_bar = IsChecked(m_aShowRecent);
             m_settings.show_search = IsChecked(m_aShowSearch);
             m_settings.search_visibility = static_cast<SearchVisibility>(ComboSelection(m_aSearchVisibility));
+            m_settings.show_title = IsChecked(m_aShowTitle);
+            m_settings.show_footer = IsChecked(m_aShowFooter);
             m_settings.show_special_symbols = IsChecked(m_aShowSpecial);
             m_settings.show_application_icons = IsChecked(m_aShowIcons);
             m_settings.show_hex_color_swatch = IsChecked(m_aShowSwatch);
@@ -1128,10 +1163,11 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         id == kGDeleteHotKey || id == kGPreviewHotKey || id == kGSearchMode ||
         id == kGPasteByDefault || id == kGRemoveFormatting;
     const bool appearance_change =
-        id == kAPopupPosition || id == kAPopupScreen || id == kAPinTo || id == kAImageHeight ||
-        id == kAOpenPreview || id == kAPreviewDelay || id == kAHighlight || id == kAMenuIcon ||
+        id == kAPopupPosition || id == kAPopupScreen || id == kAPinTo || id == kAWindowWidth ||
+        id == kAWindowHeight || id == kAImageHeight || id == kAOpenPreview || id == kAPreviewDelay ||
+        id == kAPreviewWidth || id == kAHighlight || id == kAMenuIcon ||
         id == kAShowStatus || id == kAShowRecent || id == kAShowSearch || id == kASearchVisibility ||
-        id == kAShowSpecial || id == kAShowIcons || id == kAShowSwatch;
+        id == kAShowTitle || id == kAShowFooter || id == kAShowSpecial || id == kAShowIcons || id == kAShowSwatch;
     const bool storage_change =
         id == kSSaveFiles || id == kSSaveImages || id == kSSaveText || id == kSHistorySize || id == kSSortBy;
     const bool advanced_change =
@@ -1142,7 +1178,8 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     const bool hotkey_changed = notification == EN_CHANGE &&
         (id == kGOpenHotKey || id == kGPinHotKey || id == kGDeleteHotKey || id == kGPreviewHotKey);
     const bool numeric_finished = notification == EN_KILLFOCUS &&
-        (id == kAImageHeight || id == kAPreviewDelay || id == kSHistorySize);
+        (id == kAWindowWidth || id == kAWindowHeight || id == kAImageHeight || id == kAPreviewDelay ||
+         id == kAPreviewWidth || id == kSHistorySize);
 
     if ((general_change && (checkbox_changed || combo_changed || hotkey_changed)) ||
         (appearance_change && (checkbox_changed || combo_changed || numeric_finished)) ||

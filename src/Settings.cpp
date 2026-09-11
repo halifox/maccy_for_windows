@@ -152,6 +152,8 @@ AppSettings AppSettings::Load(const Database &database) {
         0,
         1
     ));
+    settings.window_width = ReadInt(database, L"appearance.windowWidth", settings.window_width, 320, 1600);
+    settings.window_height = ReadInt(database, L"appearance.windowHeight", settings.window_height, 260, 1200);
     settings.image_max_height = ReadInt(database, L"appearance.imageMaxHeight", settings.image_max_height, 1, 200);
     settings.open_preview_automatically = ReadBool(
         database,
@@ -159,6 +161,7 @@ AppSettings AppSettings::Load(const Database &database) {
         settings.open_preview_automatically
     );
     settings.preview_delay = ReadInt(database, L"appearance.previewDelay", settings.preview_delay, 200, 100000);
+    settings.preview_width = ReadInt(database, L"appearance.previewWidth", settings.preview_width, 260, 1200);
     settings.highlight_match = static_cast<HighlightMatch>(ReadInt(
         database,
         L"appearance.highlightMatch",
@@ -181,6 +184,8 @@ AppSettings AppSettings::Load(const Database &database) {
         0,
         1
     ));
+    settings.show_title = ReadBool(database, L"appearance.showTitle", settings.show_title);
+    settings.show_footer = ReadBool(database, L"appearance.showFooter", settings.show_footer);
     settings.show_special_symbols = ReadBool(
         database,
         L"appearance.showSpecialSymbols",
@@ -262,15 +267,20 @@ void AppSettings::Save(const Database &database) const {
         WriteInt(database, L"appearance.popupPosition", static_cast<int>(popup_position));
         WriteInt(database, L"appearance.popupScreen", popup_screen);
         WriteInt(database, L"appearance.pinTo", static_cast<int>(pin_to));
+        WriteInt(database, L"appearance.windowWidth", window_width);
+        WriteInt(database, L"appearance.windowHeight", window_height);
         WriteInt(database, L"appearance.imageMaxHeight", image_max_height);
         WriteBool(database, L"appearance.openPreviewAutomatically", open_preview_automatically);
         WriteInt(database, L"appearance.previewDelay", preview_delay);
+        WriteInt(database, L"appearance.previewWidth", preview_width);
         WriteInt(database, L"appearance.highlightMatch", static_cast<int>(highlight_match));
         database.SetSetting(L"appearance.menuIcon", menu_icon);
         WriteBool(database, L"appearance.showInStatusBar", show_in_status_bar);
         WriteBool(database, L"appearance.showRecentCopyInMenuBar", show_recent_copy_in_menu_bar);
         WriteBool(database, L"appearance.showSearch", show_search);
         WriteInt(database, L"appearance.searchVisibility", static_cast<int>(search_visibility));
+        WriteBool(database, L"appearance.showTitle", show_title);
+        WriteBool(database, L"appearance.showFooter", show_footer);
         WriteBool(database, L"appearance.showSpecialSymbols", show_special_symbols);
         WriteBool(database, L"appearance.showApplicationIcons", show_application_icons);
         WriteBool(database, L"appearance.showHexColorSwatch", show_hex_color_swatch);

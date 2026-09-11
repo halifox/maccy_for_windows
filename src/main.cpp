@@ -54,12 +54,19 @@ constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
 // Maccy's default history panel is about 450 px wide. Keep the Windows
 // history panel compact as well so the list remains easy to scan beside the
-// independent preview window.
-constexpr int kPopupWidth = 450;
-constexpr int kPopupHeight = 520;
+// independent preview window. The persisted values can be changed from the
+// Appearance page or by resizing the borderless popup directly.
+constexpr int kMinimumPopupWidth = 320;
+constexpr int kMaximumPopupWidth = 1600;
+constexpr int kMinimumPopupHeight = 260;
+constexpr int kMaximumPopupHeight = 1200;
 constexpr int kHistoryWindowMargin = 8;
 constexpr int kHistorySearchGap = 6;
 constexpr int kHistoryFallbackSearchHeight = 24;
+constexpr int kHistoryTitleWidth = 78;
+constexpr int kHistoryFooterHeight = 24;
+constexpr int kHistoryFooterGap = 6;
+constexpr int kResizeBorder = 8;
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
 
@@ -394,6 +401,10 @@ public:
     BEGIN_MSG_MAP(MainWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
+        MESSAGE_HANDLER(WM_MOVE, OnMove)
+        MESSAGE_HANDLER(WM_EXITSIZEMOVE, OnExitSizeMove)
+        MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
+        MESSAGE_HANDLER(WM_NCHITTEST, OnNcHitTest)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
@@ -534,7 +545,13 @@ private:
     bool BindControls() {
         m_search = ::GetDlgItem(m_hWnd, kSearchControlId);
         m_historyList = ::GetDlgItem(m_hWnd, kHistoryListControlId);
-        if (m_search == nullptr || m_historyList == nullptr) {
+        m_footerClear = ::GetDlgItem(m_hWnd, IDC_HISTORY_CLEAR);
+        m_footerSettings = ::GetDlgItem(m_hWnd, IDC_HISTORY_SETTINGS);
+        m_footerIgnore = ::GetDlgItem(m_hWnd, IDC_HISTORY_IGNORE);
+        m_footerExit = ::GetDlgItem(m_hWnd, IDC_HISTORY_EXIT);
+        if (m_search == nullptr || m_historyList == nullptr ||
+            m_footerClear == nullptr || m_footerSettings == nullptr ||
+            m_footerIgnore == nullptr || m_footerExit == nullptr) {
             return false;
         }
 
@@ -554,7 +571,7 @@ private:
         const HFONT font = m_normalFont != nullptr
             ? m_normalFont
             : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        for (HWND control : {m_search, m_historyList}) {
+        for (HWND control : {m_search, m_historyList, m_footerClear, m_footerSettings, m_footerIgnore, m_footerExit}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
         LONG_PTR search_style = ::GetWindowLongPtrW(m_search, GWL_STYLE);
@@ -580,29 +597,50 @@ private:
         const int height = std::max(1L, client.bottom - client.top);
         const int control_width = std::max(1, width - 2 * kHistoryWindowMargin);
         const bool show_search = ::IsWindowVisible(m_search) != FALSE;
+        const bool show_title = m_settings.show_title;
+        const bool show_footer = m_settings.show_footer;
+        const int search_height = std::max(kHistoryFallbackSearchHeight, m_searchHeight);
+        const int title_width = std::min(kHistoryTitleWidth, std::max(1, control_width - 1));
 
-        int list_top = kHistoryWindowMargin;
+        m_titleRect = {};
+        int header_height = 0;
+        if (show_title) {
+            m_titleRect = {
+                kHistoryWindowMargin,
+                kHistoryWindowMargin,
+                kHistoryWindowMargin + title_width,
+                kHistoryWindowMargin + search_height,
+            };
+            header_height = search_height;
+        }
+
         if (show_search) {
-            const int search_height = std::max(
-                kHistoryFallbackSearchHeight,
-                m_searchHeight
+            const int search_left = show_title
+                ? kHistoryWindowMargin + title_width + kHistorySearchGap
+                : kHistoryWindowMargin;
+            const int search_width = std::max(
+                1,
+                width - search_left - kHistoryWindowMargin
             );
             ::SetWindowPos(
                 m_search,
                 nullptr,
+                search_left,
                 kHistoryWindowMargin,
-                kHistoryWindowMargin,
-                control_width,
+                search_width,
                 search_height,
                 SWP_NOZORDER | SWP_NOACTIVATE
             );
-            list_top += search_height + kHistorySearchGap;
+            header_height = std::max(header_height, search_height);
         }
 
-        const int list_height = std::max(
-            1,
-            height - list_top - kHistoryWindowMargin
-        );
+        const int list_top = kHistoryWindowMargin +
+            (header_height > 0 ? header_height + kHistorySearchGap : 0);
+        const int footer_top = height - kHistoryWindowMargin - kHistoryFooterHeight;
+        const int list_bottom = show_footer
+            ? footer_top - kHistoryFooterGap
+            : height - kHistoryWindowMargin;
+        const int list_height = std::max(1, list_bottom - list_top);
         ::SetWindowPos(
             m_historyList,
             nullptr,
@@ -612,6 +650,39 @@ private:
             list_height,
             SWP_NOZORDER | SWP_NOACTIVATE
         );
+
+        const std::array<HWND, 4> footer_controls = {
+            m_footerClear,
+            m_footerSettings,
+            m_footerIgnore,
+            m_footerExit,
+        };
+        const int footer_gap = 4;
+        const int footer_width = std::max(
+            1,
+            (control_width - footer_gap * static_cast<int>(footer_controls.size() - 1)) /
+                static_cast<int>(footer_controls.size())
+        );
+        for (size_t index = 0; index < footer_controls.size(); ++index) {
+            const int left = kHistoryWindowMargin +
+                static_cast<int>(index) * (footer_width + footer_gap);
+            const int remaining = width - kHistoryWindowMargin - left;
+            const int current_width = index + 1 == footer_controls.size()
+                ? std::max(1, remaining)
+                : footer_width;
+            ::ShowWindow(footer_controls[index], show_footer ? SW_SHOW : SW_HIDE);
+            ::SetWindowPos(
+                footer_controls[index],
+                nullptr,
+                left,
+                std::max(kHistoryWindowMargin, footer_top),
+                current_width,
+                kHistoryFooterHeight,
+                SWP_NOZORDER | SWP_NOACTIVATE
+            );
+        }
+        UpdateFooterControls();
+        ::InvalidateRect(m_hWnd, nullptr, TRUE);
     }
 
     void ApplyHistoryVisibility() {
@@ -622,6 +693,7 @@ private:
             (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
         SetHistorySearchVisible(show_search);
         ::ShowWindow(m_historyList, SW_SHOW);
+        LayoutHistoryControls();
     }
 
     void SetHistorySearchVisible(bool visible) {
@@ -630,6 +702,16 @@ private:
         }
         ::ShowWindow(m_search, visible ? SW_SHOW : SW_HIDE);
         LayoutHistoryControls();
+    }
+
+    void UpdateFooterControls() {
+        if (m_footerIgnore == nullptr || !::IsWindow(m_footerIgnore)) {
+            return;
+        }
+        ::SetWindowTextW(
+            m_footerIgnore,
+            m_settings.ignore_events ? L"继续记录" : L"暂停记录"
+        );
     }
 
     void RestoreControlSubclass(HWND control, WNDPROC original) {
@@ -656,6 +738,14 @@ private:
             (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
     }
 
+    int PopupWidth() const {
+        return std::clamp(m_settings.window_width, kMinimumPopupWidth, kMaximumPopupWidth);
+    }
+
+    int PopupHeight() const {
+        return std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
+    }
+
     void PositionOnMonitor(HMONITOR monitor, bool center) {
         MONITORINFO monitor_info{sizeof(monitor_info)};
         if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitor_info)) {
@@ -665,14 +755,14 @@ private:
         int x = work_area.left;
         int y = work_area.top;
         if (center) {
-            x = work_area.left + ((work_area.right - work_area.left) - kPopupWidth) / 2;
-            y = work_area.top + ((work_area.bottom - work_area.top) - kPopupHeight) / 2;
+            x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
+            y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
         }
-        const LONG max_x = std::max<LONG>(work_area.left, work_area.right - kPopupWidth);
-        const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - kPopupHeight);
+        const LONG max_x = std::max<LONG>(work_area.left, work_area.right - PopupWidth());
+        const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - PopupHeight());
         x = std::clamp(x, static_cast<int>(work_area.left), static_cast<int>(max_x));
         y = std::clamp(y, static_cast<int>(work_area.top), static_cast<int>(max_y));
-        ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, kPopupWidth, kPopupHeight, SWP_NOACTIVATE);
+        ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
     }
 
     HMONITOR SelectedMonitor() const {
@@ -722,16 +812,16 @@ private:
         }
         const RECT &work_area = monitor_info.rcWork;
         int x = cursor.x;
-        int y = cursor.y - kPopupHeight;
+        int y = cursor.y - PopupHeight();
 
         switch (m_settings.popup_position) {
         case PopupPosition::WindowCenter: {
             if (has_target) {
-                x = target.left + ((target.right - target.left) - kPopupWidth) / 2;
-                y = target.top + ((target.bottom - target.top) - kPopupHeight) / 2;
+                x = target.left + ((target.right - target.left) - PopupWidth()) / 2;
+                y = target.top + ((target.bottom - target.top) - PopupHeight()) / 2;
             } else {
-                x = work_area.left + ((work_area.right - work_area.left) - kPopupWidth) / 2;
-                y = work_area.top + ((work_area.bottom - work_area.top) - kPopupHeight) / 2;
+                x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
+                y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
             }
             break;
         }
@@ -742,16 +832,16 @@ private:
             }
             break;
         case PopupPosition::ScreenCenter:
-            x = work_area.left + ((work_area.right - work_area.left) - kPopupWidth) / 2;
-            y = work_area.top + ((work_area.bottom - work_area.top) - kPopupHeight) / 2;
+            x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
+            y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
             break;
         case PopupPosition::LastPosition:
             if (m_settings.popup_x != 0 || m_settings.popup_y != 0) {
                 x = m_settings.popup_x;
                 y = m_settings.popup_y;
             } else {
-                x = work_area.left + ((work_area.right - work_area.left) - kPopupWidth) / 2;
-                y = work_area.top + ((work_area.bottom - work_area.top) - kPopupHeight) / 2;
+                x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
+                y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
             }
             break;
         case PopupPosition::StatusItem: {
@@ -761,8 +851,8 @@ private:
             identifier.uID = kTrayIconId;
             RECT tray_rect{};
             if (m_trayIconAdded && SUCCEEDED(Shell_NotifyIconGetRect(&identifier, &tray_rect))) {
-                x = tray_rect.left + ((tray_rect.right - tray_rect.left) - kPopupWidth) / 2;
-                y = tray_rect.top - kPopupHeight - 6;
+                x = tray_rect.left + ((tray_rect.right - tray_rect.left) - PopupWidth()) / 2;
+                y = tray_rect.top - PopupHeight() - 6;
             }
             break;
         }
@@ -771,11 +861,11 @@ private:
             break;
         }
 
-        const LONG max_x = std::max<LONG>(work_area.left, work_area.right - kPopupWidth);
-        const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - kPopupHeight);
+        const LONG max_x = std::max<LONG>(work_area.left, work_area.right - PopupWidth());
+        const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - PopupHeight());
         x = std::clamp(x, static_cast<int>(work_area.left), static_cast<int>(max_x));
         y = std::clamp(y, static_cast<int>(work_area.top), static_cast<int>(max_y));
-        ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, kPopupWidth, kPopupHeight, SWP_NOACTIVATE);
+        ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
     }
 
     void PositionPreviewWindow() {
@@ -1658,20 +1748,40 @@ private:
         m_iconCache.clear();
     }
 
+    void SaveWindowGeometry() {
+        RECT rect{};
+        if (!::GetWindowRect(m_hWnd, &rect)) {
+            return;
+        }
+
+        const int width = std::clamp(
+            static_cast<int>(rect.right - rect.left),
+            kMinimumPopupWidth,
+            kMaximumPopupWidth
+        );
+        const int height = std::clamp(
+            static_cast<int>(rect.bottom - rect.top),
+            kMinimumPopupHeight,
+            kMaximumPopupHeight
+        );
+        m_settings.popup_x = rect.left;
+        m_settings.popup_y = rect.top;
+        m_settings.window_width = width;
+        m_settings.window_height = height;
+        try {
+            m_database.SetSetting(L"appearance.windowX", std::to_wstring(m_settings.popup_x));
+            m_database.SetSetting(L"appearance.windowY", std::to_wstring(m_settings.popup_y));
+            m_database.SetSetting(L"appearance.windowWidth", std::to_wstring(width));
+            m_database.SetSetting(L"appearance.windowHeight", std::to_wstring(height));
+        } catch (...) {
+        }
+    }
+
     void HideMainWindow() {
         if (!m_popupVisible) {
             return;
         }
-        RECT rect{};
-        if (::GetWindowRect(m_hWnd, &rect)) {
-            m_settings.popup_x = rect.left;
-            m_settings.popup_y = rect.top;
-            try {
-                m_database.SetSetting(L"appearance.windowX", std::to_wstring(m_settings.popup_x));
-                m_database.SetSetting(L"appearance.windowY", std::to_wstring(m_settings.popup_y));
-            } catch (...) {
-            }
-        }
+        SaveWindowGeometry();
         m_popupVisible = false;
         HidePreview();
         ShowWindow(SW_HIDE);
@@ -1917,7 +2027,7 @@ private:
             } catch (...) {
             }
         }
-        if (m_settings.clear_system_clipboard && ::OpenClipboard(m_hWnd)) {
+        if (m_settings.clear_on_quit && m_settings.clear_system_clipboard && ::OpenClipboard(m_hWnd)) {
             EmptyClipboard();
             CloseClipboard();
         }
@@ -1932,6 +2042,25 @@ private:
         const AppSettings previous = m_settings;
         m_settings = AppSettings::Load(m_database);
         ReloadIgnoreLists();
+        if (previous.preview_width != m_settings.preview_width) {
+            m_previewWindow.SetWidth(m_settings.preview_width);
+        }
+        if (m_popupVisible &&
+            (previous.window_width != m_settings.window_width ||
+             previous.window_height != m_settings.window_height)) {
+            RECT rect{};
+            if (::GetWindowRect(m_hWnd, &rect)) {
+                ::SetWindowPos(
+                    m_hWnd,
+                    HWND_TOPMOST,
+                    rect.left,
+                    rect.top,
+                    PopupWidth(),
+                    PopupHeight(),
+                    SWP_NOACTIVATE
+                );
+            }
+        }
         if (!SameHotKey(previous.open_hotkey, m_settings.open_hotkey) ||
             previous.show_in_status_bar != m_settings.show_in_status_bar) {
             if (m_hotkeyRegistered) {
@@ -1947,7 +2076,7 @@ private:
         }
         UpdateTrayIcon();
         if (!m_settings.show_search) {
-        ::SetWindowTextW(m_search, L"");
+            ::SetWindowTextW(m_search, L"");
             m_searchQuery.clear();
         }
         RefreshHistory(m_searchQuery);
@@ -1962,7 +2091,7 @@ private:
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = TRUE;
         CreateFonts();
-        if (!BindControls() || !m_previewWindow.Initialize(m_hWnd)) {
+        if (!BindControls() || !m_previewWindow.Initialize(m_hWnd, m_settings.preview_width)) {
             handled = FALSE;
             return FALSE;
         }
@@ -1988,12 +2117,99 @@ private:
         return 0;
     }
 
+    LRESULT OnMove(UINT, WPARAM, LPARAM, BOOL &handled) {
+        handled = TRUE;
+        if (m_previewWindow.IsVisible()) {
+            PositionPreviewWindow();
+        }
+        return 0;
+    }
+
+    LRESULT OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL &handled) {
+        handled = TRUE;
+        SaveWindowGeometry();
+        if (m_previewWindow.IsVisible()) {
+            PositionPreviewWindow();
+        }
+        return 0;
+    }
+
+    LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+        auto *info = reinterpret_cast<MINMAXINFO *>(lParam);
+        if (info == nullptr) {
+            handled = FALSE;
+            return 0;
+        }
+        info->ptMinTrackSize.x = kMinimumPopupWidth;
+        info->ptMinTrackSize.y = kMinimumPopupHeight;
+        info->ptMaxTrackSize.x = kMaximumPopupWidth;
+        info->ptMaxTrackSize.y = kMaximumPopupHeight;
+        handled = TRUE;
+        return 0;
+    }
+
+    LRESULT OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+        RECT rect{};
+        if (!::GetWindowRect(m_hWnd, &rect)) {
+            handled = FALSE;
+            return 0;
+        }
+
+        const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        const bool left = point.x < rect.left + kResizeBorder;
+        const bool right = point.x >= rect.right - kResizeBorder;
+        const bool top = point.y < rect.top + kResizeBorder;
+        const bool bottom = point.y >= rect.bottom - kResizeBorder;
+
+        handled = TRUE;
+        if (top && left) {
+            return HTTOPLEFT;
+        }
+        if (top && right) {
+            return HTTOPRIGHT;
+        }
+        if (bottom && left) {
+            return HTBOTTOMLEFT;
+        }
+        if (bottom && right) {
+            return HTBOTTOMRIGHT;
+        }
+        if (left) {
+            return HTLEFT;
+        }
+        if (right) {
+            return HTRIGHT;
+        }
+        if (top) {
+            return HTTOP;
+        }
+        if (bottom) {
+            return HTBOTTOM;
+        }
+        // The popup has no caption. Empty content-area space behaves like a
+        // caption so the user can move it without bringing back a title bar.
+        return HTCAPTION;
+    }
+
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL &) {
         PAINTSTRUCT paint{};
         HDC dc = BeginPaint(&paint);
         RECT client{};
         GetClientRect(&client);
         FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
+        if (m_settings.show_title && !IsRectEmpty(&m_titleRect)) {
+            const HFONT previous_font = static_cast<HFONT>(SelectObject(
+                dc,
+                m_boldFont != nullptr ? m_boldFont : m_normalFont
+            ));
+            const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
+            const int previous_mode = SetBkMode(dc, TRANSPARENT);
+            RECT title = m_titleRect;
+            DrawTextW(dc, L"Clipboard", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            SetBkMode(dc, previous_mode);
+            SetTextColor(dc, previous_color);
+            SelectObject(dc, previous_font);
+        }
         EndPaint(&paint);
         return 0;
     }
@@ -2077,9 +2293,38 @@ private:
                 m_settings.Save(m_database);
             } catch (...) {
             }
+            UpdateFooterControls();
             return 0;
         }
         if (command == kTrayCommandExit && notification == 0) {
+            handled = TRUE;
+            ExitApplication();
+            return 0;
+        }
+        if (notification == BN_CLICKED && command == IDC_HISTORY_CLEAR) {
+            handled = TRUE;
+            ClearHistory();
+            return 0;
+        }
+        if (notification == BN_CLICKED && command == IDC_HISTORY_SETTINGS) {
+            handled = TRUE;
+            OpenSettings();
+            return 0;
+        }
+        if (notification == BN_CLICKED && command == IDC_HISTORY_IGNORE) {
+            handled = TRUE;
+            m_settings.ignore_events = !m_settings.ignore_events;
+            if (!m_settings.ignore_events) {
+                m_settings.ignore_only_next_event = false;
+            }
+            try {
+                m_settings.Save(m_database);
+            } catch (...) {
+            }
+            UpdateFooterControls();
+            return 0;
+        }
+        if (notification == BN_CLICKED && command == IDC_HISTORY_EXIT) {
             handled = TRUE;
             ExitApplication();
             return 0;
@@ -2131,6 +2376,7 @@ private:
                     m_settings.ignore_events = false;
                     m_settings.ignore_only_next_event = false;
                     m_settings.Save(m_database);
+                    UpdateFooterControls();
                 }
                 return 0;
             }
@@ -2246,6 +2492,10 @@ private:
     AppSettings m_settings;
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;
+    HWND m_footerClear = nullptr;
+    HWND m_footerSettings = nullptr;
+    HWND m_footerIgnore = nullptr;
+    HWND m_footerExit = nullptr;
     PreviewWindow m_previewWindow;
     WNDPROC m_originalSearchProc = nullptr;
     WNDPROC m_originalHistoryListProc = nullptr;
@@ -2266,6 +2516,7 @@ private:
     std::wstring m_searchQuery;
     std::wstring m_lastCopyText;
     int m_searchHeight = 0;
+    RECT m_titleRect{};
     int m_hoveredItemIndex = -1;
     sqlite3_int64 m_hoveredItemId = 0;
     sqlite3_int64 m_previewCandidateId = 0;
