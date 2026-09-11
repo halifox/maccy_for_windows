@@ -62,13 +62,15 @@ constexpr int kMinimumPopupWidth = 320;
 constexpr int kMaximumPopupWidth = 1600;
 constexpr int kMinimumPopupHeight = 260;
 constexpr int kMaximumPopupHeight = 1200;
-constexpr int kHistoryWindowMargin = 10;
+constexpr int kHistoryWindowMargin = 6;
 constexpr int kHistorySearchGap = 6;
-constexpr int kHistoryFallbackSearchHeight = 20;
-constexpr int kHistoryItemHeight = 24;
+constexpr int kHistorySearchHeight = 23;
+constexpr int kHistoryItemHeight = 22;
 constexpr int kHistoryTitleWidth = 62;
 constexpr int kHistoryFooterHeight = 24;
 constexpr int kHistoryFooterGap = 6;
+constexpr int kHistorySectionGap = 6;
+constexpr int kHistoryFooterCount = 4;
 constexpr int kResizeBorder = 8;
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
@@ -713,7 +715,7 @@ private:
         const int margin = kHistoryWindowMargin;
         const int width = std::max(1L, client.right - 2 * margin);
         const bool header = ::IsWindowVisible(m_search) != FALSE;
-        const int headerHeight = header ? 28 : 0;
+        const int headerHeight = header ? kHistorySearchHeight : 0;
         const int titleWidth = header && m_settings.show_title ? kHistoryTitleWidth : 0;
         m_titleRect = {margin, margin, margin + titleWidth, margin + headerHeight};
         const HWND title = ::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE);
@@ -722,24 +724,35 @@ private:
         const int searchLeft = margin + titleWidth + (titleWidth ? 6 : 0);
         m_searchRect = {searchLeft, margin, margin + width - 32, margin + headerHeight};
         if (header) {
-            ::SetWindowPos(m_search, nullptr, searchLeft + 24, margin + 5,
-                std::max(1L, m_searchRect.right - searchLeft - 50), 20, SWP_NOZORDER | SWP_NOACTIVATE);
-            ::SetWindowPos(m_searchClear, nullptr, m_searchRect.right - 24, margin + 2, 22, 24, SWP_NOZORDER | SWP_NOACTIVATE);
-            ::SetWindowPos(m_previewToggle, nullptr, margin + width - 26, margin + 2, 26, 24, SWP_NOZORDER | SWP_NOACTIVATE);
+            ::SetWindowPos(m_search, nullptr, searchLeft + 24, margin,
+                std::max(1L, m_searchRect.right - searchLeft - 50), kHistorySearchHeight,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+            ::SetWindowPos(m_searchClear, nullptr, m_searchRect.right - 24, margin, 22,
+                kHistorySearchHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+            ::SetWindowPos(m_previewToggle, nullptr, margin + width - 26, margin, 26,
+                kHistorySearchHeight, SWP_NOZORDER | SWP_NOACTIVATE);
         }
         ::ShowWindow(m_searchClear, header && !ReadWindowText(m_search).empty() ? SW_SHOW : SW_HIDE);
         ::ShowWindow(m_previewToggle, header ? SW_SHOW : SW_HIDE);
-        int top = margin + (header ? headerHeight + 8 : 0);
-        const int footerHeight = m_settings.show_footer ? 4 * kHistoryItemHeight + 12 : 0;
+        int top = margin + (header ? headerHeight + kHistorySearchGap : 0);
+        const int footerHeight = m_settings.show_footer
+            ? kHistoryFooterGap + kHistoryFooterHeight * kHistoryFooterCount
+            : 0;
         const int bottom = std::max(top + 1, static_cast<int>(client.bottom) - margin - footerHeight);
         const int available = std::max(1, bottom - top);
         const int pinCount = static_cast<int>(SendMessageW(m_pinsList, LB_GETCOUNT, 0, 0));
         const bool havePins = pinCount > 0;
         const bool haveHistory = SendMessageW(m_historyList, LB_GETCOUNT, 0, 0) > 0;
-        const int gap = havePins && haveHistory ? 12 : 0;
-        const int pinsHeight = havePins ? std::min(pinCount * kHistoryItemHeight,
-            haveHistory ? std::max(kHistoryItemHeight, available / 2 - gap) : available) : 0;
-        const int historyHeight = std::max(1, available - pinsHeight - gap);
+        const int gap = havePins && haveHistory ? kHistorySectionGap : 0;
+        const int requestedPinsHeight = pinCount * kHistoryItemHeight;
+        const int pinsHeight = havePins
+            ? std::min(requestedPinsHeight, haveHistory
+                ? std::max(1, available - gap - kHistoryItemHeight)
+                : available)
+            : 0;
+        const int historyHeight = haveHistory
+            ? std::max(1, available - pinsHeight - gap)
+            : 1;
         const bool bottomPins = m_settings.pin_to == PinPosition::Bottom;
         const int pinTop = bottomPins && haveHistory ? top + historyHeight + gap : top;
         const int historyTop = !bottomPins && havePins ? top + pinsHeight + gap : top;
@@ -751,8 +764,9 @@ private:
         m_footerSeparatorY = m_settings.show_footer ? bottom + 5 : -1;
         const auto buttons = FooterButtons();
         for (int i = 0; i < 4; ++i) {
-            ::SetWindowPos(buttons[i], nullptr, margin, bottom + 12 + i * kHistoryItemHeight,
-                           width, kHistoryItemHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+            ::SetWindowPos(buttons[i], nullptr, margin,
+                           bottom + kHistoryFooterGap + i * kHistoryFooterHeight,
+                           width, kHistoryFooterHeight, SWP_NOZORDER | SWP_NOACTIVATE);
             ::ShowWindow(buttons[i], m_settings.show_footer ? SW_SHOW : SW_HIDE);
         }
         UpdateFooterControls();
@@ -817,9 +831,17 @@ private:
         const int maximum = std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
         const bool header = m_settings.show_search &&
             (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
-        const int rows = static_cast<int>(std::min<size_t>(m_items.size(), 100));
-        const int content = 2 * kHistoryWindowMargin + (header ? 36 : 0) +
-            (m_settings.show_footer ? 108 : 0) + std::max(3, rows) * kHistoryItemHeight + 28;
+        int pinRows = 0;
+        for (const ClipboardItem &item : m_items) if (item.pinned) ++pinRows;
+        const int historyRows = static_cast<int>(m_items.size()) - pinRows;
+        const int sectionGap = pinRows > 0 && historyRows > 0 ? kHistorySectionGap : 0;
+        const int listRows = std::max(3, historyRows) + pinRows;
+        const int footerHeight = m_settings.show_footer
+            ? kHistoryFooterGap + kHistoryFooterHeight * kHistoryFooterCount
+            : 0;
+        const int content = 2 * kHistoryWindowMargin +
+            (header ? kHistorySearchHeight + kHistorySearchGap : 0) +
+            sectionGap + listRows * kHistoryItemHeight + footerHeight;
         return std::clamp(content, kMinimumPopupHeight, maximum);
     }
 
