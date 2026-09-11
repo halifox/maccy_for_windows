@@ -914,7 +914,8 @@ private:
         const int content = 2 * kHistoryWindowMargin +
             (header ? kHistorySearchHeight + kHistorySearchGap : 0) +
             sectionGap + listRows * kHistoryItemHeight + footerHeight;
-        return std::clamp(content, kMinimumPopupHeight, maximum);
+        const int previewMinimum = m_previewWindow.IsVisible() ? m_previewWindow.MinimumHeight() : 0;
+        return std::clamp(std::max(content, previewMinimum), kMinimumPopupHeight, maximum);
     }
 
     void PositionOnMonitor(HMONITOR monitor, bool center) {
@@ -1653,6 +1654,13 @@ private:
             m_previewItemId = item_id;
             m_previewCandidateId = 0;
             PositionPreviewWindow();
+            if (m_popupVisible && !m_inSizeMove) {
+                RECT rect{};
+                if (::GetWindowRect(m_hWnd, &rect)) {
+                    ::SetWindowPos(m_hWnd, nullptr, rect.left, rect.top,
+                        rect.right - rect.left, PopupHeight(), SWP_NOZORDER | SWP_NOACTIVATE);
+                }
+            }
         } catch (...) {
             HidePreview();
         }
@@ -1680,6 +1688,13 @@ private:
         m_previewItemId = 0;
         m_previewSource = PreviewSource::None;
         m_previewWindow.Hide();
+        if (m_popupVisible && !m_inSizeMove) {
+            RECT rect{};
+            if (::GetWindowRect(m_hWnd, &rect)) {
+                ::SetWindowPos(m_hWnd, nullptr, rect.left, rect.top,
+                    rect.right - rect.left, PopupHeight(), SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
     }
 
     std::vector<std::pair<size_t, size_t>> HighlightRanges(std::wstring_view text) const {

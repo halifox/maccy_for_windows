@@ -19,6 +19,7 @@ constexpr int kMaximumPreviewWindowWidth = 1200;
 constexpr int kPreviewWindowMargin = 8;
 constexpr int kPreviewContentGap = 8;
 constexpr int kPreviewStatusHeight = 76;
+constexpr int kPreviewButtonHeight = 24;
 
 bool IsUnicodeText(const ClipboardFormatData &data) {
     return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
@@ -324,6 +325,13 @@ void PreviewWindow::SetWidth(int width) {
     LayoutControls();
 }
 
+int PreviewWindow::MinimumHeight() const noexcept {
+    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) return kPreviewWindowHeight;
+    RECT rect{};
+    if (!::GetWindowRect(m_hWnd, &rect)) return kPreviewWindowHeight;
+    return std::max(kPreviewWindowHeight, static_cast<int>(rect.bottom - rect.top));
+}
+
 void PreviewWindow::ClearBitmap() {
     if (m_bitmap != nullptr) {
         ::DeleteObject(m_bitmap);
@@ -342,7 +350,7 @@ void PreviewWindow::LayoutControls() {
     ::GetClientRect(m_hWnd, &client);
     const int client_width = std::max(1L, client.right - client.left);
     const int client_height = std::max(1L, client.bottom - client.top);
-    const int content_top = kPreviewWindowMargin + 30;
+    const int content_top = kPreviewWindowMargin + kPreviewButtonHeight + kPreviewContentGap;
     for (int index = 0; index < 3; ++index) {
         const int ids[] = {IDC_PREVIEW_PIN, IDC_PREVIEW_DELETE, IDC_PREVIEW_CLOSE};
         ::SetWindowPos(::GetDlgItem(m_hWnd, ids[index]), nullptr,
@@ -469,6 +477,18 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    LayoutControls();
+    return 0;
+}
+
+LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+    handled = TRUE;
+    const auto *suggested = reinterpret_cast<const RECT *>(lParam);
+    if (suggested != nullptr) {
+        ::SetWindowPos(m_hWnd, nullptr, suggested->left, suggested->top,
+            suggested->right - suggested->left, suggested->bottom - suggested->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     LayoutControls();
     return 0;
 }
