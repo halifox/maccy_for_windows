@@ -119,10 +119,8 @@ private:
     HWND m_aShowSearch = nullptr;
     HWND m_aSearchVisibility = nullptr;
     HWND m_aShowSpecial = nullptr;
-    HWND m_aShowTitle = nullptr;
     HWND m_aShowIcons = nullptr;
     HWND m_aShowSwatch = nullptr;
-    HWND m_aShowFooter = nullptr;
 
     // Storage page.
     HWND m_sSaveFiles = nullptr;

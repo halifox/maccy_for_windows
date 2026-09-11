@@ -186,8 +186,6 @@ AppSettings AppSettings::Load(const Database &database) {
         L"appearance.showSpecialSymbols",
         settings.show_special_symbols
     );
-    settings.show_title = ReadBool(database, L"appearance.showTitle", settings.show_title);
-    settings.show_footer = ReadBool(database, L"appearance.showFooter", settings.show_footer);
     settings.show_application_icons = ReadBool(
         database,
         L"appearance.showApplicationIcons",
@@ -274,8 +272,6 @@ void AppSettings::Save(const Database &database) const {
         WriteBool(database, L"appearance.showSearch", show_search);
         WriteInt(database, L"appearance.searchVisibility", static_cast<int>(search_visibility));
         WriteBool(database, L"appearance.showSpecialSymbols", show_special_symbols);
-        WriteBool(database, L"appearance.showTitle", show_title);
-        WriteBool(database, L"appearance.showFooter", show_footer);
         WriteBool(database, L"appearance.showApplicationIcons", show_application_icons);
         WriteBool(database, L"appearance.showHexColorSwatch", show_hex_color_swatch);
 

@@ -45,10 +45,8 @@ enum SettingsControlId : int {
     kAShowSearch,
     kASearchVisibility,
     kAShowSpecial,
-    kAShowTitle,
-    kAShowIcons,
-    kAShowSwatch,
-    kAShowFooter,
+    kAShowIcons = IDC_A_SHOW_ICONS,
+    kAShowSwatch = IDC_A_SHOW_SWATCH,
 
     kSSaveFiles = IDC_S_SAVE_FILES,
     kSSaveImages,
@@ -85,11 +83,11 @@ constexpr int kPageStorage = 2;
 constexpr int kPageIgnore = 3;
 constexpr int kPagePins = 4;
 constexpr int kPageAdvanced = 5;
-// Keep the native dialog compact while leaving enough room for the widest
-// settings row at the default DPI.  The page layout remains responsive when
-// the user makes the window larger.
-constexpr int kMinimumSettingsWidth = 720;
-constexpr int kMinimumSettingsHeight = 520;
+// The resource dimensions are expressed in dialog units and provide the
+// compact default size. These scaled pixel values are only a lower bound for
+// unusual font metrics or DPI settings.
+constexpr int kMinimumSettingsWidth = 456;
+constexpr int kMinimumSettingsHeight = 320;
 
 UINT WindowDpi(HWND window) {
     if (window != nullptr) {
@@ -414,10 +412,8 @@ void SettingsWindow::BindControls() {
     m_aShowSearch = get(kPageAppearance, kAShowSearch);
     m_aSearchVisibility = get(kPageAppearance, kASearchVisibility);
     m_aShowSpecial = get(kPageAppearance, kAShowSpecial);
-    m_aShowTitle = get(kPageAppearance, kAShowTitle);
     m_aShowIcons = get(kPageAppearance, kAShowIcons);
     m_aShowSwatch = get(kPageAppearance, kAShowSwatch);
-    m_aShowFooter = get(kPageAppearance, kAShowFooter);
 
     m_sSaveFiles = get(kPageStorage, kSSaveFiles);
     m_sSaveImages = get(kPageStorage, kSSaveImages);
@@ -644,10 +640,8 @@ void SettingsWindow::LoadAppearanceControls() {
     SetCheck(m_aShowSearch, m_settings.show_search);
     SelectCombo(m_aSearchVisibility, static_cast<int>(m_settings.search_visibility));
     SetCheck(m_aShowSpecial, m_settings.show_special_symbols);
-    SetCheck(m_aShowTitle, m_settings.show_title);
     SetCheck(m_aShowIcons, m_settings.show_application_icons);
     SetCheck(m_aShowSwatch, m_settings.show_hex_color_swatch);
-    SetCheck(m_aShowFooter, m_settings.show_footer);
     ::EnableWindow(m_aPreviewDelay, m_settings.open_preview_automatically);
 }
 
@@ -785,10 +779,8 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             m_settings.show_search = IsChecked(m_aShowSearch);
             m_settings.search_visibility = static_cast<SearchVisibility>(ComboSelection(m_aSearchVisibility));
             m_settings.show_special_symbols = IsChecked(m_aShowSpecial);
-            m_settings.show_title = IsChecked(m_aShowTitle);
             m_settings.show_application_icons = IsChecked(m_aShowIcons);
             m_settings.show_hex_color_swatch = IsChecked(m_aShowSwatch);
-            m_settings.show_footer = IsChecked(m_aShowFooter);
             break;
         }
         case kPageStorage:
@@ -1138,8 +1130,7 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         id == kAPopupPosition || id == kAPopupScreen || id == kAPinTo || id == kAImageHeight ||
         id == kAOpenPreview || id == kAPreviewDelay || id == kAHighlight || id == kAMenuIcon ||
         id == kAShowStatus || id == kAShowRecent || id == kAShowSearch || id == kASearchVisibility ||
-        id == kAShowSpecial || id == kAShowTitle || id == kAShowIcons || id == kAShowSwatch ||
-        id == kAShowFooter;
+        id == kAShowSpecial || id == kAShowIcons || id == kAShowSwatch;
     const bool storage_change =
         id == kSSaveFiles || id == kSSaveImages || id == kSSaveText || id == kSHistorySize || id == kSSortBy;
     const bool advanced_change =

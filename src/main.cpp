@@ -51,9 +51,6 @@ constexpr UINT kSearchDebounceMilliseconds = 180;
 
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
-constexpr int kEmptyLabelControlId = IDC_HISTORY_EMPTY;
-constexpr int kTitleControlId = IDC_HISTORY_TITLE;
-constexpr int kFooterControlId = IDC_HISTORY_FOOTER;
 
 constexpr int kPopupWidth = 640;
 constexpr int kPopupHeight = 520;
@@ -514,13 +511,9 @@ private:
     }
 
     bool BindControls() {
-        m_title = ::GetDlgItem(m_hWnd, kTitleControlId);
         m_search = ::GetDlgItem(m_hWnd, kSearchControlId);
         m_historyList = ::GetDlgItem(m_hWnd, kHistoryListControlId);
-        m_emptyLabel = ::GetDlgItem(m_hWnd, kEmptyLabelControlId);
-        m_footer = ::GetDlgItem(m_hWnd, kFooterControlId);
-        if (m_title == nullptr || m_search == nullptr || m_historyList == nullptr ||
-            m_emptyLabel == nullptr || m_footer == nullptr) {
+        if (m_search == nullptr || m_historyList == nullptr) {
             return false;
         }
 
@@ -540,11 +533,10 @@ private:
         const HFONT font = m_normalFont != nullptr
             ? m_normalFont
             : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        for (HWND control : {m_title, m_search, m_historyList, m_emptyLabel, m_footer}) {
+        for (HWND control : {m_search, m_historyList}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
         SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索剪贴板内容…"));
-        ::SetWindowTextW(m_footer, L"Enter：复制/粘贴  ·  Alt+P：置顶  ·  Alt+Backspace：删除");
         return true;
     }
 
@@ -554,10 +546,8 @@ private:
         }
         const bool show_search = m_settings.show_search &&
             (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
-        ::ShowWindow(m_title, m_settings.show_title ? SW_SHOW : SW_HIDE);
         ::ShowWindow(m_search, show_search ? SW_SHOW : SW_HIDE);
         ::ShowWindow(m_historyList, SW_SHOW);
-        ::ShowWindow(m_footer, m_settings.show_footer ? SW_SHOW : SW_HIDE);
     }
 
     void RestoreControlSubclass(HWND control, WNDPROC original) {
@@ -580,7 +570,6 @@ private:
             return false;
         }
         return window == m_hWnd || window == m_search || window == m_historyList ||
-            window == m_emptyLabel || window == m_title || window == m_footer ||
             ::IsChild(m_hWnd, window) || m_previewWindow.ContainsWindow(window) ||
             (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
     }
@@ -1080,21 +1069,6 @@ private:
                 SendMessageW(m_historyList, LB_SETCURSEL, 0, 0);
             }
             m_loadingList = false;
-            if (m_items.empty()) {
-                ::SetWindowTextW(
-                    m_emptyLabel,
-                    query.empty() ? L"暂无剪贴板记录" : L"没有匹配的剪贴板记录"
-                );
-                ::ShowWindow(m_emptyLabel, SW_SHOW);
-            } else {
-                ::ShowWindow(m_emptyLabel, SW_HIDE);
-            }
-            ::SetWindowTextW(
-                m_footer,
-                (L"共 " + std::to_wstring(m_items.size()) + L" 项  ·  Enter：" +
-                 (m_settings.paste_by_default ? L"粘贴" : L"复制") +
-                 L"  ·  Alt+P：置顶  ·  Alt+Backspace：删除").c_str()
-            );
             ApplyHistoryVisibility();
         } catch (const std::exception &error) {
             m_loadingList = false;
@@ -1942,9 +1916,6 @@ private:
     AppSettings m_settings;
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;
-    HWND m_emptyLabel = nullptr;
-    HWND m_title = nullptr;
-    HWND m_footer = nullptr;
     PreviewWindow m_previewWindow;
     WNDPROC m_originalSearchProc = nullptr;
     WNDPROC m_originalHistoryListProc = nullptr;

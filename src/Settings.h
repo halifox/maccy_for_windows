@@ -77,8 +77,6 @@ struct AppSettings {
     bool show_search = true;
     SearchVisibility search_visibility = SearchVisibility::Always;
     bool show_special_symbols = true;
-    bool show_title = true;
-    bool show_footer = true;
     bool show_application_icons = false;
     bool show_hex_color_swatch = true;
 
