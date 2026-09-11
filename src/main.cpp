@@ -52,7 +52,10 @@ constexpr UINT kSearchDebounceMilliseconds = 180;
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
-constexpr int kPopupWidth = 640;
+// Maccy's default history panel is about 450 px wide. Keep the Windows
+// history panel compact as well so the list remains easy to scan beside the
+// independent preview window.
+constexpr int kPopupWidth = 450;
 constexpr int kPopupHeight = 520;
 constexpr int kHistoryWindowMargin = 8;
 constexpr int kHistorySearchGap = 6;
@@ -441,7 +444,7 @@ public:
         ShowWindow(SW_SHOW);
         SetForegroundWindow(m_hWnd);
         if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
-            ::ShowWindow(m_search, SW_SHOW);
+            SetHistorySearchVisible(true);
             ::SetFocus(m_search);
             SendMessageW(m_search, EM_SETSEL, 0, -1);
         } else {
@@ -614,8 +617,15 @@ private:
         }
         const bool show_search = m_settings.show_search &&
             (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
-        ::ShowWindow(m_search, show_search ? SW_SHOW : SW_HIDE);
+        SetHistorySearchVisible(show_search);
         ::ShowWindow(m_historyList, SW_SHOW);
+    }
+
+    void SetHistorySearchVisible(bool visible) {
+        if (m_search == nullptr || !::IsWindow(m_search)) {
+            return;
+        }
+        ::ShowWindow(m_search, visible ? SW_SHOW : SW_HIDE);
         LayoutHistoryControls();
     }
 
@@ -779,10 +789,30 @@ private:
         }
 
         const RECT &work_area = monitor_info.rcWork;
-        int x = main_rect.right + 8;
+        constexpr int gap = 8;
+        int x = main_rect.right + gap;
         int y = main_rect.top;
-        if (x + width > work_area.right) {
-            x = main_rect.left - width - 8;
+        const bool fits_right = main_rect.right + gap + width <= work_area.right;
+        const bool fits_left = main_rect.left - gap - width >= work_area.left;
+        if (fits_right) {
+            x = main_rect.right + gap;
+        } else if (fits_left) {
+            x = main_rect.left - width - gap;
+        } else {
+            // On a narrow monitor, keep the independent preview from
+            // covering the history panel (especially its search field).
+            const bool fits_above = main_rect.top - gap - height >= work_area.top;
+            const bool fits_below = main_rect.bottom + gap + height <= work_area.bottom;
+            x = std::clamp(
+                static_cast<int>(main_rect.left),
+                static_cast<int>(work_area.left),
+                std::max<int>(work_area.left, work_area.right - width)
+            );
+            if (fits_above) {
+                y = main_rect.top - height - gap;
+            } else if (fits_below) {
+                y = main_rect.bottom + gap;
+            }
         }
         const int max_x = std::max<int>(work_area.left, work_area.right - width);
         const int max_y = std::max<int>(work_area.top, work_area.bottom - height);
@@ -1165,6 +1195,14 @@ private:
     void OnHistoryMouseMove(HWND window, POINT point) {
         if (!m_popupVisible || window != m_historyList) {
             return;
+        }
+        // Hovering a row must not make the search field disappear or leave
+        // the list covering it. Re-assert the visibility required by the
+        // current search setting before processing the row hit-test.
+        const bool search_should_be_visible = m_settings.show_search &&
+            (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
+        if (search_should_be_visible && !::IsWindowVisible(m_search)) {
+            SetHistorySearchVisible(true);
         }
         BeginHistoryMouseTracking();
 
@@ -2082,7 +2120,7 @@ private:
             return 0;
         }
         if (wParam == L'F' && (::GetKeyState(VK_CONTROL) & 0x8000) != 0 && m_settings.show_search) {
-            ::ShowWindow(m_search, SW_SHOW);
+            SetHistorySearchVisible(true);
             ::SetFocus(m_search);
             handled = TRUE;
             return 0;
@@ -2099,7 +2137,7 @@ private:
     LRESULT OnChar(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::DuringSearch &&
             wParam >= 0x20 && wParam != 0x7F) {
-            ::ShowWindow(m_search, SW_SHOW);
+            SetHistorySearchVisible(true);
             ::SetFocus(m_search);
             const wchar_t character = static_cast<wchar_t>(wParam);
             const wchar_t text[] = {character, L'\0'};
