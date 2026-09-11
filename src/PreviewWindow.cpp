@@ -13,6 +13,12 @@
 
 namespace {
 
+constexpr int kPreviewWindowWidth = 450;
+constexpr int kPreviewWindowHeight = 390;
+constexpr int kPreviewWindowMargin = 8;
+constexpr int kPreviewContentGap = 8;
+constexpr int kPreviewStatusHeight = 40;
+
 bool IsUnicodeText(const ClipboardFormatData &data) {
     return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
 }
@@ -266,7 +272,21 @@ std::wstring FormatCopyTime(sqlite3_int64 milliseconds) {
 } // namespace
 
 bool PreviewWindow::Initialize(HWND owner) {
-    return Create(owner) != nullptr;
+    const HWND window = Create(owner);
+    if (window == nullptr) {
+        return false;
+    }
+    ::SetWindowPos(
+        window,
+        nullptr,
+        0,
+        0,
+        kPreviewWindowWidth,
+        kPreviewWindowHeight,
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
+    );
+    LayoutControls();
+    return true;
 }
 
 void PreviewWindow::ClearBitmap() {
@@ -276,6 +296,55 @@ void PreviewWindow::ClearBitmap() {
     }
     m_bitmapWidth = 0;
     m_bitmapHeight = 0;
+}
+
+void PreviewWindow::LayoutControls() {
+    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+        return;
+    }
+
+    RECT client{};
+    ::GetClientRect(m_hWnd, &client);
+    const int client_width = std::max(1L, client.right - client.left);
+    const int client_height = std::max(1L, client.bottom - client.top);
+    const int content_width = std::max(1, client_width - 2 * kPreviewWindowMargin);
+    const int status_top = std::max(
+        kPreviewWindowMargin,
+        client_height - kPreviewWindowMargin - kPreviewStatusHeight
+    );
+    const int content_height = std::max(
+        1,
+        status_top - kPreviewContentGap - kPreviewWindowMargin
+    );
+    const int status_height = std::max(
+        1,
+        client_height - status_top - kPreviewWindowMargin
+    );
+
+    for (HWND control : {m_image, m_text}) {
+        if (control != nullptr) {
+            ::SetWindowPos(
+                control,
+                nullptr,
+                kPreviewWindowMargin,
+                kPreviewWindowMargin,
+                content_width,
+                content_height,
+                SWP_NOZORDER | SWP_NOACTIVATE
+            );
+        }
+    }
+    if (m_status != nullptr) {
+        ::SetWindowPos(
+            m_status,
+            nullptr,
+            kPreviewWindowMargin,
+            status_top,
+            content_width,
+            status_height,
+            SWP_NOZORDER | SWP_NOACTIVATE
+        );
+    }
 }
 
 bool PreviewWindow::LoadBitmapForItem(const ClipboardItem &item) {
@@ -363,7 +432,14 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     ::SendMessageW(m_text, EM_SETLIMITTEXT, 4 * 1024 * 1024, 0);
     ::ShowWindow(m_image, SW_HIDE);
     ::ShowWindow(m_text, SW_HIDE);
+    LayoutControls();
     return TRUE;
+}
+
+LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    LayoutControls();
+    return 0;
 }
 
 LRESULT PreviewWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {

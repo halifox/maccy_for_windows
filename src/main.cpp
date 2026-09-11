@@ -469,9 +469,8 @@ private:
                 owner->PasteSelectedItem();
                 return 0;
             }
-            if (wParam == VK_DOWN && owner->HasHistoryItems()) {
-                ::SetFocus(owner->m_historyList);
-                SendMessageW(owner->m_historyList, LB_SETCURSEL, 0, 0);
+            if (wParam == VK_UP || wParam == VK_DOWN) {
+                owner->NavigateHistoryFromSearch(wParam == VK_DOWN);
                 return 0;
             }
             if (owner->HandlePopupShortcut(wParam)) {
@@ -1671,6 +1670,38 @@ private:
 
     bool HasHistoryItems() const {
         return !m_items.empty();
+    }
+
+    void NavigateHistoryFromSearch(bool forward) {
+        if (!m_popupVisible || m_historyList == nullptr || m_items.empty()) {
+            return;
+        }
+
+        const int current = SelectedHistoryIndex();
+        int target = current;
+        if (current < 0) {
+            target = forward ? 0 : static_cast<int>(m_items.size()) - 1;
+        } else {
+            target = current + (forward ? 1 : -1);
+            if (target < 0 || static_cast<size_t>(target) >= m_items.size()) {
+                ::SetFocus(m_search);
+                return;
+            }
+        }
+
+        const int previous_hover = m_hoveredItemIndex;
+        m_mouseSelectionUpdate = true;
+        SendMessageW(m_historyList, LB_SETCURSEL, target, 0);
+        m_mouseSelectionUpdate = false;
+
+        // Keyboard navigation takes precedence until the pointer moves again.
+        // Keeping the edit focused lets its normal left/right caret behavior
+        // continue to work without losing the list selection.
+        m_hoveredItemIndex = -1;
+        m_hoveredItemId = 0;
+        HidePreview();
+        InvalidateHistoryItem(previous_hover);
+        ::SetFocus(m_search);
     }
 
     int SelectedHistoryIndex() const {
