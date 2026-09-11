@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <cwchar>
 #include <filesystem>
+#include <initializer_list>
 #include <stdexcept>
 #include <string>
 
@@ -89,19 +90,6 @@ constexpr int kPageAdvanced = 5;
 // the user makes the window larger.
 constexpr int kMinimumSettingsWidth = 720;
 constexpr int kMinimumSettingsHeight = 520;
-
-constexpr int kPagePadding = 12;
-constexpr int kLayoutGap = 6;
-constexpr int kControlHeight = 26;
-constexpr int kSectionHeight = 24;
-constexpr int kMinimumLabelWidth = 96;
-constexpr int kDefaultInputWidth = 150;
-constexpr int kDefaultListHeight = 150;
-
-// A Win32 drop-down combo box uses its creation/layout height for the full
-// expanded control, including the list that is normally hidden.  Keep enough
-// room for several rows without making the compact settings page oversized.
-constexpr int kComboTotalHeight = 144;
 
 UINT WindowDpi(HWND window) {
     if (window != nullptr) {
@@ -184,39 +172,6 @@ void SetControlFont(HWND window) {
     }
 }
 
-using LayoutOptions = SettingsPageWindow::LayoutOptions;
-
-LayoutOptions FillWidth(int minimum_height = 0) {
-    LayoutOptions options;
-    options.fill_width = true;
-    options.minimum_height = minimum_height;
-    return options;
-}
-
-LayoutOptions FillHeight(int minimum_height) {
-    LayoutOptions options = FillWidth(minimum_height);
-    options.fill_height = true;
-    return options;
-}
-
-LayoutOptions LabelCell() {
-    LayoutOptions options;
-    options.label = true;
-    return options;
-}
-
-LayoutOptions FixedWidth(int width) {
-    LayoutOptions options;
-    options.width = width;
-    return options;
-}
-
-LayoutOptions SectionBlock() {
-    LayoutOptions options = FillWidth(kSectionHeight);
-    options.section = true;
-    return options;
-}
-
 std::wstring PinDisplay(const ClipboardItem &item) {
     std::wstring value = item.pin + L"  |  " + item.title;
     if (!item.content.empty()) {
@@ -245,564 +200,68 @@ std::wstring PinTextContent(const ClipboardItem &item) {
 
 } // namespace
 
-void SettingsPageWindow::Configure(HWND owner, bool scrollable, int minimum_content_height) {
-    m_owner = owner;
-    m_scrollable = scrollable;
-    m_minimumContentHeight = std::max(0, minimum_content_height);
-    m_contentHeight = 0;
-    m_scrollY = 0;
-    m_dpi = USER_DEFAULT_SCREEN_DPI;
-    m_layout.clear();
-    m_activeRow.clear();
-    m_rowOpen = false;
+
+namespace {
+
+constexpr std::array<UINT, 6> kPageResources = {
+    IDD_PAGE_GENERAL,
+    IDD_PAGE_APPEARANCE,
+    IDD_PAGE_STORAGE,
+    IDD_PAGE_IGNORE,
+    IDD_PAGE_PINS,
+    IDD_PAGE_ADVANCED,
+};
+
+constexpr std::array<UINT, 3> kIgnorePageResources = {
+    IDD_IGNORE_APPLICATIONS,
+    IDD_IGNORE_FORMATS,
+    IDD_IGNORE_REGEXPS,
+};
+
+INT_PTR CALLBACK ResourcePageDialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_INITDIALOG) {
+        auto *owner = reinterpret_cast<SettingsWindow *>(lParam);
+        ::SetWindowLongPtrW(window, DWLP_USER, reinterpret_cast<LONG_PTR>(owner));
+        return TRUE;
+    }
+
+    auto *owner = reinterpret_cast<SettingsWindow *>(
+        ::GetWindowLongPtrW(window, DWLP_USER)
+    );
+    if (owner != nullptr && ::IsWindow(owner->Window()) &&
+        (message == WM_COMMAND || message == WM_NOTIFY)) {
+        ::SendMessageW(owner->Window(), message, wParam, lParam);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
-int SettingsPageWindow::Scale(int value) const noexcept {
-    return MulDiv(value, static_cast<int>(m_dpi), USER_DEFAULT_SCREEN_DPI);
+HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
+    return ::CreateDialogParamW(
+        ::GetModuleHandleW(nullptr),
+        MAKEINTRESOURCEW(resource_id),
+        parent,
+        ResourcePageDialogProc,
+        reinterpret_cast<LPARAM>(owner)
+    );
 }
 
-void SettingsPageWindow::UpdateDpi() {
-    if (m_hWnd == nullptr) {
+void ApplySectionFont(HWND page, HFONT font, std::initializer_list<int> ids) {
+    if (page == nullptr || font == nullptr) {
         return;
     }
-    HDC dc = ::GetDC(m_hWnd);
-    if (dc != nullptr) {
-        const int dpi = ::GetDeviceCaps(dc, LOGPIXELSX);
-        ::ReleaseDC(m_hWnd, dc);
-        if (dpi > 0) {
-            m_dpi = static_cast<UINT>(dpi);
-        }
+    for (const int id : ids) {
+        ::SendMessageW(
+            ::GetDlgItem(page, id),
+            WM_SETFONT,
+            reinterpret_cast<WPARAM>(font),
+            TRUE
+        );
     }
 }
 
-void SettingsPageWindow::BeginRow(int gap) {
-    if (m_rowOpen) {
-        EndRow();
-    }
-    m_activeRow.clear();
-    m_activeRowGap = std::max(0, gap);
-    m_rowOpen = true;
-}
-
-void SettingsPageWindow::EndRow() {
-    if (!m_rowOpen) {
-        return;
-    }
-
-    LayoutItem item;
-    item.kind = LayoutItem::Kind::Row;
-    item.cells = std::move(m_activeRow);
-    item.gap = m_activeRowGap;
-    m_layout.push_back(std::move(item));
-    m_activeRow.clear();
-    m_rowOpen = false;
-}
-
-void SettingsPageWindow::AddLayout(HWND window, LayoutOptions options) {
-    if (window == nullptr) {
-        return;
-    }
-    if (m_rowOpen) {
-        m_activeRow.push_back(LayoutCell{window, options});
-        return;
-    }
-
-    LayoutItem item;
-    item.kind = LayoutItem::Kind::Block;
-    item.window = window;
-    item.options = options;
-    m_layout.push_back(std::move(item));
-}
-
-void SettingsPageWindow::AddSpacer(LayoutOptions options) {
-    if (m_rowOpen) {
-        m_activeRow.push_back(LayoutCell{nullptr, options});
-    }
-}
-
-void SettingsPageWindow::SetContentSize(int minimum_content_height) {
-    m_minimumContentHeight = std::max(0, minimum_content_height);
-    LayoutControls();
-}
-
-int SettingsPageWindow::MaxScrollPosition(const RECT &client) const {
-    if (!m_scrollable) {
-        return 0;
-    }
-    const int content_height = std::max(m_contentHeight, Scale(m_minimumContentHeight));
-    return std::max(0, content_height - static_cast<int>(client.bottom));
-}
-
-void SettingsPageWindow::SetScrollPosition(int position) {
-    if (m_hWnd == nullptr) {
-        return;
-    }
-    RECT client{};
-    ::GetClientRect(m_hWnd, &client);
-    const int next = std::clamp(position, 0, MaxScrollPosition(client));
-    if (next != m_scrollY) {
-        m_scrollY = next;
-        LayoutControls();
-    }
-}
-
-void SettingsPageWindow::ScrollBy(int delta) {
-    SetScrollPosition(m_scrollY + delta);
-}
-
-bool SettingsPageWindow::IsExplicitlyVisible(HWND window) const noexcept {
-    if (window == nullptr || !::IsWindow(window)) {
-        return false;
-    }
-    return (::GetWindowLongPtrW(window, GWL_STYLE) & WS_VISIBLE) != 0;
-}
-
-int SettingsPageWindow::MeasureTextWidth(HWND window) const {
-    if (window == nullptr) {
-        return 0;
-    }
-    const std::wstring text = ReadWindowText(window);
-    if (text.empty()) {
-        return 0;
-    }
-
-    HDC dc = ::GetDC(window);
-    if (dc == nullptr) {
-        return 0;
-    }
-    HFONT font = reinterpret_cast<HFONT>(::SendMessageW(window, WM_GETFONT, 0, 0));
-    HGDIOBJ previous = font == nullptr ? nullptr : ::SelectObject(dc, font);
-    SIZE size{};
-    ::GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()), &size);
-    if (previous != nullptr) {
-        ::SelectObject(dc, previous);
-    }
-    ::ReleaseDC(window, dc);
-    return std::max(0, static_cast<int>(size.cx));
-}
-
-int SettingsPageWindow::MeasureTextHeight(HWND window, int width) const {
-    if (window == nullptr || width <= 0) {
-        return Scale(kControlHeight);
-    }
-    const std::wstring text = ReadWindowText(window);
-    if (text.empty()) {
-        return Scale(kControlHeight);
-    }
-
-    HDC dc = ::GetDC(window);
-    if (dc == nullptr) {
-        return Scale(kControlHeight);
-    }
-    HFONT font = reinterpret_cast<HFONT>(::SendMessageW(window, WM_GETFONT, 0, 0));
-    HGDIOBJ previous = font == nullptr ? nullptr : ::SelectObject(dc, font);
-    RECT measured{0, 0, width, 0};
-    UINT flags = DT_CALCRECT | DT_WORDBREAK;
-    const LONG style = static_cast<LONG>(::GetWindowLongPtrW(window, GWL_STYLE));
-    if ((style & SS_NOPREFIX) != 0) {
-        flags |= DT_NOPREFIX;
-    }
-    ::DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measured, flags);
-    if (previous != nullptr) {
-        ::SelectObject(dc, previous);
-    }
-    ::ReleaseDC(window, dc);
-
-    const int padding = Scale(4);
-    const int text_height = static_cast<int>(measured.bottom - measured.top);
-    return std::max(Scale(kControlHeight), text_height + padding);
-}
-
-int SettingsPageWindow::MeasureCellWidth(const LayoutCell &cell) const {
-    if (cell.window == nullptr) {
-        return 0;
-    }
-    if (cell.options.width > 0) {
-        return Scale(cell.options.width);
-    }
-
-    wchar_t class_name[64]{};
-    ::GetClassNameW(cell.window, class_name, static_cast<int>(std::size(class_name)));
-    const std::wstring class_name_text(class_name);
-    const int text_width = MeasureTextWidth(cell.window);
-    if (cell.options.label) {
-        return text_width + Scale(8);
-    }
-    if (class_name_text == L"Button") {
-        return text_width + Scale(28);
-    }
-    if (class_name_text == L"Static") {
-        return text_width + Scale(8);
-    }
-    if (class_name_text == L"msctls_hotkey32") {
-        return Scale(190);
-    }
-    if (class_name_text == L"ComboBox" || class_name_text == L"Edit") {
-        return Scale(kDefaultInputWidth);
-    }
-    return Scale(kDefaultInputWidth);
-}
-
-int SettingsPageWindow::MeasureCellHeight(const LayoutCell &cell, int width) const {
-    if (cell.window == nullptr) {
-        return cell.options.minimum_height > 0 ? Scale(cell.options.minimum_height) : 0;
-    }
-
-    wchar_t class_name[64]{};
-    ::GetClassNameW(cell.window, class_name, static_cast<int>(std::size(class_name)));
-    const std::wstring class_name_text(class_name);
-    int height = Scale(kControlHeight);
-    if (class_name_text == L"ComboBox") {
-        height = Scale(kControlHeight);
-    } else if (class_name_text == L"ListBox") {
-        height = Scale(std::max(kDefaultListHeight, cell.options.minimum_height));
-    } else if (class_name_text == L"Edit") {
-        const LONG style = static_cast<LONG>(::GetWindowLongPtrW(cell.window, GWL_STYLE));
-        if ((style & ES_MULTILINE) != 0) {
-            height = Scale(std::max(120, cell.options.minimum_height));
-        }
-    } else {
-        int text_width = width;
-        if (class_name_text == L"Button") {
-            text_width = std::max(1, width - Scale(28));
-        }
-        height = MeasureTextHeight(cell.window, text_width);
-    }
-    return std::max(height, Scale(cell.options.minimum_height));
-}
-
-void SettingsPageWindow::LayoutControls() {
-    if (m_hWnd == nullptr) {
-        return;
-    }
-    if (m_rowOpen) {
-        EndRow();
-    }
-
-    UpdateDpi();
-    RECT client{};
-    ::GetClientRect(m_hWnd, &client);
-    const int left = Scale(kPagePadding);
-    const int right = std::max(left, static_cast<int>(client.right) - Scale(kPagePadding));
-    const int content_width = std::max(1, right - left);
-    const int item_gap = Scale(kLayoutGap);
-
-    struct MeasuredCell {
-        LayoutCell cell;
-        int width = 0;
-        int height = 0;
-    };
-    struct MeasuredItem {
-        const LayoutItem *item = nullptr;
-        std::vector<MeasuredCell> cells;
-        int height = 0;
-        bool stretch_height = false;
-        bool visible = false;
-    };
-
-    int label_width = Scale(kMinimumLabelWidth);
-    for (const LayoutItem &item : m_layout) {
-        if (item.kind != LayoutItem::Kind::Row) {
-            continue;
-        }
-        for (const LayoutCell &cell : item.cells) {
-            if (cell.window != nullptr && cell.options.label && IsExplicitlyVisible(cell.window)) {
-                label_width = std::max(label_width, MeasureCellWidth(cell));
-            }
-        }
-    }
-
-    std::vector<MeasuredItem> measured;
-    measured.reserve(m_layout.size());
-    int fixed_height = 0;
-    int flexible_count = 0;
-
-    for (const LayoutItem &item : m_layout) {
-        MeasuredItem result;
-        result.item = &item;
-        if (item.kind == LayoutItem::Kind::Block) {
-            if (!IsExplicitlyVisible(item.window)) {
-                measured.push_back(std::move(result));
-                continue;
-            }
-            LayoutCell cell{item.window, item.options};
-            const int width = item.options.width > 0
-                ? Scale(item.options.width)
-                : (item.options.fill_width ? content_width : MeasureCellWidth(cell));
-            result.cells.push_back(MeasuredCell{
-                cell,
-                std::max(1, std::min(width, content_width)),
-                MeasureCellHeight(cell, std::max(1, std::min(width, content_width)))
-            });
-            result.height = result.cells.front().height;
-            result.stretch_height = item.options.fill_height;
-            result.visible = true;
-        } else {
-            std::vector<LayoutCell> visible_cells;
-            for (const LayoutCell &cell : item.cells) {
-                if (cell.window == nullptr || IsExplicitlyVisible(cell.window)) {
-                    visible_cells.push_back(cell);
-                }
-            }
-            if (visible_cells.empty()) {
-                measured.push_back(std::move(result));
-                continue;
-            }
-
-            const int gap = Scale(item.gap);
-            const int available = std::max(1, content_width - gap * (static_cast<int>(visible_cells.size()) - 1));
-            int fixed_width = 0;
-            int flexible_cells = 0;
-            std::vector<int> widths;
-            widths.reserve(visible_cells.size());
-            for (const LayoutCell &cell : visible_cells) {
-                int width = 0;
-                if (cell.window == nullptr) {
-                    if (cell.options.fill_width) {
-                        ++flexible_cells;
-                    }
-                } else if (cell.options.label) {
-                    width = label_width;
-                } else if (cell.options.width > 0) {
-                    width = Scale(cell.options.width);
-                } else if (cell.options.fill_width) {
-                    ++flexible_cells;
-                } else {
-                    width = MeasureCellWidth(cell);
-                }
-                widths.push_back(width);
-                fixed_width += width;
-            }
-
-            const int remaining = std::max(0, available - fixed_width);
-            if (flexible_cells > 0) {
-                int flex_width = remaining / flexible_cells;
-                int flex_remainder = remaining % flexible_cells;
-                for (size_t index = 0; index < visible_cells.size(); ++index) {
-                    if (!visible_cells[index].options.fill_width) {
-                        continue;
-                    }
-                    widths[index] = flex_width + (flex_remainder-- > 0 ? 1 : 0);
-                }
-            } else if (fixed_width > available) {
-                int shrinkable = 0;
-                for (size_t index = 0; index < visible_cells.size(); ++index) {
-                    if (visible_cells[index].window != nullptr &&
-                        visible_cells[index].options.width == 0 &&
-                        !visible_cells[index].options.label) {
-                        ++shrinkable;
-                    }
-                }
-                if (shrinkable > 0) {
-                    const int shrink = (fixed_width - available + shrinkable - 1) / shrinkable;
-                    for (size_t index = 0; index < visible_cells.size(); ++index) {
-                        if (visible_cells[index].window != nullptr &&
-                            visible_cells[index].options.width == 0 &&
-                            !visible_cells[index].options.label) {
-                            widths[index] = std::max(1, widths[index] - shrink);
-                        }
-                    }
-                }
-            }
-
-            for (size_t index = 0; index < visible_cells.size(); ++index) {
-                const int width = std::max(1, widths[index]);
-                result.cells.push_back(MeasuredCell{
-                    visible_cells[index],
-                    width,
-                    MeasureCellHeight(visible_cells[index], width)
-                });
-                result.height = std::max(result.height, result.cells.back().height);
-                result.stretch_height = result.stretch_height || visible_cells[index].options.fill_height;
-            }
-            result.visible = true;
-        }
-
-        if (result.visible) {
-            if (result.item->options.minimum_height > 0) {
-                result.height = std::max(result.height, Scale(result.item->options.minimum_height));
-            }
-            fixed_height += result.height;
-            if (result.stretch_height) {
-                ++flexible_count;
-            }
-        }
-        measured.push_back(std::move(result));
-    }
-
-    int visible_items = 0;
-    for (const MeasuredItem &item : measured) {
-        if (item.visible) {
-            ++visible_items;
-        }
-    }
-    const int vertical_gaps = std::max(0, visible_items - 1) * item_gap;
-    const int top_padding = Scale(kPagePadding);
-    const int bottom_padding = Scale(kPagePadding);
-    const int available_height = std::max(0, static_cast<int>(client.bottom) - top_padding - bottom_padding - vertical_gaps);
-    const int extra_height = std::max(0, available_height - fixed_height);
-    if (flexible_count > 0 && extra_height > 0) {
-        int remaining_extra = extra_height;
-        int remaining_flexible = flexible_count;
-        for (MeasuredItem &item : measured) {
-            if (!item.visible || !item.stretch_height) {
-                continue;
-            }
-            const int extra = remaining_extra / remaining_flexible;
-            item.height += extra;
-            remaining_extra -= extra;
-            --remaining_flexible;
-        }
-    }
-
-    int calculated_height = top_padding + bottom_padding + vertical_gaps;
-    for (const MeasuredItem &item : measured) {
-        if (item.visible) {
-            calculated_height += item.height;
-        }
-    }
-    m_contentHeight = std::max(calculated_height, Scale(m_minimumContentHeight));
-    m_scrollY = std::clamp(m_scrollY, 0, MaxScrollPosition(client));
-
-    SCROLLINFO scroll_info{sizeof(scroll_info)};
-    scroll_info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
-    scroll_info.nMin = 0;
-    scroll_info.nMax = std::max(0, m_contentHeight - 1);
-    scroll_info.nPage = static_cast<UINT>(std::max<LONG>(0, client.bottom));
-    scroll_info.nPos = m_scrollY;
-    ::SetScrollInfo(m_hWnd, SB_VERT, &scroll_info, TRUE);
-    ::ShowScrollBar(m_hWnd, SB_VERT, m_scrollable && m_contentHeight > client.bottom);
-
-    int top = top_padding - m_scrollY;
-    for (const MeasuredItem &item : measured) {
-        if (!item.visible) {
-            continue;
-        }
-        if (item.item->kind == LayoutItem::Kind::Block) {
-            const MeasuredCell &cell = item.cells.front();
-            const int height = item.height;
-            const int actual_height = cell.cell.options.combo
-                ? std::max(Scale(kComboTotalHeight), height)
-                : height;
-            ::SetWindowPos(
-                cell.cell.window,
-                nullptr,
-                left,
-                top,
-                cell.width,
-                actual_height,
-                SWP_NOZORDER | SWP_NOACTIVATE
-            );
-        } else {
-            int x = left;
-            const int gap = Scale(item.item->gap);
-            for (const MeasuredCell &cell : item.cells) {
-                if (cell.cell.window != nullptr) {
-                    const int cell_top = cell.cell.options.combo
-                        ? top
-                        : top + std::max(0, (item.height - cell.height) / 2);
-                    const int actual_height = cell.cell.options.combo
-                        ? std::max(Scale(kComboTotalHeight), cell.height)
-                        : (cell.cell.options.fill_height ? item.height : cell.height);
-                    ::SetWindowPos(
-                        cell.cell.window,
-                        nullptr,
-                        x,
-                        cell_top,
-                        cell.width,
-                        actual_height,
-                        SWP_NOZORDER | SWP_NOACTIVATE
-                    );
-                }
-                x += cell.width + gap;
-            }
-        }
-        top += item.height + item_gap;
-    }
-}
-
-LRESULT SettingsPageWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
-    handled = TRUE;
-    LayoutControls();
-    return 0;
-}
-
-LRESULT SettingsPageWindow::OnVScroll(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
-    handled = TRUE;
-    RECT client{};
-    ::GetClientRect(m_hWnd, &client);
-    const int line = std::max(1, Scale(32));
-    const int page = std::max(1, static_cast<int>(client.bottom) - line);
-    switch (LOWORD(wParam)) {
-    case SB_LINEUP:
-        ScrollBy(-line);
-        break;
-    case SB_LINEDOWN:
-        ScrollBy(line);
-        break;
-    case SB_PAGEUP:
-        ScrollBy(-page);
-        break;
-    case SB_PAGEDOWN:
-        ScrollBy(page);
-        break;
-    case SB_TOP:
-        SetScrollPosition(0);
-        break;
-    case SB_BOTTOM:
-        SetScrollPosition(MaxScrollPosition(client));
-        break;
-    case SB_THUMBPOSITION:
-    case SB_THUMBTRACK: {
-        SCROLLINFO info{sizeof(info)};
-        info.fMask = SIF_TRACKPOS;
-        ::GetScrollInfo(m_hWnd, SB_VERT, &info);
-        SetScrollPosition(info.nTrackPos);
-        break;
-    }
-    default:
-        break;
-    }
-    return 0;
-}
-
-LRESULT SettingsPageWindow::OnMouseWheel(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
-    handled = TRUE;
-    const int delta = GET_WHEEL_DELTA_WPARAM(wParam);
-    const int steps = delta == 0 ? 0 : std::max(1, std::abs(delta) / WHEEL_DELTA);
-    ScrollBy(-((delta < 0) ? 1 : -1) * steps * std::max(1, Scale(48)));
-    return 0;
-}
-
-LRESULT SettingsPageWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
-    handled = TRUE;
-    const UINT dpi = LOWORD(wParam);
-    if (dpi > 0) {
-        m_dpi = dpi;
-    }
-    LayoutControls();
-    return 0;
-}
-
-LRESULT SettingsPageWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
-    if (m_owner != nullptr && ::IsWindow(m_owner)) {
-        ::SendMessageW(m_owner, WM_COMMAND, wParam, lParam);
-        handled = TRUE;
-        return 0;
-    }
-    handled = FALSE;
-    return 0;
-}
-
-LRESULT SettingsPageWindow::OnNotify(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
-    if (m_owner != nullptr && ::IsWindow(m_owner)) {
-        ::SendMessageW(m_owner, WM_NOTIFY, wParam, lParam);
-        handled = TRUE;
-        return 0;
-    }
-    handled = FALSE;
-    return 0;
-}
+} // namespace
 
 SettingsWindow::SettingsWindow(Database &database, HWND owner)
     : m_database(database), m_owner(owner) {}
@@ -865,161 +324,6 @@ void SettingsWindow::DestroyForOwner() {
     }
 }
 
-void SettingsWindow::BeginRow(int page, int gap) {
-    if (page < 0 || page >= kPageCount) {
-        return;
-    }
-    m_pages[static_cast<size_t>(page)].BeginRow(gap);
-}
-
-void SettingsWindow::EndRow(int page) {
-    if (page < 0 || page >= kPageCount) {
-        return;
-    }
-    m_pages[static_cast<size_t>(page)].EndRow();
-}
-
-void SettingsWindow::AddLayout(int page, HWND window, LayoutOptions options) {
-    if (window == nullptr || page < 0 || page >= kPageCount) {
-        return;
-    }
-    SetControlFont(window);
-    m_pages[static_cast<size_t>(page)].AddLayout(window, options);
-}
-
-void SettingsWindow::AddSpacer(int page, LayoutOptions options) {
-    if (page < 0 || page >= kPageCount) {
-        return;
-    }
-    m_pages[static_cast<size_t>(page)].AddSpacer(options);
-}
-
-HWND SettingsWindow::AddStatic(int page, const wchar_t *text, DWORD style, LayoutOptions options) {
-    CStatic control;
-    const HWND window = control.Create(
-        m_pages[static_cast<size_t>(page)].m_hWnd,
-        CWindow::rcDefault,
-        text,
-        WS_CHILD | WS_VISIBLE | style,
-        0U,
-        0U
-    );
-    AddLayout(page, window, options);
-    return window;
-}
-
-HWND SettingsWindow::AddSectionHeading(int page, const wchar_t *text) {
-    const HWND window = AddStatic(page, text, SS_LEFT | SS_NOPREFIX, SectionBlock());
-    if (window != nullptr && m_sectionFont != nullptr) {
-        ::SendMessageW(window, WM_SETFONT, reinterpret_cast<WPARAM>(m_sectionFont), TRUE);
-    }
-    return window;
-}
-
-HWND SettingsWindow::AddButton(
-    int page,
-    const wchar_t *text,
-    int id,
-    DWORD style,
-    LayoutOptions options
-) {
-    CButton control;
-    const HWND window = control.Create(
-        m_pages[static_cast<size_t>(page)].m_hWnd,
-        CWindow::rcDefault,
-        text,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | style,
-        0,
-        static_cast<UINT>(id)
-    );
-    AddLayout(page, window, options);
-    return window;
-}
-
-HWND SettingsWindow::AddCheckBox(int page, const wchar_t *text, int id, LayoutOptions options) {
-    return AddButton(
-        page,
-        text,
-        id,
-        BS_AUTOCHECKBOX | BS_LEFT | BS_VCENTER | BS_MULTILINE,
-        options
-    );
-}
-
-HWND SettingsWindow::AddEdit(int page, int id, DWORD style, LayoutOptions options) {
-    CEdit control;
-    const HWND window = control.Create(
-        m_pages[static_cast<size_t>(page)].m_hWnd,
-        CWindow::rcDefault,
-        nullptr,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | style,
-        WS_EX_CLIENTEDGE,
-        id
-    );
-    AddLayout(page, window, options);
-    return window;
-}
-
-HWND SettingsWindow::AddCombo(int page, int id, LayoutOptions options) {
-    CComboBox control;
-    // Do not create a drop-down combo with CWindow::rcDefault.  For a
-    // CBS_DROPDOWNLIST control, Windows treats the creation height as the
-    // height of the expanded combo box.  A zero-sized default rect therefore
-    // creates a combo whose drop-down list has no height, even after the
-    // visible selection field is laid out later.
-    options.combo = true;
-    const int initial_width = std::max<int>(
-        1,
-        m_pages[static_cast<size_t>(page)].Scale(
-            options.width > 0 ? options.width : kDefaultInputWidth
-        )
-    );
-    RECT initial_rect{
-        0,
-        0,
-        initial_width,
-        m_pages[static_cast<size_t>(page)].Scale(kComboTotalHeight)
-    };
-    const HWND window = control.Create(
-        m_pages[static_cast<size_t>(page)].m_hWnd,
-        initial_rect,
-        nullptr,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-        0,
-        id
-    );
-    AddLayout(page, window, options);
-    return window;
-}
-
-HWND SettingsWindow::AddList(int page, int id, LayoutOptions options) {
-    CListBox control;
-    const HWND window = control.Create(
-        m_pages[static_cast<size_t>(page)].m_hWnd,
-        CWindow::rcDefault,
-        nullptr,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT,
-        WS_EX_CLIENTEDGE,
-        id
-    );
-    AddLayout(page, window, options);
-    return window;
-}
-
-HWND SettingsWindow::AddHotKey(int page, int id, LayoutOptions options) {
-    CHotKeyCtrl control;
-    const HWND window = control.Create(
-        m_pages[static_cast<size_t>(page)].m_hWnd,
-        CWindow::rcDefault,
-        nullptr,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-        WS_EX_CLIENTEDGE,
-        id
-    );
-    AddLayout(page, window, options);
-    return window;
-}
-
 void SettingsWindow::CreateTabs() {
     m_tabs = GetDlgItem(kTabs);
     SetControlFont(m_tabs.m_hWnd);
@@ -1040,291 +344,150 @@ bool SettingsWindow::CreatePageWindows() {
         return false;
     }
 
-    const std::array<bool, kPageCount> scrollable = {false, true, false, true, true, false};
-    for (int page = 0; page < kPageCount; ++page) {
-        SettingsPageWindow &page_window = m_pages[static_cast<size_t>(page)];
-        page_window.Configure(
-            m_hWnd,
-            scrollable[static_cast<size_t>(page)],
-            0
+    for (size_t page = 0; page < kPageResources.size(); ++page) {
+        m_pages[page] = CreateResourcePage(
+            kPageResources[page],
+            m_tabs.m_hWnd,
+            this
         );
-        const DWORD style = WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN |
-            (scrollable[static_cast<size_t>(page)] ? WS_VSCROLL : 0U);
-        if (page_window.Create(
-                m_tabs.m_hWnd,
-                CWindow::rcDefault,
-                nullptr,
-                style,
-                WS_EX_CONTROLPARENT
-            ) == nullptr) {
+        if (m_pages[page] == nullptr) {
             return false;
         }
-        SetControlFont(page_window.m_hWnd);
     }
-    return true;
-}
 
-void SettingsWindow::CreateGeneralPage() {
-    AddSectionHeading(kPageGeneral, L"启动与更新");
-    m_gLaunch = AddCheckBox(kPageGeneral, L"登录 Windows 时启动", kGLaunch, FillWidth());
-    BeginRow(kPageGeneral);
-    m_gUpdates = AddCheckBox(
-        kPageGeneral,
-        L"自动检查更新（仅保存选项）",
-        kGUpdates,
-        FillWidth()
-    );
-    AddButton(kPageGeneral, L"立即检查", kGCheckNow, BS_PUSHBUTTON, FixedWidth(88));
-    EndRow(kPageGeneral);
-    AddStatic(
-        kPageGeneral,
-        L"Windows 版本没有 Sparkle 更新服务；“立即检查”会打开项目发布页。",
-        SS_LEFT | SS_NOPREFIX,
-        FillWidth()
-    );
-    AddSectionHeading(kPageGeneral, L"快捷键");
-    BeginRow(kPageGeneral);
-    AddStatic(kPageGeneral, L"打开：", SS_LEFT, LabelCell());
-    m_gOpenHotKey = AddHotKey(kPageGeneral, kGOpenHotKey, FixedWidth(170));
-    EndRow(kPageGeneral);
-    BeginRow(kPageGeneral);
-    AddStatic(kPageGeneral, L"置顶：", SS_LEFT, LabelCell());
-    m_gPinHotKey = AddHotKey(kPageGeneral, kGPinHotKey, FixedWidth(170));
-    EndRow(kPageGeneral);
-    BeginRow(kPageGeneral);
-    AddStatic(kPageGeneral, L"删除：", SS_LEFT, LabelCell());
-    m_gDeleteHotKey = AddHotKey(kPageGeneral, kGDeleteHotKey, FixedWidth(170));
-    EndRow(kPageGeneral);
-    BeginRow(kPageGeneral);
-    AddStatic(kPageGeneral, L"预览：", SS_LEFT, LabelCell());
-    m_gPreviewHotKey = AddHotKey(kPageGeneral, kGPreviewHotKey, FixedWidth(170));
-    EndRow(kPageGeneral);
+    m_ignoreTabWindow = ::GetDlgItem(m_pages[kPageIgnore], kIgnoreTabs);
+    if (m_ignoreTabWindow == nullptr) {
+        return false;
+    }
+    m_ignoreTabs = m_ignoreTabWindow;
 
-    AddSectionHeading(kPageGeneral, L"行为");
-    BeginRow(kPageGeneral);
-    AddStatic(kPageGeneral, L"搜索模式：", SS_LEFT, LabelCell());
-    m_gSearchMode = AddCombo(kPageGeneral, kGSearchMode, FixedWidth(220));
-    EndRow(kPageGeneral);
-    AddComboItem(m_gSearchMode, L"精确（不区分大小写）");
-    AddComboItem(m_gSearchMode, L"模糊");
-    AddComboItem(m_gSearchMode, L"正则表达式");
-    AddComboItem(m_gSearchMode, L"混合（精确→正则→模糊）");
-
-    m_gPasteByDefault = AddCheckBox(kPageGeneral, L"选择项目后自动粘贴", kGPasteByDefault, FillWidth());
-    m_gRemoveFormatting = AddCheckBox(
-        kPageGeneral,
-        L"默认粘贴为纯文本（去除格式）",
-        kGRemoveFormatting,
-        FillWidth()
-    );
-    AddButton(kPageGeneral, L"Windows 通知和声音设置", kGNotifications, BS_PUSHBUTTON, FixedWidth(220));
-}
-
-void SettingsWindow::CreateAppearancePage() {
-    AddSectionHeading(kPageAppearance, L"弹出窗口");
-    BeginRow(kPageAppearance);
-    AddStatic(kPageAppearance, L"弹出位置：", SS_LEFT, LabelCell());
-    m_aPopupPosition = AddCombo(kPageAppearance, kAPopupPosition, FixedWidth(140));
-    AddComboItem(m_aPopupPosition, L"光标附近");
-    AddComboItem(m_aPopupPosition, L"托盘图标附近");
-    AddComboItem(m_aPopupPosition, L"目标窗口中心");
-    AddComboItem(m_aPopupPosition, L"屏幕中心");
-    AddComboItem(m_aPopupPosition, L"上次位置");
-    AddStatic(kPageAppearance, L"屏幕：", SS_LEFT, LabelCell());
-    m_aPopupScreen = AddCombo(kPageAppearance, kAPopupScreen, FixedWidth(140));
-    AddButton(kPageAppearance, L"重置位置", kAResetPosition, BS_PUSHBUTTON, FixedWidth(88));
-    EndRow(kPageAppearance);
-
-    BeginRow(kPageAppearance);
-    AddStatic(kPageAppearance, L"置顶项目位置：", SS_LEFT, LabelCell());
-    m_aPinTo = AddCombo(kPageAppearance, kAPinTo, FixedWidth(140));
-    EndRow(kPageAppearance);
-    AddComboItem(m_aPinTo, L"顶部");
-    AddComboItem(m_aPinTo, L"底部");
-
-    AddSectionHeading(kPageAppearance, L"预览");
-    BeginRow(kPageAppearance);
-    AddStatic(kPageAppearance, L"图片最大高度：", SS_LEFT, LabelCell());
-    m_aImageHeight = AddEdit(kPageAppearance, kAImageHeight, ES_NUMBER, FixedWidth(72));
-    AddStatic(kPageAppearance, L"像素（1–200）");
-    EndRow(kPageAppearance);
-    m_aOpenPreview = AddCheckBox(kPageAppearance, L"自动打开预览", kAOpenPreview, FillWidth());
-    BeginRow(kPageAppearance);
-    AddStatic(kPageAppearance, L"预览延迟：", SS_LEFT, LabelCell());
-    m_aPreviewDelay = AddEdit(kPageAppearance, kAPreviewDelay, ES_NUMBER, FixedWidth(72));
-    AddStatic(kPageAppearance, L"毫秒（200–100000）");
-    EndRow(kPageAppearance);
-
-    AddSectionHeading(kPageAppearance, L"搜索结果显示");
-    BeginRow(kPageAppearance);
-    AddStatic(kPageAppearance, L"搜索匹配样式：", SS_LEFT, LabelCell());
-    m_aHighlight = AddCombo(kPageAppearance, kAHighlight, FixedWidth(140));
-    EndRow(kPageAppearance);
-    AddComboItem(m_aHighlight, L"颜色");
-    AddComboItem(m_aHighlight, L"粗体");
-    AddComboItem(m_aHighlight, L"斜体");
-    AddComboItem(m_aHighlight, L"下划线");
-
-    BeginRow(kPageAppearance);
-    AddStatic(kPageAppearance, L"托盘图标：", SS_LEFT, LabelCell());
-    m_aMenuIcon = AddCombo(kPageAppearance, kAMenuIcon, FixedWidth(150));
-    AddComboItem(m_aMenuIcon, L"Maccy");
-    AddComboItem(m_aMenuIcon, L"剪贴板");
-    AddComboItem(m_aMenuIcon, L"剪刀");
-    AddComboItem(m_aMenuIcon, L"回形针");
-    m_aShowStatus = AddCheckBox(kPageAppearance, L"显示托盘图标", kAShowStatus, FillWidth());
-    EndRow(kPageAppearance);
-    m_aShowRecent = AddCheckBox(
-        kPageAppearance,
-        L"在托盘提示中显示最近复制内容",
-        kAShowRecent,
-        FillWidth()
-    );
-    BeginRow(kPageAppearance);
-    m_aShowSearch = AddCheckBox(kPageAppearance, L"显示搜索框", kAShowSearch, FillWidth());
-    m_aSearchVisibility = AddCombo(kPageAppearance, kASearchVisibility, FixedWidth(140));
-    EndRow(kPageAppearance);
-    AddComboItem(m_aSearchVisibility, L"始终显示");
-    AddComboItem(m_aSearchVisibility, L"搜索时显示");
-    m_aShowTitle = AddCheckBox(kPageAppearance, L"在搜索框前显示标题", kAShowTitle, FillWidth());
-    BeginRow(kPageAppearance);
-    m_aShowIcons = AddCheckBox(kPageAppearance, L"显示来源程序图标", kAShowIcons, FillWidth());
-    m_aShowSwatch = AddCheckBox(kPageAppearance, L"显示十六进制颜色色块", kAShowSwatch, FillWidth());
-    EndRow(kPageAppearance);
-    m_aShowSpecial = AddCheckBox(
-        kPageAppearance,
-        L"显示换行、制表符和首尾空格符号",
-        kAShowSpecial,
-        FillWidth()
-    );
-    m_aShowFooter = AddCheckBox(kPageAppearance, L"显示底部状态栏", kAShowFooter, FillWidth());
-}
-
-void SettingsWindow::CreateStoragePage() {
-    AddSectionHeading(kPageStorage, L"保存类型");
-    m_sSaveFiles = AddCheckBox(kPageStorage, L"文件（CF_HDROP）", kSSaveFiles, FillWidth());
-    m_sSaveImages = AddCheckBox(kPageStorage, L"图片（DIB/DIBV5）", kSSaveImages, FillWidth());
-    m_sSaveText = AddCheckBox(kPageStorage, L"文本（Unicode/HTML/RTF）", kSSaveText, FillWidth());
-    AddStatic(
-        kPageStorage,
-        L"关闭某种类型后，新的剪贴板内容不会保存该类型；已有历史不会被删除。",
-        SS_LEFT | SS_NOPREFIX,
-        FillWidth()
-    );
-    AddSectionHeading(kPageStorage, L"历史");
-    BeginRow(kPageStorage);
-    AddStatic(kPageStorage, L"保留历史数量：", SS_LEFT, LabelCell());
-    m_sHistorySize = AddEdit(kPageStorage, kSHistorySize, ES_NUMBER, FixedWidth(72));
-    AddStatic(kPageStorage, L"条（1–999，不含置顶项）");
-    EndRow(kPageStorage);
-    BeginRow(kPageStorage);
-    AddStatic(kPageStorage, L"排序：", SS_LEFT, LabelCell());
-    m_sSortBy = AddCombo(kPageStorage, kSSortBy, FixedWidth(180));
-    EndRow(kPageStorage);
-    AddComboItem(m_sSortBy, L"最近复制时间");
-    AddComboItem(m_sSortBy, L"首次复制时间");
-    AddComboItem(m_sSortBy, L"复制次数");
-    BeginRow(kPageStorage);
-    AddStatic(kPageStorage, L"当前数据库大小：", SS_LEFT, LabelCell());
-    m_sStorageSize = AddStatic(kPageStorage, L"", SS_LEFT, FillWidth());
-    EndRow(kPageStorage);
-}
-
-void SettingsWindow::CreateIgnorePage() {
-    AddSectionHeading(kPageIgnore, L"忽略规则");
-    m_ignoreTabWindow = m_ignoreTabs.Create(
-        m_pages[kPageIgnore].m_hWnd,
-        CWindow::rcDefault,
-        nullptr,
-        WS_CHILD | WS_VISIBLE | WS_TABSTOP | TCS_TABS,
-        0,
-        kIgnoreTabs
-    );
-    AddLayout(kPageIgnore, m_ignoreTabWindow, FillWidth(34));
-    const std::array<const wchar_t *, 3> names = {L"应用程序", L"剪贴板格式", L"正则表达式"};
-    for (const wchar_t *name : names) {
+    const std::array<const wchar_t *, kIgnorePageCount> ignore_names = {
+        L"应用程序", L"剪贴板格式", L"正则表达式"
+    };
+    for (const wchar_t *name : ignore_names) {
         TCITEMW item{};
         item.mask = TCIF_TEXT;
         item.pszText = const_cast<wchar_t *>(name);
         m_ignoreTabs.InsertItem(m_ignoreTabs.GetItemCount(), &item);
     }
-    m_iList = AddList(kPageIgnore, kIList, FillHeight(170));
-    BeginRow(kPageIgnore);
-    m_iEdit = AddEdit(kPageIgnore, kIEdit, ES_AUTOHSCROLL, FillWidth());
-    AddButton(kPageIgnore, L"添加", kIAdd, BS_PUSHBUTTON, FixedWidth(64));
-    AddButton(kPageIgnore, L"浏览…", kIBrowse, BS_PUSHBUTTON, FixedWidth(64));
-    AddButton(kPageIgnore, L"修改", kIUpdate, BS_PUSHBUTTON, FixedWidth(64));
-    AddButton(kPageIgnore, L"删除", kIRemove, BS_PUSHBUTTON, FixedWidth(64));
-    EndRow(kPageIgnore);
-    BeginRow(kPageIgnore);
-    m_iWhitelist = AddCheckBox(kPageIgnore, L"仅忽略列表中的应用（白名单）", kIWhitelist, FillWidth());
-    AddButton(kPageIgnore, L"恢复默认", kIReset, BS_PUSHBUTTON, FixedWidth(126));
-    EndRow(kPageIgnore);
-    m_iDescription = AddStatic(
-        kPageIgnore,
-        L"",
-        SS_LEFT | SS_NOPREFIX,
-        FillWidth()
-    );
+
+    for (size_t page = 0; page < kIgnorePageResources.size(); ++page) {
+        m_ignorePages[page] = CreateResourcePage(
+            kIgnorePageResources[page],
+            m_ignoreTabs.m_hWnd,
+            this
+        );
+        if (m_ignorePages[page] == nullptr) {
+            return false;
+        }
+    }
+
+    PositionPages();
+    return true;
 }
 
-void SettingsWindow::CreatePinsPage() {
-    AddSectionHeading(kPagePins, L"置顶项目");
-    m_pList = AddList(kPagePins, kPList, FillHeight(150));
-    BeginRow(kPagePins);
-    AddStatic(kPagePins, L"按键：", SS_LEFT, LabelCell());
-    m_pKey = AddEdit(kPagePins, kPKey, ES_AUTOHSCROLL, FixedWidth(140));
-    EndRow(kPagePins);
-    BeginRow(kPagePins);
-    AddStatic(kPagePins, L"标题：", SS_LEFT, LabelCell());
-    m_pTitle = AddEdit(kPagePins, kPTitle, ES_AUTOHSCROLL, FillWidth());
-    EndRow(kPagePins);
-    BeginRow(kPagePins);
-    AddStatic(kPagePins, L"内容：", SS_LEFT, LabelCell());
-    m_pContent = AddEdit(
-        kPagePins,
-        kPContent,
-        ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
-        FillWidth(120)
-    );
-    EndRow(kPagePins);
-    m_pContentHint = AddStatic(
-        kPagePins,
-        L"只能编辑纯文本；图片和文件可以修改按键与标题，但内容保持原样。",
-        SS_LEFT | SS_NOPREFIX,
-        FillWidth()
-    );
-    BeginRow(kPagePins);
-    AddSpacer(kPagePins, FillWidth());
-    AddButton(kPagePins, L"保存置顶项", kPSave, BS_PUSHBUTTON, FixedWidth(90));
-    AddButton(kPagePins, L"删除置顶项", kPDelete, BS_PUSHBUTTON, FixedWidth(80));
-    EndRow(kPagePins);
-}
+void SettingsWindow::BindControls() {
+    const auto get = [this](int page, int id) {
+        return ::GetDlgItem(m_pages[static_cast<size_t>(page)], id);
+    };
 
-void SettingsWindow::CreateAdvancedPage() {
-    AddSectionHeading(kPageAdvanced, L"复制行为");
-    m_xIgnoreEvents = AddCheckBox(kPageAdvanced, L"暂时忽略所有新的复制", kXIgnoreEvents, FillWidth());
-    AddStatic(
-        kPageAdvanced,
-        L"开启后不会记录新的剪贴板变化；“只忽略下一次”会在下一次变化后自动关闭。",
-        SS_LEFT | SS_NOPREFIX,
-        FillWidth()
+    m_gLaunch = get(kPageGeneral, kGLaunch);
+    m_gUpdates = get(kPageGeneral, kGUpdates);
+    m_gOpenHotKey = get(kPageGeneral, kGOpenHotKey);
+    m_gPinHotKey = get(kPageGeneral, kGPinHotKey);
+    m_gDeleteHotKey = get(kPageGeneral, kGDeleteHotKey);
+    m_gPreviewHotKey = get(kPageGeneral, kGPreviewHotKey);
+    m_gSearchMode = get(kPageGeneral, kGSearchMode);
+    m_gPasteByDefault = get(kPageGeneral, kGPasteByDefault);
+    m_gRemoveFormatting = get(kPageGeneral, kGRemoveFormatting);
+
+    m_aPopupPosition = get(kPageAppearance, kAPopupPosition);
+    m_aPopupScreen = get(kPageAppearance, kAPopupScreen);
+    m_aPinTo = get(kPageAppearance, kAPinTo);
+    m_aImageHeight = get(kPageAppearance, kAImageHeight);
+    m_aOpenPreview = get(kPageAppearance, kAOpenPreview);
+    m_aPreviewDelay = get(kPageAppearance, kAPreviewDelay);
+    m_aHighlight = get(kPageAppearance, kAHighlight);
+    m_aMenuIcon = get(kPageAppearance, kAMenuIcon);
+    m_aShowStatus = get(kPageAppearance, kAShowStatus);
+    m_aShowRecent = get(kPageAppearance, kAShowRecent);
+    m_aShowSearch = get(kPageAppearance, kAShowSearch);
+    m_aSearchVisibility = get(kPageAppearance, kASearchVisibility);
+    m_aShowSpecial = get(kPageAppearance, kAShowSpecial);
+    m_aShowTitle = get(kPageAppearance, kAShowTitle);
+    m_aShowIcons = get(kPageAppearance, kAShowIcons);
+    m_aShowSwatch = get(kPageAppearance, kAShowSwatch);
+    m_aShowFooter = get(kPageAppearance, kAShowFooter);
+
+    m_sSaveFiles = get(kPageStorage, kSSaveFiles);
+    m_sSaveImages = get(kPageStorage, kSSaveImages);
+    m_sSaveText = get(kPageStorage, kSSaveText);
+    m_sHistorySize = get(kPageStorage, kSHistorySize);
+    m_sSortBy = get(kPageStorage, kSSortBy);
+    m_sStorageSize = get(kPageStorage, IDC_S_STORAGE_SIZE);
+
+    m_iWhitelist = ::GetDlgItem(m_ignorePages[0], kIWhitelist);
+
+    m_pList = get(kPagePins, kPList);
+    m_pKey = get(kPagePins, kPKey);
+    m_pTitle = get(kPagePins, kPTitle);
+    m_pContent = get(kPagePins, kPContent);
+    m_pContentHint = get(kPagePins, IDC_P_CONTENT_HINT);
+
+    m_xIgnoreEvents = get(kPageAdvanced, kXIgnoreEvents);
+    m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
+    m_xClearOnQuit = get(kPageAdvanced, kXClearOnQuit);
+    m_xClearClipboard = get(kPageAdvanced, kXClearClipboard);
+
+    ApplySectionFont(
+        m_pages[kPageGeneral],
+        m_sectionFont,
+        {IDC_G_SECTION_STARTUP, IDC_G_SECTION_HOTKEYS, IDC_G_SECTION_BEHAVIOR}
     );
-    m_xIgnoreNext = AddCheckBox(kPageAdvanced, L"只忽略下一次复制", kXIgnoreNext, FillWidth());
-    AddStatic(
-        kPageAdvanced,
-        L"macOS 中可通过 Option 点击菜单图标临时切换；Windows 版提供此处的等价设置。",
-        SS_LEFT | SS_NOPREFIX,
-        FillWidth()
+    ApplySectionFont(
+        m_pages[kPageAppearance],
+        m_sectionFont,
+        {IDC_A_SECTION_POPUP, IDC_A_SECTION_PREVIEW, IDC_A_SECTION_SEARCH}
     );
-    BeginRow(kPageAdvanced);
-    m_xClearOnQuit = AddCheckBox(kPageAdvanced, L"退出时清空历史", kXClearOnQuit, FillWidth());
-    AddStatic(kPageAdvanced, L"只删除未置顶项目。");
-    EndRow(kPageAdvanced);
-    BeginRow(kPageAdvanced);
-    m_xClearClipboard = AddCheckBox(kPageAdvanced, L"同时清空系统剪贴板", kXClearClipboard, FillWidth());
-    AddStatic(kPageAdvanced, L"启用后，清空历史也会调用 EmptyClipboard。");
-    EndRow(kPageAdvanced);
+    ApplySectionFont(
+        m_pages[kPageStorage],
+        m_sectionFont,
+        {IDC_S_SECTION_TYPES, IDC_S_SECTION_HISTORY}
+    );
+    ApplySectionFont(m_pages[kPageIgnore], m_sectionFont, {IDC_I_SECTION_RULES});
+    ApplySectionFont(m_pages[kPagePins], m_sectionFont, {IDC_P_SECTION_PINS});
+    ApplySectionFont(m_pages[kPageAdvanced], m_sectionFont, {IDC_X_SECTION_CLIPBOARD});
+
+    AddComboItem(m_gSearchMode, L"精确（不区分大小写）");
+    AddComboItem(m_gSearchMode, L"模糊");
+    AddComboItem(m_gSearchMode, L"正则表达式");
+    AddComboItem(m_gSearchMode, L"混合（精确→正则→模糊）");
+
+    AddComboItem(m_aPopupPosition, L"光标附近");
+    AddComboItem(m_aPopupPosition, L"托盘图标附近");
+    AddComboItem(m_aPopupPosition, L"目标窗口中心");
+    AddComboItem(m_aPopupPosition, L"屏幕中心");
+    AddComboItem(m_aPopupPosition, L"上次位置");
+
+    AddComboItem(m_aPinTo, L"顶部");
+    AddComboItem(m_aPinTo, L"底部");
+
+    AddComboItem(m_aHighlight, L"颜色");
+    AddComboItem(m_aHighlight, L"粗体");
+    AddComboItem(m_aHighlight, L"斜体");
+    AddComboItem(m_aHighlight, L"下划线");
+
+    AddComboItem(m_aMenuIcon, L"Maccy");
+    AddComboItem(m_aMenuIcon, L"剪贴板");
+    AddComboItem(m_aMenuIcon, L"剪刀");
+    AddComboItem(m_aMenuIcon, L"回形针");
+
+    AddComboItem(m_aSearchVisibility, L"始终显示");
+    AddComboItem(m_aSearchVisibility, L"搜索时显示");
+
+    AddComboItem(m_sSortBy, L"最近复制时间");
+    AddComboItem(m_sSortBy, L"首次复制时间");
+    AddComboItem(m_sSortBy, L"复制次数");
 }
 
 RECT SettingsWindow::PageRect() const {
@@ -1339,28 +502,64 @@ RECT SettingsWindow::PageRect() const {
     return page;
 }
 
-void SettingsWindow::LayoutControls() {
+RECT SettingsWindow::IgnorePageRect() const {
+    RECT page{};
+    if (m_ignoreTabs.m_hWnd == nullptr) {
+        return page;
+    }
+    ::GetClientRect(m_ignoreTabs.m_hWnd, &page);
+    TabCtrl_AdjustRect(m_ignoreTabs.m_hWnd, FALSE, &page);
+    page.right = std::max(page.left, page.right);
+    page.bottom = std::max(page.top, page.bottom);
+    return page;
+}
+
+void SettingsWindow::PositionPages() {
     if (m_tabs.m_hWnd == nullptr) {
         return;
     }
 
     const RECT page = PageRect();
-    const int width = std::max<int>(0, page.right - page.left);
-    const int height = std::max<int>(0, page.bottom - page.top);
+    const int width = std::max(0L, page.right - page.left);
+    const int height = std::max(0L, page.bottom - page.top);
 
-    for (int page_index = 0; page_index < kPageCount; ++page_index) {
-        SettingsPageWindow &page_window = m_pages[static_cast<size_t>(page_index)];
-        ::SetWindowPos(
-            page_window.m_hWnd,
-            nullptr,
-            page.left,
-            page.top,
-            width,
-            height,
-            SWP_NOZORDER | SWP_NOACTIVATE
-        );
-        page_window.LayoutControls();
-        ::ShowWindow(page_window.m_hWnd, page_index == m_currentPage ? SW_SHOW : SW_HIDE);
+    for (size_t index = 0; index < m_pages.size(); ++index) {
+        if (m_pages[index] != nullptr) {
+            ::SetWindowPos(
+                m_pages[index],
+                nullptr,
+                page.left,
+                page.top,
+                width,
+                height,
+                SWP_NOZORDER | SWP_NOACTIVATE
+            );
+            ::ShowWindow(
+                m_pages[index],
+                static_cast<int>(index) == m_currentPage ? SW_SHOW : SW_HIDE
+            );
+        }
+    }
+
+    const RECT ignore_page = IgnorePageRect();
+    const int ignore_width = std::max(0L, ignore_page.right - ignore_page.left);
+    const int ignore_height = std::max(0L, ignore_page.bottom - ignore_page.top);
+    for (size_t index = 0; index < m_ignorePages.size(); ++index) {
+        if (m_ignorePages[index] != nullptr) {
+            ::SetWindowPos(
+                m_ignorePages[index],
+                nullptr,
+                ignore_page.left,
+                ignore_page.top,
+                ignore_width,
+                ignore_height,
+                SWP_NOZORDER | SWP_NOACTIVATE
+            );
+            ::ShowWindow(
+                m_ignorePages[index],
+                static_cast<int>(index) == m_ignorePage ? SW_SHOW : SW_HIDE
+            );
+        }
     }
 }
 
@@ -1369,37 +568,40 @@ void SettingsWindow::SetPage(int page) {
     if (m_tabs.m_hWnd != nullptr) {
         m_tabs.SetCurSel(m_currentPage);
     }
-    if (m_currentPage == kPageIgnore) {
-        SetIgnorePage(m_ignorePage);
-    }
-    LayoutControls();
+    PositionPages();
 }
 
 void SettingsWindow::SetIgnorePage(int page) {
-    m_ignorePage = std::clamp(page, 0, 2);
-    if (m_ignoreTabWindow != nullptr) {
+    m_ignorePage = std::clamp(page, 0, kIgnorePageCount - 1);
+    if (m_ignoreTabs.m_hWnd != nullptr) {
         m_ignoreTabs.SetCurSel(m_ignorePage);
     }
 
-    const bool applications = m_ignorePage == 0;
-    const bool formats = m_ignorePage == 1;
-    const bool regexps = m_ignorePage == 2;
-    const HWND page_window = m_pages[kPageIgnore].m_hWnd;
-    ::ShowWindow(::GetDlgItem(page_window, kIBrowse), applications ? SW_SHOW : SW_HIDE);
-    ::ShowWindow(::GetDlgItem(page_window, kIReset), formats ? SW_SHOW : SW_HIDE);
-    ::ShowWindow(m_iWhitelist, applications ? SW_SHOW : SW_HIDE);
+    const HWND page_window = m_ignorePages[static_cast<size_t>(m_ignorePage)];
+    m_iList = ::GetDlgItem(page_window, kIList);
+    m_iEdit = ::GetDlgItem(page_window, kIEdit);
+    m_iDescription = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
-    if (applications) {
-        ::SetWindowTextW(m_iDescription, L"忽略来自指定 Windows 应用程序的复制。建议优先使用剪贴板格式规则；列表中保存的是 exe 路径。\r\n开启白名单后，只记录列表中的应用。 ");
-    } else if (formats) {
-        ::SetWindowTextW(m_iDescription, L"忽略指定的 Windows 剪贴板格式。可填写标准名称（如 CF_UNICODETEXT、CF_HDROP）或注册格式名称。恢复默认会清空 Windows 版自定义列表。");
-    } else if (regexps) {
-        ::SetWindowTextW(m_iDescription, L"当 Unicode 文本匹配任意有效正则表达式时，不会记录该次复制。无效表达式会被安全忽略。");
+    if (m_ignorePage == 0) {
+        ::SetWindowTextW(
+            m_iDescription,
+            L"忽略来自指定 Windows 应用程序的复制。建议优先使用剪贴板格式规则；列表中保存的是 exe 路径。\r\n开启白名单后，只记录列表中的应用。 "
+        );
+    } else if (m_ignorePage == 1) {
+        ::SetWindowTextW(
+            m_iDescription,
+            L"忽略指定的 Windows 剪贴板格式。可填写标准名称（如 CF_UNICODETEXT、CF_HDROP）或注册格式名称。恢复默认会清空 Windows 版自定义列表。"
+        );
+    } else {
+        ::SetWindowTextW(
+            m_iDescription,
+            L"当 Unicode 文本匹配任意有效正则表达式时，不会记录该次复制。无效表达式会被安全忽略。"
+        );
     }
-    RefreshIgnoreList();
-    LayoutControls();
-}
 
+    RefreshIgnoreList();
+    PositionPages();
+}
 void SettingsWindow::LoadGeneralControls() {
     SetCheck(m_gLaunch, m_settings.launch_at_login);
     SetCheck(m_gUpdates, m_settings.check_for_updates);
@@ -1786,12 +988,16 @@ void SettingsWindow::ResetPopupPosition() {
 
 LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    // A modeless settings window is deliberately a normal top-level window:
-    // it has a title bar, participates in the taskbar and Alt+Tab, and does
-    // not inherit the main window's topmost behavior.
+    // The settings window is deliberately a normal fixed-size top-level
+    // window.  It has a title bar, participates in the taskbar and Alt+Tab,
+    // and does not inherit the main window's topmost behavior.
     ::SetWindowTextW(m_hWnd, L"剪贴板设置");
     const LONG_PTR extended_style = ::GetWindowLongPtrW(m_hWnd, GWL_EXSTYLE);
-    ::SetWindowLongPtrW(m_hWnd, GWL_EXSTYLE, (extended_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW);
+    ::SetWindowLongPtrW(
+        m_hWnd,
+        GWL_EXSTYLE,
+        (extended_style & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW
+    );
     ::SetWindowPos(
         m_hWnd,
         HWND_NOTOPMOST,
@@ -1815,44 +1021,16 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = FALSE;
         return FALSE;
     }
-    CreateGeneralPage();
-    CreateAppearancePage();
-    CreateStoragePage();
-    CreateIgnorePage();
-    CreatePinsPage();
-    CreateAdvancedPage();
+    BindControls();
     LoadControlsFromSettings();
-    DlgResize_Init(false, true);
     SetPage(kPageGeneral);
     SetIgnorePage(0);
     return TRUE;
 }
 
-LRESULT SettingsWindow::OnSize(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+LRESULT SettingsWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    if (m_hWnd != nullptr) {
-        DlgResize_UpdateLayout(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
-    }
-    LayoutControls();
-    return 0;
-}
-
-LRESULT SettingsWindow::OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
-    handled = TRUE;
-    auto *info = reinterpret_cast<MINMAXINFO *>(lParam);
-    if (info == nullptr) {
-        return 0;
-    }
-
-    const UINT dpi = WindowDpi(m_hWnd);
-    info->ptMinTrackSize.x = std::max<LONG>(
-        info->ptMinTrackSize.x,
-        MulDiv(kMinimumSettingsWidth, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI)
-    );
-    info->ptMinTrackSize.y = std::max<LONG>(
-        info->ptMinTrackSize.y,
-        MulDiv(kMinimumSettingsHeight, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI)
-    );
+    PositionPages();
     return 0;
 }
 
@@ -1871,7 +1049,7 @@ LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled)
         );
     }
     SetControlFont(m_tabs.m_hWnd);
-    LayoutControls();
+    PositionPages();
     return 0;
 }
 
