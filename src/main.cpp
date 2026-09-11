@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "Database.h"
+#include "PreviewWindow.h"
 #include "Settings.h"
 #include "SettingsWindow.h"
 
@@ -48,17 +49,14 @@ constexpr UINT_PTR kSearchTimerId = 1;
 constexpr UINT_PTR kPreviewTimerId = 2;
 constexpr UINT kSearchDebounceMilliseconds = 180;
 
-constexpr int kSearchControlId = 2001;
-constexpr int kHistoryListControlId = 2002;
-constexpr int kEmptyLabelControlId = 2003;
-constexpr int kTitleControlId = 2004;
-constexpr int kPreviewControlId = 2005;
-constexpr int kFooterControlId = 2006;
+constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
+constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
+constexpr int kEmptyLabelControlId = IDC_HISTORY_EMPTY;
+constexpr int kTitleControlId = IDC_HISTORY_TITLE;
+constexpr int kFooterControlId = IDC_HISTORY_FOOTER;
 
 constexpr int kPopupWidth = 640;
 constexpr int kPopupHeight = 520;
-constexpr int kMinimumPopupWidth = 420;
-constexpr int kMinimumPopupHeight = 260;
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
 
@@ -383,19 +381,17 @@ HICON TrayIconForName(std::wstring_view name) {
 
 } // namespace
 
-class MainWindow : public CWindowImpl<MainWindow> {
+class MainWindow : public CDialogImpl<MainWindow> {
 public:
+    enum { IDD = IDD_HISTORY };
+
     explicit MainWindow(Database &database)
         : m_database(database), m_settings(AppSettings::Load(database)) {}
 
-    DECLARE_WND_CLASS_EX(L"ClipboardWindow", CS_HREDRAW | CS_VREDRAW, COLOR_WINDOW)
-
     BEGIN_MSG_MAP(MainWindow)
-        MESSAGE_HANDLER(WM_CREATE, OnCreate)
+        MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
-        MESSAGE_HANDLER(WM_SIZE, OnSize)
-        MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
         MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
@@ -450,7 +446,6 @@ public:
         } else {
             ::SetFocus(m_hWnd);
         }
-        LayoutControls();
         UpdateWindow();
     }
 
@@ -518,65 +513,14 @@ private:
         return CallWindowProcW(original, window, message, wParam, lParam);
     }
 
-    bool CreateControls() {
-        CStatic title_control;
-        CEdit search_control;
-        CListBox history_control;
-        CStatic empty_control;
-        CStatic preview_control;
-        CStatic footer_control;
-
-        m_title = title_control.Create(
-            m_hWnd,
-            CWindow::rcDefault,
-            L"剪贴板历史",
-            WS_CHILD | SS_LEFT | SS_NOPREFIX,
-            0U,
-            static_cast<UINT>(kTitleControlId)
-        );
-        m_search = search_control.Create(
-            m_hWnd,
-            CWindow::rcDefault,
-            nullptr,
-            WS_CHILD | WS_TABSTOP | ES_AUTOHSCROLL,
-            WS_EX_CLIENTEDGE,
-            static_cast<UINT>(kSearchControlId)
-        );
-        m_historyList = history_control.Create(
-            m_hWnd,
-            CWindow::rcDefault,
-            nullptr,
-            WS_CHILD | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
-                LBS_HASSTRINGS | LBS_OWNERDRAWFIXED | LBS_DISABLENOSCROLL,
-            WS_EX_CLIENTEDGE,
-            static_cast<UINT>(kHistoryListControlId)
-        );
-        m_emptyLabel = empty_control.Create(
-            m_hWnd,
-            CWindow::rcDefault,
-            L"暂无剪贴板记录",
-            WS_CHILD | SS_CENTER | SS_CENTERIMAGE,
-            0U,
-            static_cast<UINT>(kEmptyLabelControlId)
-        );
-        m_preview = preview_control.Create(
-            m_hWnd,
-            CWindow::rcDefault,
-            nullptr,
-            WS_CHILD | SS_LEFT | SS_NOPREFIX | SS_EDITCONTROL,
-            WS_EX_CLIENTEDGE,
-            static_cast<UINT>(kPreviewControlId)
-        );
-        m_footer = footer_control.Create(
-            m_hWnd,
-            CWindow::rcDefault,
-            nullptr,
-            WS_CHILD | SS_RIGHT | SS_NOPREFIX,
-            0U,
-            static_cast<UINT>(kFooterControlId)
-        );
+    bool BindControls() {
+        m_title = ::GetDlgItem(m_hWnd, kTitleControlId);
+        m_search = ::GetDlgItem(m_hWnd, kSearchControlId);
+        m_historyList = ::GetDlgItem(m_hWnd, kHistoryListControlId);
+        m_emptyLabel = ::GetDlgItem(m_hWnd, kEmptyLabelControlId);
+        m_footer = ::GetDlgItem(m_hWnd, kFooterControlId);
         if (m_title == nullptr || m_search == nullptr || m_historyList == nullptr ||
-            m_emptyLabel == nullptr || m_preview == nullptr || m_footer == nullptr) {
+            m_emptyLabel == nullptr || m_footer == nullptr) {
             return false;
         }
 
@@ -593,13 +537,27 @@ private:
             reinterpret_cast<LONG_PTR>(&MainWindow::HistoryListWindowProc)
         ));
 
-        const HFONT font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
-        for (HWND control : {m_title, m_search, m_historyList, m_emptyLabel, m_preview, m_footer}) {
+        const HFONT font = m_normalFont != nullptr
+            ? m_normalFont
+            : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        for (HWND control : {m_title, m_search, m_historyList, m_emptyLabel, m_footer}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
         SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索剪贴板内容…"));
         ::SetWindowTextW(m_footer, L"Enter：复制/粘贴  ·  Alt+P：置顶  ·  Alt+Backspace：删除");
         return true;
+    }
+
+    void ApplyHistoryVisibility() {
+        if (m_search == nullptr) {
+            return;
+        }
+        const bool show_search = m_settings.show_search &&
+            (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
+        ::ShowWindow(m_title, m_settings.show_title ? SW_SHOW : SW_HIDE);
+        ::ShowWindow(m_search, show_search ? SW_SHOW : SW_HIDE);
+        ::ShowWindow(m_historyList, SW_SHOW);
+        ::ShowWindow(m_footer, m_settings.show_footer ? SW_SHOW : SW_HIDE);
     }
 
     void RestoreControlSubclass(HWND control, WNDPROC original) {
@@ -622,8 +580,8 @@ private:
             return false;
         }
         return window == m_hWnd || window == m_search || window == m_historyList ||
-            window == m_emptyLabel || window == m_title || window == m_preview ||
-            window == m_footer || ::IsChild(m_hWnd, window) ||
+            window == m_emptyLabel || window == m_title || window == m_footer ||
+            ::IsChild(m_hWnd, window) || m_previewWindow.ContainsWindow(window) ||
             (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
     }
 
@@ -738,45 +696,50 @@ private:
         ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, kPopupWidth, kPopupHeight, SWP_NOACTIVATE);
     }
 
-    void LayoutControls() {
-        if (m_search == nullptr) {
+    void PositionPreviewWindow() {
+        const HWND preview = m_previewWindow.Window();
+        if (preview == nullptr || !::IsWindow(preview)) {
             return;
         }
-        RECT client{};
-        GetClientRect(&client);
-        const int width = std::max<int>(0, static_cast<int>(client.right - client.left));
-        const int height = std::max<int>(0, static_cast<int>(client.bottom - client.top));
-        int top = 8;
 
-        const bool show_title = m_settings.show_title;
-        const bool show_search = m_settings.show_search &&
-            (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
-        ::ShowWindow(m_title, show_title ? SW_SHOW : SW_HIDE);
-        ::ShowWindow(m_search, show_search ? SW_SHOW : SW_HIDE);
-        ::ShowWindow(m_historyList, SW_SHOW);
-        ::ShowWindow(m_footer, m_settings.show_footer ? SW_SHOW : SW_HIDE);
-        ::ShowWindow(m_preview, m_previewVisible ? SW_SHOW : SW_HIDE);
-
-        if (show_title) {
-            ::MoveWindow(m_title, 10, top, width - 20, 24, TRUE);
-            top += 26;
-        }
-        if (show_search) {
-            ::MoveWindow(m_search, 8, top, width - 16, 30, TRUE);
-            top += 34;
+        RECT main_rect{};
+        RECT preview_rect{};
+        if (!::GetWindowRect(m_hWnd, &main_rect) ||
+            !::GetWindowRect(preview, &preview_rect)) {
+            return;
         }
 
-        int footer_height = m_settings.show_footer ? 24 : 0;
-        int preview_height = m_previewVisible ? 82 : 0;
-        const int list_bottom = std::max(top + 30, height - footer_height - preview_height - 8);
-        ::MoveWindow(m_historyList, 8, top, width - 16, std::max<int>(30, list_bottom - top), TRUE);
-        ::MoveWindow(m_emptyLabel, 8, top, width - 16, std::max<int>(30, list_bottom - top), TRUE);
-        if (m_previewVisible) {
-            ::MoveWindow(m_preview, 8, list_bottom + 4, width - 16, preview_height - 4, TRUE);
+        const int width = preview_rect.right - preview_rect.left;
+        const int height = preview_rect.bottom - preview_rect.top;
+        if (width <= 0 || height <= 0) {
+            return;
         }
-        if (m_settings.show_footer) {
-            ::MoveWindow(m_footer, 8, height - footer_height, width - 16, footer_height, TRUE);
+        HMONITOR monitor = ::MonitorFromWindow(m_hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO monitor_info{sizeof(monitor_info)};
+        if (monitor == nullptr || !::GetMonitorInfoW(monitor, &monitor_info)) {
+            return;
         }
+
+        const RECT &work_area = monitor_info.rcWork;
+        int x = main_rect.right + 8;
+        int y = main_rect.top;
+        if (x + width > work_area.right) {
+            x = main_rect.left - width - 8;
+        }
+        const int max_x = std::max<int>(work_area.left, work_area.right - width);
+        const int max_y = std::max<int>(work_area.top, work_area.bottom - height);
+        x = std::clamp(x, static_cast<int>(work_area.left), max_x);
+        y = std::clamp(y, static_cast<int>(work_area.top), max_y);
+
+        ::SetWindowPos(
+            preview,
+            HWND_TOPMOST,
+            x,
+            y,
+            0,
+            0,
+            SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+        );
     }
 
     void CaptureTargetWindow(HWND candidate = nullptr) {
@@ -1132,7 +1095,7 @@ private:
                  (m_settings.paste_by_default ? L"粘贴" : L"复制") +
                  L"  ·  Alt+P：置顶  ·  Alt+Backspace：删除").c_str()
             );
-            LayoutControls();
+            ApplyHistoryVisibility();
         } catch (const std::exception &error) {
             m_loadingList = false;
             OutputDebugStringA(error.what());
@@ -1166,19 +1129,8 @@ private:
                 HidePreview();
                 return;
             }
-            std::wstring preview = item->content;
-            if (preview.empty()) {
-                preview = DisplayText(*item);
-            }
-            if (item->has_image) {
-                preview += L"\r\n[图片预览高度设置：" + std::to_wstring(m_settings.image_max_height) + L" px]";
-            }
-            if (item->has_files) {
-                preview += L"\r\n[文件项目]";
-            }
-            ::SetWindowTextW(m_preview, preview.substr(0, 4000).c_str());
-            m_previewVisible = true;
-            LayoutControls();
+            m_previewWindow.SetItem(*item);
+            PositionPreviewWindow();
         } catch (...) {
             HidePreview();
         }
@@ -1186,11 +1138,7 @@ private:
 
     void HidePreview() {
         KillTimer(kPreviewTimerId);
-        m_previewVisible = false;
-        if (m_preview != nullptr) {
-            ::ShowWindow(m_preview, SW_HIDE);
-        }
-        LayoutControls();
+        m_previewWindow.Hide();
     }
 
     std::vector<std::pair<size_t, size_t>> HighlightRanges(std::wstring_view text) const {
@@ -1544,7 +1492,7 @@ private:
             return true;
         }
         if (IsHotKeyPressed(m_settings.preview_hotkey, key)) {
-            if (m_previewVisible) {
+            if (m_previewWindow.IsVisible()) {
                 HidePreview();
             } else {
                 ShowPreviewForSelection();
@@ -1710,7 +1658,7 @@ private:
             m_searchQuery.clear();
         }
         RefreshHistory(m_searchQuery);
-        LayoutControls();
+        ApplyHistoryVisibility();
     }
 
     void ScheduleSearchFromCurrentEdit() {
@@ -1718,11 +1666,12 @@ private:
         ScheduleSearch();
     }
 
-    LRESULT OnCreate(UINT, WPARAM, LPARAM, BOOL &handled) {
+    LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = TRUE;
         CreateFonts();
-        if (!CreateControls()) {
-            return -1;
+        if (!BindControls() || !m_previewWindow.Initialize(m_hWnd)) {
+            handled = FALSE;
+            return FALSE;
         }
         ReloadIgnoreLists();
         m_clipboardListenerAdded = AddClipboardFormatListener(m_hWnd) == TRUE;
@@ -1733,7 +1682,8 @@ private:
             m_settings.open_hotkey.virtual_key
         ) == TRUE;
         RefreshHistory(L"");
-        return 0;
+        ApplyHistoryVisibility();
+        return TRUE;
     }
 
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL &) {
@@ -1748,20 +1698,6 @@ private:
 
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL &) {
         return 1;
-    }
-
-    LRESULT OnSize(UINT wParam, WPARAM, LPARAM, BOOL &) {
-        if (wParam != SIZE_MINIMIZED) {
-            LayoutControls();
-        }
-        return 0;
-    }
-
-    LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL &) {
-        auto *minimum_maximum = reinterpret_cast<MINMAXINFO *>(lParam);
-        minimum_maximum->ptMinTrackSize.x = kMinimumPopupWidth;
-        minimum_maximum->ptMinTrackSize.y = kMinimumPopupHeight;
-        return 0;
     }
 
     LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
@@ -1992,6 +1928,9 @@ private:
             RemoveClipboardFormatListener(m_hWnd);
             m_clipboardListenerAdded = false;
         }
+        if (m_previewWindow.Window() != nullptr && ::IsWindow(m_previewWindow.Window())) {
+            m_previewWindow.DestroyWindow();
+        }
         RestoreControlSubclasses();
         RemoveTrayIcon();
         DestroyFonts();
@@ -2005,8 +1944,8 @@ private:
     HWND m_historyList = nullptr;
     HWND m_emptyLabel = nullptr;
     HWND m_title = nullptr;
-    HWND m_preview = nullptr;
     HWND m_footer = nullptr;
+    PreviewWindow m_previewWindow;
     WNDPROC m_originalSearchProc = nullptr;
     WNDPROC m_originalHistoryListProc = nullptr;
     std::vector<ClipboardItem> m_items;
@@ -2032,7 +1971,6 @@ private:
     bool m_loadingList = false;
     bool m_pasting = false;
     bool m_skipNextClipboardEvent = false;
-    bool m_previewVisible = false;
     bool m_hasTargetCaretRect = false;
     bool m_exiting = false;
     bool m_trayMenuShowing = false;
@@ -2069,13 +2007,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     try {
         Database database(GetDatabasePath());
         MainWindow window(database);
-        if (!window.Create(
-            nullptr,
-            CWindow::rcDefault,
-            L"Clipboard",
-            WS_POPUP | WS_CLIPCHILDREN,
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST
-        )) {
+        if (!window.Create(nullptr)) {
             _Module.Term();
             CoUninitialize();
             return 1;

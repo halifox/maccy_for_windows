@@ -23,7 +23,9 @@ add_executable(app WIN32
         src/Database.cpp
         src/Settings.cpp
         src/SettingsWindow.cpp
+        src/PreviewWindow.cpp
         src/SettingsWindow.rc
+        src/MainWindow.rc
 )
 
 set_target_properties(app PROPERTIES
@@ -42,6 +44,7 @@ target_link_libraries(app PRIVATE
         advapi32
         comdlg32
         comctl32
+        windowscodecs
         ole32
 )
 
