@@ -2359,6 +2359,7 @@ private:
     }
 
     void OpenSettings() {
+        HideMainWindow();
         if (m_settingsWindow == nullptr) {
             m_settingsWindow = std::make_unique<SettingsWindow>(m_database, m_hWnd);
         }
