@@ -6,6 +6,8 @@
 #include <atlbase.h>
 #include <atlwin.h>
 
+#include <string>
+
 #include "Database.h"
 #include "resource.h"
 
@@ -30,7 +32,7 @@ public:
 private:
     void ClearBitmap();
     bool LoadBitmapForItem(const ClipboardItem &item);
-    void UpdateStatus(const ClipboardItem &item, bool image_loaded);
+    void UpdateStatus(const ClipboardItem &item, bool image_loaded, const std::wstring &text);
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);

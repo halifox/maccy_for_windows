@@ -54,6 +54,9 @@ constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
 constexpr int kPopupWidth = 640;
 constexpr int kPopupHeight = 520;
+constexpr int kHistoryWindowMargin = 8;
+constexpr int kHistorySearchGap = 6;
+constexpr int kHistoryFallbackSearchHeight = 24;
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
 
@@ -387,6 +390,7 @@ public:
 
     BEGIN_MSG_MAP(MainWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
@@ -444,6 +448,7 @@ public:
             ::SetFocus(m_hWnd);
         }
         UpdateWindow();
+        UpdateHistoryHoverFromCursor();
     }
 
 private:
@@ -478,6 +483,15 @@ private:
         const WNDPROC original = owner != nullptr && owner->m_originalHistoryListProc != nullptr
             ? owner->m_originalHistoryListProc
             : ::DefWindowProcW;
+        if (owner != nullptr && message == WM_MOUSEMOVE) {
+            owner->OnHistoryMouseMove(
+                window,
+                POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)}
+            );
+        }
+        if (owner != nullptr && message == WM_MOUSELEAVE) {
+            owner->OnHistoryMouseLeave();
+        }
         if (owner != nullptr && message == WM_KEYDOWN) {
             if (wParam == VK_ESCAPE) {
                 owner->HideMainWindow();
@@ -490,6 +504,11 @@ private:
             if (owner->HandlePopupShortcut(wParam)) {
                 return 0;
             }
+        }
+        if (owner != nullptr && (message == WM_MOUSEWHEEL || message == WM_VSCROLL)) {
+            const LRESULT result = CallWindowProcW(original, window, message, wParam, lParam);
+            owner->UpdateHistoryHoverFromCursor();
+            return result;
         }
         if (owner != nullptr && message == WM_LBUTTONUP) {
             const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
@@ -537,7 +556,56 @@ private:
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
         SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索剪贴板内容…"));
+        RECT search_rect{};
+        if (::GetWindowRect(m_search, &search_rect)) {
+            m_searchHeight = std::max(1L, search_rect.bottom - search_rect.top);
+        }
         return true;
+    }
+
+    void LayoutHistoryControls() {
+        if (m_search == nullptr || m_historyList == nullptr || !::IsWindow(m_hWnd)) {
+            return;
+        }
+
+        RECT client{};
+        ::GetClientRect(m_hWnd, &client);
+        const int width = std::max(1L, client.right - client.left);
+        const int height = std::max(1L, client.bottom - client.top);
+        const int control_width = std::max(1, width - 2 * kHistoryWindowMargin);
+        const bool show_search = ::IsWindowVisible(m_search) != FALSE;
+
+        int list_top = kHistoryWindowMargin;
+        if (show_search) {
+            const int search_height = std::max(
+                kHistoryFallbackSearchHeight,
+                m_searchHeight
+            );
+            ::SetWindowPos(
+                m_search,
+                nullptr,
+                kHistoryWindowMargin,
+                kHistoryWindowMargin,
+                control_width,
+                search_height,
+                SWP_NOZORDER | SWP_NOACTIVATE
+            );
+            list_top += search_height + kHistorySearchGap;
+        }
+
+        const int list_height = std::max(
+            1,
+            height - list_top - kHistoryWindowMargin
+        );
+        ::SetWindowPos(
+            m_historyList,
+            nullptr,
+            kHistoryWindowMargin,
+            list_top,
+            control_width,
+            list_height,
+            SWP_NOZORDER | SWP_NOACTIVATE
+        );
     }
 
     void ApplyHistoryVisibility() {
@@ -548,6 +616,7 @@ private:
             (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
         ::ShowWindow(m_search, show_search ? SW_SHOW : SW_HIDE);
         ::ShowWindow(m_historyList, SW_SHOW);
+        LayoutHistoryControls();
     }
 
     void RestoreControlSubclass(HWND control, WNDPROC original) {
@@ -1050,8 +1119,137 @@ private:
         return L"[剪贴板项目]";
     }
 
+    int HistoryItemAtPoint(HWND window, POINT point) const {
+        if (window == nullptr || window != m_historyList || !::IsWindow(window)) {
+            return -1;
+        }
+        const LRESULT hit = SendMessageW(
+            window,
+            LB_ITEMFROMPOINT,
+            0,
+            MAKELPARAM(point.x, point.y)
+        );
+        if (HIWORD(hit) != 0) {
+            return -1;
+        }
+        const int index = static_cast<int>(LOWORD(hit));
+        if (index < 0 || static_cast<size_t>(index) >= m_items.size()) {
+            return -1;
+        }
+        return index;
+    }
+
+    void InvalidateHistoryItem(int index) {
+        if (m_historyList == nullptr || index < 0) {
+            return;
+        }
+        RECT item_rect{};
+        if (SendMessageW(m_historyList, LB_GETITEMRECT, index, reinterpret_cast<LPARAM>(&item_rect)) != LB_ERR) {
+            ::InvalidateRect(m_historyList, &item_rect, TRUE);
+        }
+    }
+
+    void BeginHistoryMouseTracking() {
+        if (m_historyList == nullptr || m_historyMouseTracking) {
+            return;
+        }
+        TRACKMOUSEEVENT tracking{};
+        tracking.cbSize = sizeof(tracking);
+        tracking.dwFlags = TME_LEAVE;
+        tracking.hwndTrack = m_historyList;
+        if (::TrackMouseEvent(&tracking) != FALSE) {
+            m_historyMouseTracking = true;
+        }
+    }
+
+    void OnHistoryMouseMove(HWND window, POINT point) {
+        if (!m_popupVisible || window != m_historyList) {
+            return;
+        }
+        BeginHistoryMouseTracking();
+
+        const int index = HistoryItemAtPoint(window, point);
+        if (index < 0) {
+            ClearHistoryHover();
+            return;
+        }
+
+        const sqlite3_int64 item_id = m_items[static_cast<size_t>(index)].id;
+        if (index == m_hoveredItemIndex && item_id == m_hoveredItemId) {
+            const LRESULT selected = SendMessageW(m_historyList, LB_GETCURSEL, 0, 0);
+            if (selected != index) {
+                m_mouseSelectionUpdate = true;
+                SendMessageW(m_historyList, LB_SETCURSEL, index, 0);
+                m_mouseSelectionUpdate = false;
+                InvalidateHistoryItem(selected == LB_ERR ? -1 : static_cast<int>(selected));
+                InvalidateHistoryItem(index);
+            }
+            if (!m_previewWindow.IsVisible() && m_previewCandidateId == 0) {
+                SchedulePreviewForHoveredItem();
+            }
+            return;
+        }
+
+        const int previous_index = m_hoveredItemIndex;
+        m_hoveredItemIndex = index;
+        m_hoveredItemId = item_id;
+
+        m_mouseSelectionUpdate = true;
+        SendMessageW(m_historyList, LB_SETCURSEL, index, 0);
+        m_mouseSelectionUpdate = false;
+
+        InvalidateHistoryItem(previous_index);
+        InvalidateHistoryItem(index);
+
+        if (m_previewWindow.IsVisible()) {
+            ShowPreviewForItem(item_id);
+        } else {
+            SchedulePreviewForHoveredItem();
+        }
+    }
+
+    void OnHistoryMouseLeave() {
+        m_historyMouseTracking = false;
+        ClearHistoryHover();
+    }
+
+    void UpdateHistoryHoverFromCursor() {
+        if (!m_popupVisible || m_historyList == nullptr ||
+            !::IsWindowVisible(m_historyList)) {
+            return;
+        }
+
+        POINT point{};
+        if (::GetCursorPos(&point) == FALSE ||
+            ::ScreenToClient(m_historyList, &point) == FALSE) {
+            m_historyMouseTracking = false;
+            ClearHistoryHover();
+            return;
+        }
+
+        RECT client{};
+        ::GetClientRect(m_historyList, &client);
+        if (!::PtInRect(&client, point)) {
+            m_historyMouseTracking = false;
+            ClearHistoryHover();
+            return;
+        }
+        OnHistoryMouseMove(m_historyList, point);
+    }
+
+    void ClearHistoryHover() {
+        const int previous_index = m_hoveredItemIndex;
+        m_hoveredItemIndex = -1;
+        m_hoveredItemId = 0;
+        HidePreview();
+        InvalidateHistoryItem(previous_index);
+    }
+
     void RefreshHistory(std::wstring_view query) {
         try {
+            HidePreview();
+            m_hoveredItemIndex = -1;
+            m_hoveredItemId = 0;
             m_searchQuery = std::wstring(query);
             m_items = m_database.SearchHistory(
                 query,
@@ -1070,6 +1268,9 @@ private:
             }
             m_loadingList = false;
             ApplyHistoryVisibility();
+            if (m_popupVisible) {
+                UpdateHistoryHoverFromCursor();
+            }
         } catch (const std::exception &error) {
             m_loadingList = false;
             OutputDebugStringA(error.what());
@@ -1082,13 +1283,57 @@ private:
         ::SetTimer(m_hWnd, kSearchTimerId, kSearchDebounceMilliseconds, nullptr);
     }
 
-    void SchedulePreview() {
+    void SchedulePreviewForHoveredItem() {
         KillTimer(kPreviewTimerId);
-        if (!m_settings.open_preview_automatically) {
+        m_previewCandidateId = 0;
+        if (!m_popupVisible || !m_settings.open_preview_automatically ||
+            m_hoveredItemId == 0 || m_previewWindow.IsVisible()) {
+            return;
+        }
+        m_previewCandidateId = m_hoveredItemId;
+        ::SetTimer(m_hWnd, kPreviewTimerId, static_cast<UINT>(m_settings.preview_delay), nullptr);
+    }
+
+    void ShowPreviewForItem(sqlite3_int64 item_id) {
+        if (item_id <= 0) {
             HidePreview();
             return;
         }
-        ::SetTimer(m_hWnd, kPreviewTimerId, static_cast<UINT>(m_settings.preview_delay), nullptr);
+        KillTimer(kPreviewTimerId);
+        try {
+            const auto item = m_database.GetItem(item_id, true);
+            if (!item) {
+                HidePreview();
+                return;
+            }
+            m_previewWindow.SetItem(*item);
+            m_previewItemId = item_id;
+            m_previewCandidateId = 0;
+            PositionPreviewWindow();
+        } catch (...) {
+            HidePreview();
+        }
+    }
+
+    void ShowPreviewForHoveredItem() {
+        if (!m_popupVisible || m_hoveredItemId == 0 ||
+            m_previewCandidateId != m_hoveredItemId) {
+            HidePreview();
+            return;
+        }
+
+        POINT point{};
+        if (::GetCursorPos(&point) == FALSE ||
+            ::ScreenToClient(m_historyList, &point) == FALSE) {
+            ClearHistoryHover();
+            return;
+        }
+        const int index = HistoryItemAtPoint(m_historyList, point);
+        if (index < 0 || m_items[static_cast<size_t>(index)].id != m_hoveredItemId) {
+            ClearHistoryHover();
+            return;
+        }
+        ShowPreviewForItem(m_hoveredItemId);
     }
 
     void ShowPreviewForSelection() {
@@ -1097,21 +1342,13 @@ private:
             HidePreview();
             return;
         }
-        try {
-            const auto item = m_database.GetItem(m_items[static_cast<size_t>(selected)].id, true);
-            if (!item) {
-                HidePreview();
-                return;
-            }
-            m_previewWindow.SetItem(*item);
-            PositionPreviewWindow();
-        } catch (...) {
-            HidePreview();
-        }
+        ShowPreviewForItem(m_items[static_cast<size_t>(selected)].id);
     }
 
     void HidePreview() {
         KillTimer(kPreviewTimerId);
+        m_previewCandidateId = 0;
+        m_previewItemId = 0;
         m_previewWindow.Hide();
     }
 
@@ -1660,6 +1897,15 @@ private:
         return TRUE;
     }
 
+    LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
+        handled = TRUE;
+        LayoutHistoryControls();
+        if (m_previewWindow.IsVisible()) {
+            PositionPreviewWindow();
+        }
+        return 0;
+    }
+
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL &) {
         PAINTSTRUCT paint{};
         HDC dc = BeginPaint(&paint);
@@ -1763,7 +2009,9 @@ private:
         }
         if (command == kHistoryListControlId && notification == LBN_SELCHANGE) {
             handled = TRUE;
-            SchedulePreview();
+            if (!m_loadingList && !m_mouseSelectionUpdate) {
+                UpdateHistoryHoverFromCursor();
+            }
             return 0;
         }
         handled = FALSE;
@@ -1780,7 +2028,7 @@ private:
         if (wParam == kPreviewTimerId) {
             handled = TRUE;
             KillTimer(kPreviewTimerId);
-            ShowPreviewForSelection();
+            ShowPreviewForHoveredItem();
             return 0;
         }
         handled = FALSE;
@@ -1935,11 +2183,18 @@ private:
     HFONT m_underlineFont = nullptr;
     std::wstring m_searchQuery;
     std::wstring m_lastCopyText;
+    int m_searchHeight = 0;
+    int m_hoveredItemIndex = -1;
+    sqlite3_int64 m_hoveredItemId = 0;
+    sqlite3_int64 m_previewCandidateId = 0;
+    sqlite3_int64 m_previewItemId = 0;
     bool m_trayIconAdded = false;
     bool m_clipboardListenerAdded = false;
     bool m_hotkeyRegistered = false;
     bool m_popupVisible = false;
     bool m_loadingList = false;
+    bool m_historyMouseTracking = false;
+    bool m_mouseSelectionUpdate = false;
     bool m_pasting = false;
     bool m_skipNextClipboardEvent = false;
     bool m_hasTargetCaretRect = false;
