@@ -66,6 +66,13 @@ constexpr int kHistoryWindowMargin = 6;
 constexpr int kHistorySearchGap = 6;
 constexpr int kHistorySearchHeight = 23;
 constexpr int kHistoryItemHeight = 22;
+constexpr int kHistoryItemInset = 2;
+constexpr int kHistoryItemRadius = 7;
+constexpr int kHistoryItemLeftPadding = 10;
+constexpr int kHistoryItemRightPadding = 10;
+constexpr int kHistoryItemSlot = 16;
+constexpr int kHistoryItemSlotGap = 6;
+constexpr int kHistoryShortcutWidth = 74;
 constexpr int kHistoryTitleWidth = 62;
 constexpr int kHistoryFooterHeight = 24;
 constexpr int kHistoryFooterGap = 6;
@@ -397,6 +404,38 @@ HICON TrayIconForName(std::wstring_view name) {
 } // namespace
 
 class MainWindow : public CDialogImpl<MainWindow> {
+    struct HistoryItemLayout {
+        RECT background{};
+        RECT icon{};
+        RECT attachment{};
+        RECT content{};
+        RECT shortcut{};
+    };
+
+    HistoryItemLayout LayoutHistoryItem(const RECT &row, const ClipboardItem &item) const {
+        HistoryItemLayout layout{};
+        layout.background = row;
+        layout.background.left += kHistoryItemInset;
+        layout.background.right -= kHistoryItemInset;
+        layout.shortcut = row;
+        layout.shortcut.left = std::max(row.left, row.right - kHistoryItemRightPadding - kHistoryShortcutWidth);
+        layout.shortcut.right = row.right - kHistoryItemRightPadding;
+        int x = row.left + kHistoryItemLeftPadding;
+        const int y = row.top + std::max<LONG>(0, ((row.bottom - row.top) - kHistoryItemSlot) / 2);
+        if (m_settings.show_application_icons && !item.application.empty()) {
+            layout.icon = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
+            x += kHistoryItemSlot + kHistoryItemSlotGap;
+        }
+        if (item.has_image || item.has_files) {
+            layout.attachment = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
+            x += kHistoryItemSlot + kHistoryItemSlotGap;
+        }
+        layout.content = row;
+        layout.content.left = x;
+        layout.content.right = std::max<LONG>(x, layout.shortcut.left - kHistoryItemSlotGap);
+        return layout;
+    }
+
     friend struct MainWindowTests;
 public:
     enum { IDD = IDD_HISTORY };
@@ -1859,11 +1898,24 @@ private:
         const int index = static_cast<int>(draw->itemData);
         const ClipboardItem &item = m_items[index];
         const bool selected = m_activeFooter < 0 && index == m_activeItemIndex;
+        const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item);
         FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
         if (selected) {
             HGDIOBJ pen = SelectObject(draw->hDC, GetStockObject(NULL_PEN));
             HGDIOBJ brush = SelectObject(draw->hDC, GetSysColorBrush(COLOR_HIGHLIGHT));
-            RoundRect(draw->hDC, draw->rcItem.left, draw->rcItem.top, draw->rcItem.right, draw->rcItem.bottom, 8, 8);
+            RECT selected_rect = layout.background;
+            const bool previous_selected = index > 0 && index - 1 == m_activeItemIndex;
+            const bool next_selected = index + 1 < static_cast<int>(m_items.size()) && index + 1 == m_activeItemIndex;
+            if (previous_selected) selected_rect.top = draw->rcItem.top;
+            if (next_selected) selected_rect.bottom = draw->rcItem.bottom;
+            RoundRect(draw->hDC, selected_rect.left, selected_rect.top, selected_rect.right, selected_rect.bottom,
+                kHistoryItemRadius, kHistoryItemRadius);
+            if (previous_selected || next_selected) {
+                RECT join = selected_rect;
+                join.left += kHistoryItemRadius / 2;
+                join.right -= kHistoryItemRadius / 2;
+                FillRect(draw->hDC, &join, GetSysColorBrush(COLOR_HIGHLIGHT));
+            }
             SelectObject(draw->hDC, brush); SelectObject(draw->hDC, pen);
         }
         SelectObject(draw->hDC, m_normalFont);
@@ -1875,30 +1927,20 @@ private:
         const int row_height = std::max(1L, draw->rcItem.bottom - draw->rcItem.top);
         const int text_top = draw->rcItem.top + std::max(0, (row_height - text_height) / 2);
         const int icon_top = draw->rcItem.top + std::max(0, (row_height - 16) / 2);
-        RECT text_rect = draw->rcItem;
-        text_rect.left += 10;
+        RECT text_rect = layout.content;
         text_rect.top = text_top;
         text_rect.bottom = text_top + text_height;
 
-        if (m_settings.show_application_icons) {
+        if (!IsRectEmpty(&layout.icon)) {
             if (const HICON icon = IconForApplication(item.application)) {
-                DrawIconEx(draw->hDC, text_rect.left, icon_top, icon, 16, 16, 0, nullptr, DI_NORMAL);
-                text_rect.left += 22;
+                DrawIconEx(draw->hDC, layout.icon.left, layout.icon.top, icon, 16, 16, 0, nullptr, DI_NORMAL);
             }
         }
-        if (item.has_image) {
-            RECT image_rect{text_rect.left, icon_top, text_rect.left + 16, icon_top + 16};
-            HBRUSH brush = CreateSolidBrush(RGB(225, 230, 235));
-            FillRect(draw->hDC, &image_rect, brush);
+        if (!IsRectEmpty(&layout.attachment)) {
+            HBRUSH brush = CreateSolidBrush(item.has_image ? RGB(225, 230, 235) : RGB(250, 220, 130));
+            FillRect(draw->hDC, &layout.attachment, brush);
             DeleteObject(brush);
-            FrameRect(draw->hDC, &image_rect, GetSysColorBrush(COLOR_GRAYTEXT));
-            text_rect.left += 22;
-        } else if (item.has_files) {
-            RECT file_rect{text_rect.left, icon_top, text_rect.left + 16, icon_top + 16};
-            HBRUSH brush = CreateSolidBrush(RGB(250, 220, 130));
-            FillRect(draw->hDC, &file_rect, brush);
-            DeleteObject(brush);
-            text_rect.left += 22;
+            FrameRect(draw->hDC, &layout.attachment, GetSysColorBrush(COLOR_GRAYTEXT));
         }
 
         std::wstring shortcut;
@@ -1908,11 +1950,11 @@ private:
             for (int i = 0; i <= index; ++i) if (!m_items[i].pinned) ++number;
             if (number <= 9) shortcut = L"Ctrl+" + std::to_wstring(number);
         }
-        RECT keyRect = draw->rcItem; keyRect.right -= 10; keyRect.left = keyRect.right - 68;
+        RECT keyRect = layout.shortcut;
         SetBkMode(draw->hDC, TRANSPARENT);
         SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
         DrawTextW(draw->hDC, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-        text_rect.right = keyRect.left - 26;
+        text_rect.right = layout.content.right;
         const std::wstring text = DisplayText(item);
         DrawTextWithHighlights(draw->hDC, text_rect, text, selected);
         if (m_settings.show_hex_color_swatch) {
