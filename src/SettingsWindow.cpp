@@ -464,6 +464,7 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_aPopupPosition, L"目标窗口中心");
     AddComboItem(m_aPopupPosition, L"屏幕中心");
     AddComboItem(m_aPopupPosition, L"上次位置");
+    AddComboItem(m_aPopupPosition, L"目标窗口左上角附近");
 
     AddComboItem(m_aPinTo, L"顶部");
     AddComboItem(m_aPinTo, L"底部");

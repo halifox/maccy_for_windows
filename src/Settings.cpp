@@ -142,7 +142,7 @@ AppSettings AppSettings::Load(const Database &database) {
         L"appearance.popupPosition",
         static_cast<int>(settings.popup_position),
         0,
-        4
+        5
     ));
     settings.popup_screen = ReadInt(database, L"appearance.popupScreen", settings.popup_screen, 0, 64);
     settings.pin_to = static_cast<PinPosition>(ReadInt(

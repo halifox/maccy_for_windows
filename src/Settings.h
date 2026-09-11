@@ -17,6 +17,7 @@ enum class PopupPosition {
     WindowCenter = 2,
     ScreenCenter = 3,
     LastPosition = 4,
+    WindowTopLeft = 5,
 };
 
 enum class PinPosition {
@@ -64,7 +65,7 @@ struct AppSettings {
     int history_size = 200;
     int sort_by = 0; // last copied, first copied, number of copies
 
-    PopupPosition popup_position = PopupPosition::Cursor;
+    PopupPosition popup_position = PopupPosition::WindowTopLeft;
     int popup_screen = 0; // 0 = active screen, otherwise monitor index + 1
     PinPosition pin_to = PinPosition::Top;
     int image_max_height = 40;
