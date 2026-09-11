@@ -65,6 +65,10 @@ constexpr int kMaximumPopupHeight = 1200;
 constexpr int kHistoryWindowMargin = 6;
 constexpr int kHistorySearchGap = 6;
 constexpr int kHistorySearchHeight = 23;
+constexpr int kHistorySearchIconWidth = 24;
+constexpr int kHistorySearchClearWidth = 20;
+constexpr int kHistoryPreviewWidth = 23;
+constexpr int kHistoryHeaderGap = 6;
 constexpr int kHistoryItemHeight = 22;
 constexpr int kHistoryItemInset = 2;
 constexpr int kHistoryItemRadius = 7;
@@ -73,7 +77,6 @@ constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
-constexpr int kHistoryTitleWidth = 62;
 constexpr int kHistoryFooterHeight = 24;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
@@ -755,21 +758,43 @@ private:
         const int width = std::max(1L, client.right - 2 * margin);
         const bool header = ::IsWindowVisible(m_search) != FALSE;
         const int headerHeight = header ? kHistorySearchHeight : 0;
-        const int titleWidth = header && m_settings.show_title ? kHistoryTitleWidth : 0;
+        int titleWidth = 0;
+        if (header && m_settings.show_title) {
+            HDC dc = ::GetDC(m_hWnd);
+            if (dc != nullptr) {
+                const HFONT font = m_smallFont != nullptr ? m_smallFont : m_normalFont;
+                const HGDIOBJ oldFont = font != nullptr ? ::SelectObject(dc, font) : nullptr;
+                SIZE textSize{};
+                if (::GetTextExtentPoint32W(dc, L"Clipboard", 9, &textSize)) {
+                    titleWidth = textSize.cx + 8;
+                }
+                if (oldFont != nullptr) ::SelectObject(dc, oldFont);
+                ::ReleaseDC(m_hWnd, dc);
+            }
+        }
         m_titleRect = {margin, margin, margin + titleWidth, margin + headerHeight};
         const HWND title = ::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE);
         ::SetWindowPos(title, nullptr, margin, margin, titleWidth, headerHeight, SWP_NOZORDER | SWP_NOACTIVATE);
         ::ShowWindow(title, titleWidth ? SW_SHOW : SW_HIDE);
-        const int searchLeft = margin + titleWidth + (titleWidth ? 6 : 0);
-        m_searchRect = {searchLeft, margin, margin + width - 32, margin + headerHeight};
+        const int previewLeft = margin + width - kHistoryPreviewWidth;
+        const int searchLeft = margin + titleWidth + (titleWidth ? kHistoryHeaderGap : 0);
+        const int searchRight = previewLeft - kHistoryHeaderGap;
+        m_searchRect = {searchLeft, margin, searchRight, margin + headerHeight};
         if (header) {
-            ::SetWindowPos(m_search, nullptr, searchLeft + 24, margin,
-                std::max(1L, m_searchRect.right - searchLeft - 50), kHistorySearchHeight,
+            ::SetWindowPos(m_search, nullptr, searchLeft + kHistorySearchIconWidth, margin,
+                std::max<LONG>(1L, searchRight - searchLeft - kHistorySearchIconWidth - kHistorySearchClearWidth),
+                kHistorySearchHeight,
                 SWP_NOZORDER | SWP_NOACTIVATE);
-            ::SetWindowPos(m_searchClear, nullptr, m_searchRect.right - 24, margin, 22,
+            ::SetWindowPos(m_searchClear, nullptr, searchRight - kHistorySearchClearWidth, margin,
+                kHistorySearchClearWidth,
                 kHistorySearchHeight, SWP_NOZORDER | SWP_NOACTIVATE);
-            ::SetWindowPos(m_previewToggle, nullptr, margin + width - 26, margin, 26,
+            ::SetWindowPos(m_previewToggle, nullptr, previewLeft, margin, kHistoryPreviewWidth,
                 kHistorySearchHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+        } else {
+            for (HWND control : {m_search, m_searchClear, m_previewToggle}) {
+                ::SetWindowPos(control, nullptr, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+            }
         }
         ::ShowWindow(m_searchClear, header && !ReadWindowText(m_search).empty() ? SW_SHOW : SW_HIDE);
         ::ShowWindow(m_previewToggle, header ? SW_SHOW : SW_HIDE);
@@ -828,6 +853,14 @@ private:
         }
         ::ShowWindow(m_search, visible ? SW_SHOW : SW_HIDE);
         LayoutHistoryControls();
+        if (m_popupVisible && !m_inSizeMove) {
+            RECT rect{};
+            if (::GetWindowRect(m_hWnd, &rect)) {
+                ::SetWindowPos(m_hWnd, nullptr, rect.left, rect.top,
+                    rect.right - rect.left, PopupHeight(),
+                    SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
     }
 
     void UpdateFooterControls() {
@@ -2519,9 +2552,11 @@ private:
             SelectObject(dc, brush); SelectObject(dc, pen);
             HPEN iconPen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT));
             pen = SelectObject(dc, iconPen); brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-            Ellipse(dc, m_searchRect.left + 7, m_searchRect.top + 8, m_searchRect.left + 16, m_searchRect.top + 17);
-            MoveToEx(dc, m_searchRect.left + 15, m_searchRect.top + 16, nullptr);
-            LineTo(dc, m_searchRect.left + 20, m_searchRect.top + 21);
+            const int iconLeft = m_searchRect.left + 7;
+            const int iconTop = m_searchRect.top + 7;
+            Ellipse(dc, iconLeft, iconTop, iconLeft + 9, iconTop + 9);
+            MoveToEx(dc, iconLeft + 7, iconTop + 7, nullptr);
+            LineTo(dc, iconLeft + 13, iconTop + 13);
             SelectObject(dc, brush); SelectObject(dc, pen); DeleteObject(iconPen);
         }
         if (m_settings.show_title && !IsRectEmpty(&m_titleRect)) {
