@@ -597,7 +597,7 @@ void SettingsWindow::SetIgnorePage(int page) {
     } else if (m_ignorePage == 1) {
         ::SetWindowTextW(
             m_iDescription,
-            L"忽略指定的 Windows 剪贴板格式。可填写标准名称（如 CF_UNICODETEXT、CF_HDROP）或注册格式名称。恢复默认会清空 Windows 版自定义列表。"
+            L"忽略指定的 Windows 剪贴板格式。可填写标准名称（如 CF_UNICODETEXT、CF_HDROP）或注册格式名称。恢复默认将替换为内置忽略格式规则。"
         );
     } else {
         ::SetWindowTextW(
@@ -611,7 +611,9 @@ void SettingsWindow::SetIgnorePage(int page) {
 }
 void SettingsWindow::LoadGeneralControls() {
     SetCheck(m_gLaunch, m_settings.launch_at_login);
-    SetCheck(m_gUpdates, m_settings.check_for_updates);
+    SetCheck(m_gUpdates, false);
+    ::EnableWindow(m_gUpdates, FALSE);
+    ::EnableWindow(::GetDlgItem(m_pages[kPageGeneral], kGCheckNow), FALSE);
     SetHotKeyControl(m_gOpenHotKey, m_settings.open_hotkey);
     SetHotKeyControl(m_gPinHotKey, m_settings.pin_hotkey);
     SetHotKeyControl(m_gDeleteHotKey, m_settings.delete_hotkey);
@@ -622,6 +624,7 @@ void SettingsWindow::LoadGeneralControls() {
 }
 
 void SettingsWindow::LoadAppearanceControls() {
+    ::EnableWindow(m_aImageHeight, FALSE);
     SelectCombo(m_aPopupPosition, static_cast<int>(m_settings.popup_position));
     SendMessageW(m_aPopupScreen, CB_RESETCONTENT, 0, 0);
     const int monitor_count = std::max(1, GetSystemMetrics(SM_CMONITORS));
@@ -659,6 +662,21 @@ void SettingsWindow::LoadAppearanceControls() {
     SetCheck(m_aShowIcons, m_settings.show_application_icons);
     SetCheck(m_aShowSwatch, m_settings.show_hex_color_swatch);
     ::EnableWindow(m_aPreviewDelay, m_settings.open_preview_automatically);
+    UpdateDependencies();
+}
+
+void SettingsWindow::UpdateDependencies() {
+    const std::wstring hint = std::wstring(L"Enter：") +
+        (!IsChecked(m_gPasteByDefault) ? L"复制" : IsChecked(m_gRemoveFormatting) ? L"纯文本粘贴" : L"粘贴") +
+        L"；Alt+Enter：切换复制/粘贴；Shift+Enter：切换粘贴格式";
+    ::SetWindowTextW(::GetDlgItem(m_pages[kPageGeneral], IDC_G_BEHAVIOR_HINT), hint.c_str());
+    ::EnableWindow(m_aSearchVisibility, IsChecked(m_aShowSearch));
+    ::EnableWindow(m_aShowTitle, IsChecked(m_aShowSearch));
+    ::EnableWindow(m_aPreviewDelay, IsChecked(m_aOpenPreview));
+    ::EnableWindow(m_aMenuIcon, IsChecked(m_aShowStatus));
+    ::EnableWindow(m_aShowRecent, IsChecked(m_aShowStatus));
+    const auto position = static_cast<PopupPosition>(ComboSelection(m_aPopupPosition));
+    ::EnableWindow(::GetDlgItem(m_pages[kPageAppearance], kAResetPosition), position == PopupPosition::LastPosition);
 }
 
 void SettingsWindow::LoadStorageControls() {
@@ -737,6 +755,7 @@ void SettingsWindow::LoadSelectedPin() {
     }
     const ClipboardItem &item = m_pins[static_cast<size_t>(selected)];
     m_selectedPinId = item.id;
+    m_originalPinContent = PinTextContent(item);
     ::SetWindowTextW(m_pKey, item.pin.c_str());
     ::SetWindowTextW(m_pTitle, item.title.c_str());
     m_selectedPinTextEditable = item.has_text && !item.has_image && !item.has_files;
@@ -851,6 +870,7 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
         if (previous.show_special_symbols != m_settings.show_special_symbols) {
             m_database.RegenerateTitles(m_settings.show_special_symbols);
         }
+        UpdateDependencies();
         if (notify) {
             NotifyOwner();
         }
@@ -957,10 +977,23 @@ void SettingsWindow::SaveSelectedPin() {
     if (m_selectedPinId == 0) {
         return;
     }
-    const std::wstring key = ReadWindowText(m_pKey);
+    std::wstring key = ReadWindowText(m_pKey);
+    std::transform(key.begin(), key.end(), key.begin(), towlower);
+    if (key.size() != 1 || key[0] < L'a' || key[0] > L'z' ||
+        std::wstring_view(L"acfuqvxyz").find(key[0]) != std::wstring_view::npos ||
+        towupper(key[0]) == m_settings.pin_hotkey.virtual_key ||
+        towupper(key[0]) == m_settings.delete_hotkey.virtual_key ||
+        towupper(key[0]) == m_settings.preview_hotkey.virtual_key ||
+        std::any_of(m_pins.begin(), m_pins.end(), [&](const auto &item) {
+            return item.id != m_selectedPinId && item.pin.size() == 1 && towlower(item.pin[0]) == key[0];
+        })) {
+        MessageBoxW(L"请选择未使用且不与搜索、编辑或已配置快捷键冲突的单个英文字母。", L"置顶快捷键", MB_OK | MB_ICONWARNING);
+        return;
+    }
     const std::wstring title = ReadWindowText(m_pTitle);
     try {
-        if (m_selectedPinTextEditable) {
+        if (m_selectedPinTextEditable && ReadWindowText(m_pContent) != m_originalPinContent) {
+            if (MessageBoxW(L"修改内容将保存为纯文本并移除原有格式。继续？", L"修改置顶内容", MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING) != IDYES) return;
             m_database.UpdatePinnedItem(m_selectedPinId, key, title, ReadWindowText(m_pContent));
         } else {
             m_database.UpdatePinnedMetadata(m_selectedPinId, key, title);
@@ -993,14 +1026,7 @@ void SettingsWindow::OpenNotificationsSettings() {
 }
 
 void SettingsWindow::CheckForUpdatesNow() {
-    ShellExecuteW(
-        m_hWnd,
-        L"open",
-        L"https://github.com/p0deje/Maccy/releases/latest",
-        nullptr,
-        nullptr,
-        SW_SHOWNORMAL
-    );
+    MessageBoxW(L"此 Windows 版本尚未提供更新服务。", L"检查更新", MB_OK);
 }
 
 void SettingsWindow::ResetPopupPosition() {

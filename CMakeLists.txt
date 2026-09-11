@@ -39,6 +39,7 @@ target_include_directories(app PRIVATE
 target_link_libraries(app PRIVATE
         sqlite3
         user32
+        imm32
         gdi32
         shell32
         advapi32
@@ -52,9 +53,24 @@ target_compile_definitions(app PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
     target_compile_options(app PRIVATE /utf-8)
+    target_link_options(app PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()
 
 include(GNUInstallDirs)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(popup_tests tests/PopupTests.cpp src/Database.cpp src/Settings.cpp
+        src/SettingsWindow.cpp src/PreviewWindow.cpp src/MainWindow.rc src/SettingsWindow.rc)
+    target_include_directories(popup_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/WTL10_01_Release/Include")
+    target_compile_definitions(popup_tests PRIVATE UNICODE _UNICODE)
+    target_link_libraries(popup_tests PRIVATE sqlite3 user32 imm32 gdi32 shell32 advapi32 comdlg32 comctl32 windowscodecs ole32)
+    if(MSVC)
+        target_compile_options(popup_tests PRIVATE /utf-8)
+        target_link_options(popup_tests PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
+    endif()
+    add_test(NAME popup_regressions COMMAND popup_tests)
+endif()
 
 install(TARGETS app
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

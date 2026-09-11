@@ -57,6 +57,7 @@ private:
     void LoadAppearanceControls();
     void LoadStorageControls();
     void LoadAdvancedControls();
+    void UpdateDependencies();
     void RefreshIgnoreList();
     void RefreshPinsList();
     void LoadSelectedPin();
@@ -150,6 +151,7 @@ private:
     HWND m_pTitle = nullptr;
     HWND m_pContent = nullptr;
     HWND m_pContentHint = nullptr;
+    std::wstring m_originalPinContent;
     sqlite3_int64 m_selectedPinId = 0;
     bool m_selectedPinTextEditable = false;
     std::vector<ClipboardItem> m_pins;

@@ -21,6 +21,7 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
     END_MSG_MAP()
 
     bool Initialize(HWND owner, int width = 450);
@@ -42,6 +43,7 @@ private:
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
 
     HWND m_image = nullptr;
     HWND m_text = nullptr;

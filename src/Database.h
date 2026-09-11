@@ -85,6 +85,7 @@ public:
     std::optional<ClipboardItem> GetItem(sqlite3_int64 id, bool load_data = true) const;
     std::vector<ClipboardItem> GetPinnedItems() const;
 
+    void MarkCopied(sqlite3_int64 id) const;
     void DeleteItem(sqlite3_int64 id) const;
     void DeleteUnpinned() const;
     void DeleteAll() const;

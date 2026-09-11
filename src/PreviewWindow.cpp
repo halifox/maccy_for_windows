@@ -342,6 +342,12 @@ void PreviewWindow::LayoutControls() {
     ::GetClientRect(m_hWnd, &client);
     const int client_width = std::max(1L, client.right - client.left);
     const int client_height = std::max(1L, client.bottom - client.top);
+    const int content_top = kPreviewWindowMargin + 30;
+    for (int index = 0; index < 3; ++index) {
+        const int ids[] = {IDC_PREVIEW_PIN, IDC_PREVIEW_DELETE, IDC_PREVIEW_CLOSE};
+        ::SetWindowPos(::GetDlgItem(m_hWnd, ids[index]), nullptr,
+            std::max(0, client_width - 228) + index * 74, 4, 70, 24, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     const int content_width = std::max(1, client_width - 2 * kPreviewWindowMargin);
     const int status_top = std::max(
         kPreviewWindowMargin,
@@ -349,7 +355,7 @@ void PreviewWindow::LayoutControls() {
     );
     const int content_height = std::max(
         1,
-        status_top - kPreviewContentGap - kPreviewWindowMargin
+        status_top - kPreviewContentGap - content_top
     );
     const int status_height = std::max(
         1,
@@ -362,7 +368,7 @@ void PreviewWindow::LayoutControls() {
                 control,
                 nullptr,
                 kPreviewWindowMargin,
-                kPreviewWindowMargin,
+                content_top,
                 content_width,
                 content_height,
                 SWP_NOZORDER | SWP_NOACTIVATE
@@ -414,6 +420,7 @@ void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
 }
 
 void PreviewWindow::SetItem(const ClipboardItem &item) {
+    ::SetWindowTextW(::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN), item.pinned ? L"取消置顶" : L"置顶");
     const bool image_loaded = LoadBitmapForItem(item);
     const std::wstring text = FullText(item);
     ::SetWindowTextW(m_text, text.c_str());
@@ -465,7 +472,14 @@ LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT PreviewWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    Hide();
+    ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND, MAKEWPARAM(IDC_PREVIEW_CLOSE, BN_CLICKED), 0);
+    return 0;
+}
+
+LRESULT PreviewWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+    const int id = LOWORD(wParam);
+    handled = id == IDC_PREVIEW_PIN || id == IDC_PREVIEW_DELETE || id == IDC_PREVIEW_CLOSE;
+    if (handled) ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND, wParam, 0);
     return 0;
 }
 

@@ -562,7 +562,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         m_db,
         "SELECT id, title, content, application, COALESCE(pin, ''), pinned, "
         "first_copied_at, copied_at, copy_count, has_text, has_image, has_files "
-        "FROM history_items ORDER BY id DESC LIMIT 5000;"
+        "FROM history_items ORDER BY id DESC;"
     );
 
     std::vector<ClipboardItem> all;
@@ -598,6 +598,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         return item.content;
     };
 
+    bool fuzzyResults = false;
     std::vector<ClipboardItem> filtered;
     filtered.reserve(all.size());
     if (query.empty()) {
@@ -609,6 +610,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
             }
         }
     } else if (search_mode == 1) {
+        fuzzyResults = true;
         std::vector<std::pair<double, ClipboardItem>> fuzzy;
         for (auto &item : all) {
             if (const auto score = FuzzyScore(searchable(item), query)) {
@@ -641,7 +643,8 @@ std::vector<ClipboardItem> Database::SearchHistory(
             }
         }
         if (filtered.empty()) {
-            std::vector<std::pair<double, ClipboardItem>> fuzzy;
+            fuzzyResults = true;
+        std::vector<std::pair<double, ClipboardItem>> fuzzy;
             for (auto &item : all) {
                 if (const auto score = FuzzyScore(searchable(item), query)) {
                     fuzzy.emplace_back(*score, std::move(item));
@@ -656,10 +659,11 @@ std::vector<ClipboardItem> Database::SearchHistory(
         }
     }
 
-    std::stable_sort(filtered.begin(), filtered.end(), [sort_by, pins_at_bottom](const auto &lhs, const auto &rhs) {
+    std::stable_sort(filtered.begin(), filtered.end(), [sort_by, pins_at_bottom, fuzzyResults](const auto &lhs, const auto &rhs) {
         if (lhs.pinned != rhs.pinned) {
             return pins_at_bottom ? !lhs.pinned && rhs.pinned : lhs.pinned && !rhs.pinned;
         }
+        if (fuzzyResults) return false; // stable_sort preserves relevance within each section.
         if (sort_by == 1 && lhs.first_copied_at != rhs.first_copied_at) {
             return lhs.first_copied_at > rhs.first_copied_at;
         }
@@ -961,4 +965,11 @@ void Database::MigrateLegacyHistory() const {
         }
     }
     SetSetting(L"schema.history_v2", L"1");
+}
+
+void Database::MarkCopied(sqlite3_int64 id) const {
+    Statement statement(m_db, "UPDATE history_items SET copied_at = ?1, copy_count = copy_count + 1 WHERE id = ?2;");
+    CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, CurrentUnixMilliseconds()), "Unable to bind copy time");
+    CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 2, id), "Unable to bind item id");
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) throw MakeSqliteError(m_db, "Unable to update copy count");
 }
