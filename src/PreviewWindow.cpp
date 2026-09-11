@@ -18,7 +18,7 @@ constexpr int kMinimumPreviewWindowWidth = 260;
 constexpr int kMaximumPreviewWindowWidth = 1200;
 constexpr int kPreviewWindowMargin = 8;
 constexpr int kPreviewContentGap = 8;
-constexpr int kPreviewStatusHeight = 92;
+constexpr int kPreviewStatusHeight = 76;
 
 bool IsUnicodeText(const ClipboardFormatData &data) {
     return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
@@ -401,11 +401,7 @@ bool PreviewWindow::LoadBitmapForItem(const ClipboardItem &item) {
     return m_bitmapWidth > 0 && m_bitmapHeight > 0;
 }
 
-void PreviewWindow::UpdateStatus(
-    const ClipboardItem &item,
-    bool image_loaded,
-    const std::wstring &text
-) {
+void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
     if (m_status == nullptr) {
         return;
     }
@@ -414,18 +410,6 @@ void PreviewWindow::UpdateStatus(
     status += L"\r\n第一次复制时间：" + FormatCopyTime(item.first_copied_at);
     status += L"\r\n最后一次复制时间：" + FormatCopyTime(item.copied_at);
     status += L"\r\n复制次数：" + std::to_wstring(std::max(1, item.copy_count));
-    if (image_loaded) {
-        status += L"\r\n图片尺寸：" + std::to_wstring(m_bitmapWidth) + L" × " +
-            std::to_wstring(m_bitmapHeight);
-    } else if (item.has_image) {
-        status += L"\r\n图片：无法解码";
-    } else if (item.has_text || !text.empty()) {
-        status += L"\r\n文本长度：" + std::to_wstring(text.size());
-    } else if (item.has_files) {
-        status += L"\r\n文件项目";
-    } else {
-        status += L"\r\n完整文本预览";
-    }
     ::SetWindowTextW(m_status, status.c_str());
 }
 
@@ -436,7 +420,7 @@ void PreviewWindow::SetItem(const ClipboardItem &item) {
     ::SendMessageW(m_text, EM_SETSEL, 0, 0);
     ::ShowWindow(m_image, image_loaded ? SW_SHOW : SW_HIDE);
     ::ShowWindow(m_text, image_loaded ? SW_HIDE : SW_SHOW);
-    UpdateStatus(item, image_loaded, text);
+    UpdateStatus(item);
     ::InvalidateRect(m_image, nullptr, TRUE);
 }
 

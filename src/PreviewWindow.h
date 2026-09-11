@@ -35,7 +35,7 @@ private:
     void ClearBitmap();
     void LayoutControls();
     bool LoadBitmapForItem(const ClipboardItem &item);
-    void UpdateStatus(const ClipboardItem &item, bool image_loaded, const std::wstring &text);
+    void UpdateStatus(const ClipboardItem &item);
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);

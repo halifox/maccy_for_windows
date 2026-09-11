@@ -60,11 +60,11 @@ constexpr int kMinimumPopupWidth = 320;
 constexpr int kMaximumPopupWidth = 1600;
 constexpr int kMinimumPopupHeight = 260;
 constexpr int kMaximumPopupHeight = 1200;
-constexpr int kHistoryWindowMargin = 8;
+constexpr int kHistoryWindowMargin = 0;
 constexpr int kHistorySearchGap = 6;
 constexpr int kHistoryFallbackSearchHeight = 20;
 constexpr int kHistoryItemHeight = 24;
-constexpr int kHistoryTitleWidth = 78;
+constexpr int kHistoryTitleWidth = 62;
 constexpr int kHistoryFooterHeight = 24;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kResizeBorder = 8;
@@ -1786,6 +1786,16 @@ private:
         const HFONT stock = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
         GetObjectW(stock, sizeof(log_font), &log_font);
         m_normalFont = stock;
+
+        LOGFONTW small_log_font = log_font;
+        small_log_font.lfWeight = FW_NORMAL;
+        if (small_log_font.lfHeight < 0) {
+            small_log_font.lfHeight = std::max<LONG>(-1, (small_log_font.lfHeight * 4) / 5);
+        } else {
+            small_log_font.lfHeight = std::max<LONG>(1, (small_log_font.lfHeight * 4) / 5);
+        }
+        m_smallFont = CreateFontIndirectW(&small_log_font);
+
         log_font.lfWeight = FW_BOLD;
         m_boldFont = CreateFontIndirectW(&log_font);
         log_font.lfWeight = FW_NORMAL;
@@ -1797,11 +1807,12 @@ private:
     }
 
     void DestroyFonts() {
-        for (HFONT font : {m_boldFont, m_italicFont, m_underlineFont}) {
+        for (HFONT font : {m_smallFont, m_boldFont, m_italicFont, m_underlineFont}) {
             if (font != nullptr) {
                 DeleteObject(font);
             }
         }
+        m_smallFont = nullptr;
         m_boldFont = nullptr;
         m_italicFont = nullptr;
         m_underlineFont = nullptr;
@@ -2263,7 +2274,7 @@ private:
         if (m_settings.show_title && !IsRectEmpty(&m_titleRect)) {
             const HFONT previous_font = static_cast<HFONT>(SelectObject(
                 dc,
-                m_boldFont != nullptr ? m_boldFont : m_normalFont
+                m_smallFont != nullptr ? m_smallFont : m_normalFont
             ));
             const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
             const int previous_mode = SetBkMode(dc, TRANSPARENT);
@@ -2585,6 +2596,7 @@ private:
     HWND m_targetFocusWindow = nullptr;
     RECT m_targetCaretRect{};
     HFONT m_normalFont = nullptr;
+    HFONT m_smallFont = nullptr;
     HFONT m_boldFont = nullptr;
     HFONT m_italicFont = nullptr;
     HFONT m_underlineFont = nullptr;
