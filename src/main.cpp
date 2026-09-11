@@ -557,6 +557,10 @@ private:
         for (HWND control : {m_search, m_historyList}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
+        LONG_PTR search_style = ::GetWindowLongPtrW(m_search, GWL_STYLE);
+        search_style &= ~static_cast<LONG_PTR>(ES_MULTILINE);
+        search_style |= ES_AUTOHSCROLL;
+        ::SetWindowLongPtrW(m_search, GWL_STYLE, search_style);
         SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索剪贴板内容…"));
         RECT search_rect{};
         if (::GetWindowRect(m_search, &search_rect)) {
@@ -1213,14 +1217,6 @@ private:
 
         const sqlite3_int64 item_id = m_items[static_cast<size_t>(index)].id;
         if (index == m_hoveredItemIndex && item_id == m_hoveredItemId) {
-            const LRESULT selected = SendMessageW(m_historyList, LB_GETCURSEL, 0, 0);
-            if (selected != index) {
-                m_mouseSelectionUpdate = true;
-                SendMessageW(m_historyList, LB_SETCURSEL, index, 0);
-                m_mouseSelectionUpdate = false;
-                InvalidateHistoryItem(selected == LB_ERR ? -1 : static_cast<int>(selected));
-                InvalidateHistoryItem(index);
-            }
             if (!m_previewWindow.IsVisible() && m_previewCandidateId == 0) {
                 SchedulePreviewForHoveredItem();
             }
@@ -1230,10 +1226,6 @@ private:
         const int previous_index = m_hoveredItemIndex;
         m_hoveredItemIndex = index;
         m_hoveredItemId = item_id;
-
-        m_mouseSelectionUpdate = true;
-        SendMessageW(m_historyList, LB_SETCURSEL, index, 0);
-        m_mouseSelectionUpdate = false;
 
         InvalidateHistoryItem(previous_index);
         InvalidateHistoryItem(index);
@@ -1276,10 +1268,14 @@ private:
 
     void ClearHistoryHover() {
         const int previous_index = m_hoveredItemIndex;
+        const LRESULT selected = m_historyList != nullptr
+            ? SendMessageW(m_historyList, LB_GETCURSEL, 0, 0)
+            : LB_ERR;
         m_hoveredItemIndex = -1;
         m_hoveredItemId = 0;
         HidePreview();
         InvalidateHistoryItem(previous_index);
+        InvalidateHistoryItem(selected == LB_ERR ? -1 : static_cast<int>(selected));
     }
 
     void RefreshHistory(std::wstring_view query) {
@@ -1568,7 +1564,9 @@ private:
             return;
         }
         const ClipboardItem &item = m_items[draw->itemID];
-        const bool selected = (draw->itemState & ODS_SELECTED) != 0;
+        const bool selected = m_hoveredItemIndex >= 0
+            ? static_cast<int>(draw->itemID) == m_hoveredItemIndex
+            : (draw->itemState & ODS_SELECTED) != 0;
         FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(selected ? COLOR_HIGHLIGHT : COLOR_WINDOW));
         RECT text_rect = draw->rcItem;
         text_rect.left += 10;
@@ -1705,6 +1703,10 @@ private:
     }
 
     int SelectedHistoryIndex() const {
+        if (m_hoveredItemIndex >= 0 &&
+            static_cast<size_t>(m_hoveredItemIndex) < m_items.size()) {
+            return m_hoveredItemIndex;
+        }
         const LRESULT selected = SendMessageW(m_historyList, LB_GETCURSEL, 0, 0);
         if (selected == LB_ERR || static_cast<size_t>(selected) >= m_items.size()) {
             return -1;
