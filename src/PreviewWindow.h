@@ -22,6 +22,9 @@ public:
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
+        MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnControlColor)
+        MESSAGE_HANDLER(WM_CTLCOLORDLG, OnControlColor)
     END_MSG_MAP()
 
     bool Initialize(HWND owner, int width = 450);
@@ -44,11 +47,13 @@ private:
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnControlColor(UINT, WPARAM, LPARAM, BOOL &handled);
 
     HWND m_image = nullptr;
     HWND m_text = nullptr;
     HWND m_status = nullptr;
     HBITMAP m_bitmap = nullptr;
+    HFONT m_font = nullptr;
     int m_bitmapWidth = 0;
     int m_bitmapHeight = 0;
     int m_width = 450;

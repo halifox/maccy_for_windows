@@ -451,8 +451,11 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_image = ::GetDlgItem(m_hWnd, IDC_PREVIEW_IMAGE);
     m_text = ::GetDlgItem(m_hWnd, IDC_PREVIEW_TEXT);
     m_status = ::GetDlgItem(m_hWnd, IDC_PREVIEW_STATUS);
-    const HFONT font = static_cast<HFONT>(::GetStockObject(DEFAULT_GUI_FONT));
-    for (HWND control : {m_image, m_text, m_status}) {
+    m_font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+    const HFONT font = m_font;
+    for (HWND control : {m_image, m_text, m_status, ::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN),
+        ::GetDlgItem(m_hWnd, IDC_PREVIEW_DELETE), ::GetDlgItem(m_hWnd, IDC_PREVIEW_CLOSE)}) {
         if (control != nullptr) {
             ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
@@ -543,9 +546,18 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 LRESULT PreviewWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     ClearBitmap();
+    if (m_font) { DeleteObject(m_font); m_font = nullptr; }
     m_image = nullptr;
     m_text = nullptr;
     m_status = nullptr;
     m_hWnd = nullptr;
     return 0;
+}
+
+LRESULT PreviewWindow::OnControlColor(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    HDC dc = reinterpret_cast<HDC>(wParam);
+    SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+    SetBkColor(dc, GetSysColor(COLOR_WINDOW));
+    return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_WINDOW));
 }

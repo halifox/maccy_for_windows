@@ -413,11 +413,13 @@ public:
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_MOVE, OnMove)
         MESSAGE_HANDLER(WM_EXITSIZEMOVE, OnExitSizeMove)
+        MESSAGE_HANDLER(WM_ENTERSIZEMOVE, OnEnterSizeMove)
         MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
         MESSAGE_HANDLER(WM_NCHITTEST, OnNcHitTest)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnEditColor)
+        MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnEditColor)
         MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
@@ -459,6 +461,7 @@ public:
     }
 
     void ShowMainWindow() {
+        m_keyboardNavigating = false;
         CaptureTargetWindow();
         m_activeItemId = 0;
         m_previewSuppressed = false;
@@ -508,7 +511,7 @@ private:
         if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
         if (message == WM_MOUSEMOVE)
             owner->OnHistoryMouseMove(window, POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
-        if (message == WM_MOUSELEAVE) owner->OnHistoryMouseLeave();
+        if (message == WM_MOUSELEAVE && owner->m_hoverList == window) owner->OnHistoryMouseLeave();
         if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
             if (owner->HandlePopupKey(wParam)) return 0;
         }
@@ -530,6 +533,7 @@ private:
                                             UINT_PTR, DWORD_PTR data) {
         auto *owner = reinterpret_cast<MainWindow *>(data);
         if (message == WM_MOUSEMOVE) {
+            if (!owner->MouseCanSelect()) return DefSubclassProc(window, message, wParam, lParam);
             const auto buttons = owner->FooterButtons();
             const auto it = std::find(buttons.begin(), buttons.end(), window);
             if (it != buttons.end()) owner->SelectFooter(static_cast<int>(it - buttons.begin()));
@@ -553,6 +557,13 @@ private:
 
     void FocusSearchOrPopup() {
         ::SetFocus(::IsWindowVisible(m_search) ? m_search : m_hWnd);
+    }
+
+    bool MouseCanSelect() {
+        POINT position{}; GetCursorPos(&position);
+        if (m_keyboardNavigating && position.x == m_keyboardPointer.x && position.y == m_keyboardPointer.y) return false;
+        m_keyboardNavigating = false;
+        return true;
     }
 
     void TypeToSearch(WPARAM character) {
@@ -604,6 +615,7 @@ private:
             return true;
         }
         if ((ctrl && (key == VK_HOME || key == VK_END)) || key == VK_PRIOR || key == VK_NEXT) {
+            m_keyboardNavigating = true; GetCursorPos(&m_keyboardPointer);
             if (!m_items.empty()) SetActiveHistoryItem(key == VK_HOME || key == VK_PRIOR ? 0 : static_cast<int>(m_items.size()) - 1);
             FocusSearchOrPopup();
             return true;
@@ -649,6 +661,7 @@ private:
         const HFONT font = m_normalFont != nullptr
             ? m_normalFont
             : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        SendMessageW(::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE), WM_SETFONT, reinterpret_cast<WPARAM>(m_smallFont), TRUE);
         for (HWND control : {m_search, m_historyList, m_footerClear, m_footerSettings, m_footerAbout, m_footerExit}) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
@@ -669,6 +682,18 @@ private:
             ::SetWindowLongPtrW(control, GWL_EXSTYLE, ::GetWindowLongPtrW(control, GWL_EXSTYLE) & ~WS_EX_CLIENTEDGE);
             ::SetWindowPos(control, nullptr, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        ::SetWindowTextW(m_previewToggle, L"预览");
+        ::SetWindowTextW(m_searchClear, L"清除搜索");
+        m_previewTip = L"显示或隐藏预览（" + HotKeyToText(m_settings.preview_hotkey) + L"）";
+        m_tooltips = ::CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP,
+            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, m_hWnd, nullptr, _Module.GetModuleInstance(), nullptr);
+        for (HWND control : {m_searchClear, m_previewToggle}) {
+            TOOLINFOW info{sizeof(info)};
+            info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+            info.hwnd = m_hWnd; info.uId = reinterpret_cast<UINT_PTR>(control);
+            info.lpszText = const_cast<wchar_t *>(control == m_searchClear ? L"清除搜索（Ctrl+U）" : m_previewTip.c_str());
+            SendMessageW(m_tooltips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
         }
         LONG_PTR search_style = ::GetWindowLongPtrW(m_search, GWL_STYLE);
         search_style &= ~static_cast<LONG_PTR>(ES_MULTILINE);
@@ -691,6 +716,9 @@ private:
         const int headerHeight = header ? 28 : 0;
         const int titleWidth = header && m_settings.show_title ? kHistoryTitleWidth : 0;
         m_titleRect = {margin, margin, margin + titleWidth, margin + headerHeight};
+        const HWND title = ::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE);
+        ::SetWindowPos(title, nullptr, margin, margin, titleWidth, headerHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+        ::ShowWindow(title, titleWidth ? SW_SHOW : SW_HIDE);
         const int searchLeft = margin + titleWidth + (titleWidth ? 6 : 0);
         m_searchRect = {searchLeft, margin, margin + width - 32, margin + headerHeight};
         if (header) {
@@ -786,7 +814,13 @@ private:
     }
 
     int PopupHeight() const {
-        return std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
+        const int maximum = std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
+        const bool header = m_settings.show_search &&
+            (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
+        const int rows = static_cast<int>(std::min<size_t>(m_items.size(), 100));
+        const int content = 2 * kHistoryWindowMargin + (header ? 36 : 0) +
+            (m_settings.show_footer ? 108 : 0) + std::max(3, rows) * kHistoryItemHeight + 28;
+        return std::clamp(content, kMinimumPopupHeight, maximum);
     }
 
     void PositionOnMonitor(HMONITOR monitor, bool center) {
@@ -1361,6 +1395,7 @@ private:
     }
 
     void OnHistoryMouseMove(HWND window, POINT point) {
+        if (!MouseCanSelect()) return;
         if (!m_popupVisible || (window != m_historyList && window != m_pinsList)) {
             return;
         }
@@ -1477,6 +1512,11 @@ private:
                 ::InvalidateRect(list, nullptr, TRUE);
             }
             ApplyHistoryVisibility();
+            if (m_popupVisible && !m_inSizeMove) {
+                RECT rect{}; ::GetWindowRect(m_hWnd, &rect);
+                ::SetWindowPos(m_hWnd, nullptr, 0, 0, rect.right - rect.left, PopupHeight(),
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
             if (previewOpen && m_activeItemId) ShowPreviewForItem(m_activeItemId);
             else if (!m_activeItemId) HidePreview();
         } catch (const std::exception &error) {
@@ -1780,7 +1820,7 @@ private:
             SelectObject(draw->hDC, oldBrush); SelectObject(draw->hDC, oldPen); DeleteObject(pen);
             return;
         }
-        const auto title = ReadWindowText(draw->hwndItem);
+        const auto title = draw->CtlID == IDC_HISTORY_SEARCH_CLEAR ? std::wstring(L"×") : ReadWindowText(draw->hwndItem);
         DrawTextW(draw->hDC, title.c_str(), -1, &rect, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | (index < 0 ? DT_CENTER : DT_LEFT));
         if (index >= 0) {
             const wchar_t *keys[] = {(GetKeyState(VK_SHIFT) & 0x8000) ? L"Ctrl+Alt+Shift+Backspace" : L"Ctrl+Alt+Backspace", L"Ctrl+,", L"", L"Ctrl+Q"};
@@ -1918,7 +1958,7 @@ private:
         m_iconCache.clear();
     }
 
-    void SaveWindowGeometry() {
+    void SaveWindowGeometry(bool resized = false) {
         RECT rect{};
         if (!::GetWindowRect(m_hWnd, &rect)) {
             return;
@@ -1930,7 +1970,7 @@ private:
             kMaximumPopupWidth
         );
         const int height = std::clamp(
-            static_cast<int>(rect.bottom - rect.top),
+            resized ? static_cast<int>(rect.bottom - rect.top) : m_settings.window_height,
             kMinimumPopupHeight,
             kMaximumPopupHeight
         );
@@ -1962,6 +2002,7 @@ private:
     }
 
     void NavigateHistoryFromSearch(bool forward) {
+        m_keyboardNavigating = true; GetCursorPos(&m_keyboardPointer);
         if (!m_popupVisible) return;
         const int count = static_cast<int>(m_items.size());
         const int total = count + (m_settings.show_footer ? 4 : 0);
@@ -2067,6 +2108,12 @@ private:
         return false;
     }
 
+    static std::pair<bool, bool> ResolvePasteAction(bool paste, bool plain, bool alt, bool shift) {
+        if (alt) paste = !paste;
+        if (shift) { paste = true; plain = !plain; }
+        return {paste, plain};
+    }
+
     void PasteItem(int index) {
         if (m_loadingList || m_pasting || index < 0 || static_cast<size_t>(index) >= m_items.size()) {
             return;
@@ -2075,12 +2122,9 @@ private:
         const HWND target_focus = m_targetFocusWindow;
         const sqlite3_int64 id = m_items[static_cast<size_t>(index)].id;
         try {
-            bool paste = m_settings.paste_by_default;
-            bool plain = m_settings.remove_formatting_by_default;
-            const bool alt = (GetKeyState(VK_MENU) & 0x8000) != 0;
-            const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-            if (alt) paste = !paste;
-            if (shift) { paste = true; plain = !plain; }
+            const auto [paste, plain] = ResolvePasteAction(m_settings.paste_by_default,
+                m_settings.remove_formatting_by_default, (GetKeyState(VK_MENU) & 0x8000) != 0,
+                (GetKeyState(VK_SHIFT) & 0x8000) != 0);
             const auto item = m_database.GetItem(id, true);
             if (!item || !SetClipboardItem(*item, plain)) {
                 return;
@@ -2234,6 +2278,10 @@ private:
         const AppSettings previous = m_settings;
         m_settings = AppSettings::Load(m_database);
         ReloadIgnoreLists();
+        m_previewTip = L"显示或隐藏预览（" + HotKeyToText(m_settings.preview_hotkey) + L"）";
+        TOOLINFOW info{sizeof(info)}; info.uFlags = TTF_IDISHWND; info.hwnd = m_hWnd;
+        info.uId = reinterpret_cast<UINT_PTR>(m_previewToggle); info.lpszText = m_previewTip.data();
+        SendMessageW(m_tooltips, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&info));
         if (previous.preview_width != m_settings.preview_width) {
             m_previewWindow.SetWidth(m_settings.preview_width);
         }
@@ -2319,11 +2367,16 @@ private:
 
     LRESULT OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = TRUE;
-        SaveWindowGeometry();
+        m_inSizeMove = false;
+        SaveWindowGeometry(true);
         if (m_previewWindow.IsVisible()) {
             PositionPreviewWindow();
         }
         return 0;
+    }
+
+    LRESULT OnEnterSizeMove(UINT, WPARAM, LPARAM, BOOL &handled) {
+        m_inSizeMove = true; handled = TRUE; return 0;
     }
 
     LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
@@ -2425,12 +2478,13 @@ private:
     }
 
     LRESULT OnEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
-        handled = reinterpret_cast<HWND>(lParam) == m_search;
+        const bool title = ::GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_HISTORY_TITLE;
+        handled = reinterpret_cast<HWND>(lParam) == m_search || title;
         if (!handled) return 0;
         HDC dc = reinterpret_cast<HDC>(wParam);
-        SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
-        SetBkColor(dc, GetSysColor(COLOR_BTNFACE));
-        return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
+        SetTextColor(dc, GetSysColor(title ? COLOR_GRAYTEXT : COLOR_WINDOWTEXT));
+        SetBkColor(dc, GetSysColor(title ? COLOR_WINDOW : COLOR_BTNFACE));
+        return reinterpret_cast<LRESULT>(GetSysColorBrush(title ? COLOR_WINDOW : COLOR_BTNFACE));
     }
 
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL &) {
@@ -2572,9 +2626,9 @@ private:
                     if (!selected_by_mouse) {
                         m_hoveredItemIndex = -1;
                         m_hoveredItemId = 0;
-                        HidePreview();
                         m_previewSource = PreviewSource::Keyboard;
-                        SchedulePreviewForItem(m_activeItemId, PreviewSource::Keyboard);
+                        if (m_previewWindow.IsVisible()) ShowPreviewForItem(m_activeItemId);
+                        else SchedulePreviewForItem(m_activeItemId, PreviewSource::Keyboard);
                     }
                 }
             }
@@ -2738,6 +2792,8 @@ private:
     HWND m_hoverList = nullptr;
     HWND m_searchClear = nullptr;
     HWND m_previewToggle = nullptr;
+    HWND m_tooltips = nullptr;
+    std::wstring m_previewTip;
     WNDPROC m_originalPinsProc = nullptr;
     int m_activeFooter = -1;
     bool m_imeComposing = false;
@@ -2795,6 +2851,9 @@ private:
     bool m_exiting = false;
     bool m_trayMenuShowing = false;
     bool m_isolated = false;
+    bool m_inSizeMove = false;
+    bool m_keyboardNavigating = false;
+    POINT m_keyboardPointer{};
 };
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {

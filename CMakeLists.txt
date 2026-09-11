@@ -2,6 +2,21 @@ cmake_minimum_required(VERSION 3.25)
 
 project(app VERSION 1.0.0 LANGUAGES C CXX)
 
+if(MSVC)
+    # Preserve the compiler's actual output bytes. Some installations only
+    # have a Chinese language pack, so forcing VSLANG=1033 does not work.
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/clipboard_include_probe.h" "\n")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/clipboard_include_probe.cpp" "#include \"clipboard_include_probe.h\"\n")
+    execute_process(COMMAND "${CMAKE_CXX_COMPILER}" /nologo /showIncludes /EP /utf-8
+        "${CMAKE_CURRENT_BINARY_DIR}/clipboard_include_probe.cpp"
+        OUTPUT_VARIABLE _clipboard_include_output ERROR_VARIABLE _clipboard_include_error ENCODING NONE)
+    string(APPEND _clipboard_include_output "${_clipboard_include_error}")
+    string(REGEX MATCH "[^\r\n]*[A-Za-z]:[/\\\\][^\r\n]*clipboard_include_probe.h" _clipboard_include_line "${_clipboard_include_output}")
+    if(_clipboard_include_line)
+        string(REGEX REPLACE "[A-Za-z]:[/\\\\].*" "" CMAKE_CL_SHOWINCLUDES_PREFIX "${_clipboard_include_line}")
+    endif()
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -52,6 +67,7 @@ target_link_libraries(app PRIVATE
 target_compile_definitions(app PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
+    target_compile_options(sqlite3 PRIVATE /utf-8)
     target_compile_options(app PRIVATE /utf-8)
     target_link_options(app PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()
@@ -60,6 +76,7 @@ include(GNUInstallDirs)
 
 include(CTest)
 if(BUILD_TESTING)
+    set_property(SOURCE tests/PopupTests.cpp APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
     add_executable(popup_tests tests/PopupTests.cpp src/Database.cpp src/Settings.cpp
         src/SettingsWindow.cpp src/PreviewWindow.cpp src/MainWindow.rc src/SettingsWindow.rc)
     target_include_directories(popup_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/WTL10_01_Release/Include")
