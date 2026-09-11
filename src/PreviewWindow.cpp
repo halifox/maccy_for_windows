@@ -18,7 +18,7 @@ constexpr int kMinimumPreviewWindowWidth = 260;
 constexpr int kMaximumPreviewWindowWidth = 1200;
 constexpr int kPreviewWindowMargin = 8;
 constexpr int kPreviewContentGap = 8;
-constexpr int kPreviewStatusHeight = 40;
+constexpr int kPreviewStatusHeight = 92;
 
 bool IsUnicodeText(const ClipboardFormatData &data) {
     return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
@@ -270,6 +270,17 @@ std::wstring FormatCopyTime(sqlite3_int64 milliseconds) {
     return buffer;
 }
 
+std::wstring FormatApplication(std::wstring_view application) {
+    if (application.empty()) {
+        return L"未知";
+    }
+    const size_t separator = application.find_last_of(L"\\/");
+    if (separator == std::wstring_view::npos || separator + 1 >= application.size()) {
+        return std::wstring(application);
+    }
+    return std::wstring(application.substr(separator + 1));
+}
+
 } // namespace
 
 bool PreviewWindow::Initialize(HWND owner, int width) {
@@ -399,7 +410,10 @@ void PreviewWindow::UpdateStatus(
         return;
     }
 
-    std::wstring status = L"复制时间：" + FormatCopyTime(item.copied_at);
+    std::wstring status = L"应用来源：" + FormatApplication(item.application);
+    status += L"\r\n第一次复制时间：" + FormatCopyTime(item.first_copied_at);
+    status += L"\r\n最后一次复制时间：" + FormatCopyTime(item.copied_at);
+    status += L"\r\n复制次数：" + std::to_wstring(std::max(1, item.copy_count));
     if (image_loaded) {
         status += L"\r\n图片尺寸：" + std::to_wstring(m_bitmapWidth) + L" × " +
             std::to_wstring(m_bitmapHeight);
