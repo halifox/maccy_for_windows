@@ -394,7 +394,6 @@ void PreviewWindow::UpdateStatus(
 void PreviewWindow::SetItem(const ClipboardItem &item) {
     const bool image_loaded = LoadBitmapForItem(item);
     const std::wstring text = FullText(item);
-    ::SetWindowTextW(m_hWnd, L"剪贴板预览");
     ::SetWindowTextW(m_text, text.c_str());
     ::SendMessageW(m_text, EM_SETSEL, 0, 0);
     ::ShowWindow(m_image, image_loaded ? SW_SHOW : SW_HIDE);
