@@ -1007,6 +1007,12 @@ void SettingsWindow::SetIgnorePage(int page) {
 
     RefreshIgnoreList();
     PositionPages();
+
+    // 强制重绘当前忽略子页面
+    if (page_window != nullptr) {
+        ::InvalidateRect(page_window, nullptr, TRUE);
+        ::UpdateWindow(page_window);
+    }
 }
 
 void SettingsWindow::LoadGeneralControls() {
