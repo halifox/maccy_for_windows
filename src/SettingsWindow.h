@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <array>
+#include <string>
 #include <vector>
 
 #include <atlbase.h>
@@ -32,6 +33,7 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
+        MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
@@ -46,6 +48,10 @@ private:
     bool CreatePageWindows();
     void BindControls();
     void PositionPages();
+    void EnsureCurrentPageFits();
+    void LayoutFlexibleControls();
+    void ConfigureIgnoreList();
+    void ConfigurePinsList();
 
     void SetPage(int page);
     void SetIgnorePage(int page);
@@ -64,9 +70,8 @@ private:
 
     void SaveCurrentPage(bool notify = true);
     void NotifyOwner();
-    void SaveIgnoreList();
-    void AddIgnoreValue(bool browse_for_application);
-    void UpdateIgnoreValue();
+    bool SaveIgnoreList();
+    void AddIgnoreValue();
     void RemoveIgnoreValue();
     void ResetIgnoredFormats();
     void SaveSelectedPin();
@@ -78,6 +83,7 @@ private:
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
@@ -91,11 +97,9 @@ private:
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;
-    HFONT m_sectionFont = nullptr;
 
     AppSettings m_settings{};
 
-    // General page.
     HWND m_gLaunch = nullptr;
     HWND m_gUpdates = nullptr;
     HWND m_gOpenHotKey = nullptr;
@@ -106,16 +110,12 @@ private:
     HWND m_gPasteByDefault = nullptr;
     HWND m_gRemoveFormatting = nullptr;
 
-    // Appearance page.
     HWND m_aPopupPosition = nullptr;
     HWND m_aPopupScreen = nullptr;
     HWND m_aPinTo = nullptr;
-    HWND m_aWindowWidth = nullptr;
-    HWND m_aWindowHeight = nullptr;
     HWND m_aImageHeight = nullptr;
     HWND m_aOpenPreview = nullptr;
     HWND m_aPreviewDelay = nullptr;
-    HWND m_aPreviewWidth = nullptr;
     HWND m_aHighlight = nullptr;
     HWND m_aMenuIcon = nullptr;
     HWND m_aShowStatus = nullptr;
@@ -128,7 +128,6 @@ private:
     HWND m_aShowIcons = nullptr;
     HWND m_aShowSwatch = nullptr;
 
-    // Storage page.
     HWND m_sSaveFiles = nullptr;
     HWND m_sSaveImages = nullptr;
     HWND m_sSaveText = nullptr;
@@ -136,16 +135,14 @@ private:
     HWND m_sSortBy = nullptr;
     HWND m_sStorageSize = nullptr;
 
-    // Ignore page. Each sub-tab is a separate resource dialog.
     CTabCtrl m_ignoreTabs;
-    HWND m_ignoreTabWindow = nullptr;
     HWND m_iList = nullptr;
-    HWND m_iEdit = nullptr;
     HWND m_iWhitelist = nullptr;
     HWND m_iDescription = nullptr;
+    HIMAGELIST m_ignoreImageList = nullptr;
+    std::vector<std::wstring> m_ignoreValues;
     int m_ignorePage = 0;
 
-    // Pins page.
     HWND m_pList = nullptr;
     HWND m_pKey = nullptr;
     HWND m_pTitle = nullptr;
@@ -156,7 +153,6 @@ private:
     bool m_selectedPinTextEditable = false;
     std::vector<ClipboardItem> m_pins;
 
-    // Advanced page.
     HWND m_xIgnoreEvents = nullptr;
     HWND m_xIgnoreNext = nullptr;
     HWND m_xClearOnQuit = nullptr;

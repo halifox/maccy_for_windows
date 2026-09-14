@@ -2,17 +2,18 @@
 #include "SettingsWindow.h"
 
 #include <windows.h>
+#include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
 
 #include <algorithm>
 #include <array>
-#include <cstdlib>
-#include <cwchar>
+#include <cwctype>
 #include <filesystem>
-#include <initializer_list>
 #include <stdexcept>
 #include <string>
+
+#include "PinKeys.h"
 
 namespace {
 
@@ -51,43 +52,39 @@ enum SettingsControlId : int {
     kAShowSwatch = IDC_A_SHOW_SWATCH,
 
     kSSaveFiles = IDC_S_SAVE_FILES,
-    kSSaveImages,
-    kSSaveText,
-    kSHistorySize,
-    kSSortBy,
+    kSSaveImages = IDC_S_SAVE_IMAGES,
+    kSSaveText = IDC_S_SAVE_TEXT,
+    kSHistorySize = IDC_S_HISTORY_SIZE,
+    kSSortBy = IDC_S_SORT_BY,
+    kSStorageSize = IDC_S_STORAGE_SIZE,
 
     kIgnoreTabs = IDC_IGNORE_TABS,
-    kIList,
-    kIEdit,
-    kIAdd,
-    kIBrowse,
-    kIUpdate,
-    kIRemove,
-    kIReset,
-    kIWhitelist,
+    kIList = IDC_I_LIST,
+    kIAdd = IDC_I_ADD,
+    kIRemove = IDC_I_REMOVE,
+    kIReset = IDC_I_RESET,
+    kIWhitelist = IDC_I_WHITELIST,
 
     kPList = IDC_P_LIST,
-    kPKey,
-    kPTitle,
-    kPContent,
-    kPSave,
-    kPDelete,
+    kPKey = IDC_P_KEY,
+    kPTitle = IDC_P_TITLE,
+    kPContent = IDC_P_CONTENT,
+    kPSave = IDC_P_SAVE,
+    kPDelete = IDC_P_DELETE,
+    kPContentHint = IDC_P_CONTENT_HINT,
 
     kXIgnoreEvents = IDC_X_IGNORE_EVENTS,
-    kXIgnoreNext,
-    kXClearOnQuit,
-    kXClearClipboard,
+    kXIgnoreNext = IDC_X_IGNORE_NEXT,
+    kXClearOnQuit = IDC_X_CLEAR_ON_QUIT,
+    kXClearClipboard = IDC_X_CLEAR_CLIPBOARD,
 };
 
 constexpr int kPageGeneral = 0;
-constexpr int kPageAppearance = 1;
-constexpr int kPageStorage = 2;
-constexpr int kPageIgnore = 3;
-constexpr int kPagePins = 4;
+constexpr int kPageStorage = 1;
+constexpr int kPageAppearance = 2;
+constexpr int kPagePins = 3;
+constexpr int kPageIgnore = 4;
 constexpr int kPageAdvanced = 5;
-// The resource dimensions are expressed in dialog units and provide the
-// compact default size. These scaled pixel values are only a lower bound for
-// unusual font metrics or DPI settings.
 constexpr int kMinimumSettingsWidth = 456;
 constexpr int kMinimumSettingsHeight = 320;
 
@@ -172,14 +169,6 @@ void SetControlFont(HWND window) {
     }
 }
 
-std::wstring PinDisplay(const ClipboardItem &item) {
-    std::wstring value = item.pin + L"  |  " + item.title;
-    if (!item.content.empty()) {
-        value += L"  |  " + item.content.substr(0, 100);
-    }
-    return value;
-}
-
 std::wstring PinTextContent(const ClipboardItem &item) {
     for (const ClipboardFormatData &data : item.data) {
         if (data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT") {
@@ -198,25 +187,118 @@ std::wstring PinTextContent(const ClipboardItem &item) {
     return {};
 }
 
-} // namespace
+int SelectedListViewItem(HWND list) {
+    return list == nullptr ? -1 : ListView_GetNextItem(list, -1, LVNI_SELECTED);
+}
 
+void MoveControl(HWND control, int x, int y, int width, int height) {
+    if (control == nullptr) {
+        return;
+    }
+    ::SetWindowPos(
+        control,
+        nullptr,
+        x,
+        y,
+        std::max(width, 0),
+        std::max(height, 0),
+        SWP_NOZORDER | SWP_NOACTIVATE
+    );
+}
 
-namespace {
+int DialogUnitWidth(HWND dialog, int units) {
+    RECT rect{0, 0, units, 0};
+    return ::MapDialogRect(dialog, &rect) ? rect.right : units;
+}
 
-constexpr std::array<UINT, 6> kPageResources = {
-    IDD_PAGE_GENERAL,
-    IDD_PAGE_APPEARANCE,
-    IDD_PAGE_STORAGE,
-    IDD_PAGE_IGNORE,
-    IDD_PAGE_PINS,
-    IDD_PAGE_ADVANCED,
+int DialogUnitHeight(HWND dialog, int units) {
+    RECT rect{0, 0, 0, units};
+    return ::MapDialogRect(dialog, &rect) ? rect.bottom : units;
+}
+
+void ConfigureListView(HWND list, bool allow_label_editing, bool show_column_header) {
+    if (list == nullptr) {
+        return;
+    }
+
+    LONG_PTR style = ::GetWindowLongPtrW(list, GWL_STYLE);
+    style |= LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS;
+    if (allow_label_editing) {
+        style |= LVS_EDITLABELS;
+    } else {
+        style &= ~static_cast<LONG_PTR>(LVS_EDITLABELS);
+    }
+    if (show_column_header) {
+        style &= ~static_cast<LONG_PTR>(LVS_NOCOLUMNHEADER);
+    } else {
+        style |= LVS_NOCOLUMNHEADER;
+    }
+    ::SetWindowLongPtrW(list, GWL_STYLE, style);
+    ::SetWindowPos(
+        list,
+        nullptr,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+    );
+    ListView_SetExtendedListViewStyle(
+        list,
+        LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER
+    );
+    while (ListView_DeleteColumn(list, 0)) {
+    }
+}
+
+void AddListViewColumn(HWND list, int index, int width, const wchar_t *title) {
+    LVCOLUMNW column{};
+    column.mask = LVCF_TEXT | LVCF_WIDTH;
+    column.cx = width;
+    column.pszText = const_cast<wchar_t *>(title);
+    ListView_InsertColumn(list, index, &column);
+}
+
+void SetListViewColumnWidth(HWND list, int width) {
+    if (list != nullptr) {
+        ListView_SetColumnWidth(list, 0, std::max(width - 4, 0));
+    }
+}
+
+struct PageDefinition {
+    UINT resource_id;
+    const wchar_t *title;
+    int width;
+    int height;
 };
 
-constexpr std::array<UINT, 3> kIgnorePageResources = {
-    IDD_IGNORE_APPLICATIONS,
-    IDD_IGNORE_FORMATS,
-    IDD_IGNORE_REGEXPS,
+constexpr std::array<PageDefinition, 6> kPageDefinitions = {
+    PageDefinition{IDD_PAGE_GENERAL, L"通用", 450, 300},
+    PageDefinition{IDD_PAGE_STORAGE, L"存储", 450, 260},
+    PageDefinition{IDD_PAGE_APPEARANCE, L"外观", 650, 300},
+    PageDefinition{IDD_PAGE_PINS, L"置顶项", 500, 400},
+    PageDefinition{IDD_PAGE_IGNORE, L"忽略", 500, 400},
+    PageDefinition{IDD_PAGE_ADVANCED, L"高级", 450, 340},
 };
+
+struct IgnorePageDefinition {
+    UINT resource_id;
+    const wchar_t *title;
+    DatabaseList database_list;
+};
+
+constexpr std::array<IgnorePageDefinition, 3> kIgnorePageDefinitions = {
+    IgnorePageDefinition{IDD_IGNORE_APPLICATIONS, L"忽略应用", DatabaseList::IgnoredApplications},
+    IgnorePageDefinition{IDD_IGNORE_FORMATS, L"忽略剪贴板类型", DatabaseList::IgnoredFormats},
+    IgnorePageDefinition{IDD_IGNORE_REGEXPS, L"正则表达式", DatabaseList::IgnoredRegexps},
+};
+
+DatabaseList IgnoreListForPage(int page) {
+    if (page >= 0 && page < static_cast<int>(kIgnorePageDefinitions.size())) {
+        return kIgnorePageDefinitions[static_cast<size_t>(page)].database_list;
+    }
+    return DatabaseList::IgnoredApplications;
+}
 
 INT_PTR CALLBACK ResourcePageDialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_INITDIALOG) {
@@ -247,21 +329,7 @@ HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
     );
 }
 
-void ApplySectionFont(HWND page, HFONT font, std::initializer_list<int> ids) {
-    if (page == nullptr || font == nullptr) {
-        return;
-    }
-    for (const int id : ids) {
-        ::SendMessageW(
-            ::GetDlgItem(page, id),
-            WM_SETFONT,
-            reinterpret_cast<WPARAM>(font),
-            TRUE
-        );
-    }
 }
-
-} // namespace
 
 SettingsWindow::SettingsWindow(Database &database, HWND owner)
     : m_database(database), m_owner(owner) {}
@@ -328,13 +396,10 @@ void SettingsWindow::CreateTabs() {
     m_tabs = GetDlgItem(kTabs);
     SetControlFont(m_tabs.m_hWnd);
 
-    const std::array<const wchar_t *, kPageCount> names = {
-        L"通用", L"外观", L"存储", L"忽略", L"置顶", L"高级"
-    };
-    for (const wchar_t *name : names) {
+    for (const PageDefinition &definition : kPageDefinitions) {
         TCITEMW item{};
         item.mask = TCIF_TEXT;
-        item.pszText = const_cast<wchar_t *>(name);
+        item.pszText = const_cast<wchar_t *>(definition.title);
         m_tabs.InsertItem(m_tabs.GetItemCount(), &item);
     }
 }
@@ -344,9 +409,9 @@ bool SettingsWindow::CreatePageWindows() {
         return false;
     }
 
-    for (size_t page = 0; page < kPageResources.size(); ++page) {
+    for (size_t page = 0; page < kPageDefinitions.size(); ++page) {
         m_pages[page] = CreateResourcePage(
-            kPageResources[page],
+            kPageDefinitions[page].resource_id,
             m_tabs.m_hWnd,
             this
         );
@@ -355,25 +420,22 @@ bool SettingsWindow::CreatePageWindows() {
         }
     }
 
-    m_ignoreTabWindow = ::GetDlgItem(m_pages[kPageIgnore], kIgnoreTabs);
-    if (m_ignoreTabWindow == nullptr) {
+    const HWND ignore_tab_window = ::GetDlgItem(m_pages[kPageIgnore], kIgnoreTabs);
+    if (ignore_tab_window == nullptr) {
         return false;
     }
-    m_ignoreTabs = m_ignoreTabWindow;
+    m_ignoreTabs = ignore_tab_window;
 
-    const std::array<const wchar_t *, kIgnorePageCount> ignore_names = {
-        L"应用程序", L"剪贴板格式", L"正则表达式"
-    };
-    for (const wchar_t *name : ignore_names) {
+    for (const IgnorePageDefinition &definition : kIgnorePageDefinitions) {
         TCITEMW item{};
         item.mask = TCIF_TEXT;
-        item.pszText = const_cast<wchar_t *>(name);
+        item.pszText = const_cast<wchar_t *>(definition.title);
         m_ignoreTabs.InsertItem(m_ignoreTabs.GetItemCount(), &item);
     }
 
-    for (size_t page = 0; page < kIgnorePageResources.size(); ++page) {
+    for (size_t page = 0; page < kIgnorePageDefinitions.size(); ++page) {
         m_ignorePages[page] = CreateResourcePage(
-            kIgnorePageResources[page],
+            kIgnorePageDefinitions[page].resource_id,
             m_ignoreTabs.m_hWnd,
             this
         );
@@ -424,7 +486,7 @@ void SettingsWindow::BindControls() {
     m_sSaveText = get(kPageStorage, kSSaveText);
     m_sHistorySize = get(kPageStorage, kSHistorySize);
     m_sSortBy = get(kPageStorage, kSSortBy);
-    m_sStorageSize = get(kPageStorage, IDC_S_STORAGE_SIZE);
+    m_sStorageSize = get(kPageStorage, kSStorageSize);
 
     m_iWhitelist = ::GetDlgItem(m_ignorePages[0], kIWhitelist);
 
@@ -438,25 +500,6 @@ void SettingsWindow::BindControls() {
     m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
     m_xClearOnQuit = get(kPageAdvanced, kXClearOnQuit);
     m_xClearClipboard = get(kPageAdvanced, kXClearClipboard);
-
-    ApplySectionFont(
-        m_pages[kPageGeneral],
-        m_sectionFont,
-        {IDC_G_SECTION_BEHAVIOR}
-    );
-    ApplySectionFont(
-        m_pages[kPageAppearance],
-        m_sectionFont,
-        {IDC_A_SECTION_POPUP, IDC_A_SECTION_PREVIEW, IDC_A_SECTION_SEARCH}
-    );
-    ApplySectionFont(
-        m_pages[kPageStorage],
-        m_sectionFont,
-        {IDC_S_SECTION_TYPES, IDC_S_SECTION_HISTORY}
-    );
-    ApplySectionFont(m_pages[kPageIgnore], m_sectionFont, {IDC_I_SECTION_RULES});
-    ApplySectionFont(m_pages[kPagePins], m_sectionFont, {IDC_P_SECTION_PINS});
-    ApplySectionFont(m_pages[kPageAdvanced], m_sectionFont, {IDC_X_SECTION_CLIPBOARD});
 
     AddComboItem(m_gSearchMode, L"精确");
     AddComboItem(m_gSearchMode, L"模糊");
@@ -488,6 +531,41 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_sSortBy, L"上次复制时间");
     AddComboItem(m_sSortBy, L"首次复制时间");
     AddComboItem(m_sSortBy, L"复制次数");
+
+    ConfigureIgnoreList();
+    ConfigurePinsList();
+}
+
+void SettingsWindow::ConfigureIgnoreList() {
+    const UINT dpi = WindowDpi(m_hWnd);
+    const int icon_size = MulDiv(16, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    if (m_ignoreImageList == nullptr) {
+        m_ignoreImageList = ImageList_Create(
+            icon_size,
+            icon_size,
+            ILC_COLOR32 | ILC_MASK,
+            8,
+            8
+        );
+    } else {
+        ImageList_SetIconSize(m_ignoreImageList, icon_size, icon_size);
+    }
+
+    for (size_t index = 0; index < m_ignorePages.size(); ++index) {
+        const HWND list = ::GetDlgItem(m_ignorePages[index], kIList);
+        ConfigureListView(list, index != 0, false);
+        AddListViewColumn(list, 0, 100, L"");
+        if (index == 0 && m_ignoreImageList != nullptr) {
+            ListView_SetImageList(list, m_ignoreImageList, LVSIL_SMALL);
+        }
+    }
+}
+
+void SettingsWindow::ConfigurePinsList() {
+    ConfigureListView(m_pList, false, true);
+    AddListViewColumn(m_pList, 0, 58, L"键位");
+    AddListViewColumn(m_pList, 1, 150, L"别名");
+    AddListViewColumn(m_pList, 2, 260, L"内容");
 }
 
 RECT SettingsWindow::PageRect() const {
@@ -512,6 +590,176 @@ RECT SettingsWindow::IgnorePageRect() const {
     page.right = std::max(page.left, page.right);
     page.bottom = std::max(page.top, page.bottom);
     return page;
+}
+
+void SettingsWindow::LayoutFlexibleControls() {
+    if (m_pList != nullptr) {
+        const HWND page_window = m_pages[kPagePins];
+        RECT page{};
+        ::GetClientRect(page_window, &page);
+        const int width = std::max(0L, page.right - page.left);
+        const int height = std::max(0L, page.bottom - page.top);
+        const int left_margin = DialogUnitWidth(page_window, 8);
+        const int right_margin = DialogUnitWidth(page_window, 8);
+        const int control_left = DialogUnitWidth(page_window, 82);
+        const int label_width = DialogUnitWidth(page_window, 70);
+        const int button_height = DialogUnitHeight(page_window, 18);
+        const int button_y = std::max(DialogUnitHeight(page_window, 8), height - button_height - DialogUnitHeight(page_window, 8));
+        const int hint_height = DialogUnitHeight(page_window, 32);
+        const int vertical_gap = DialogUnitHeight(page_window, 8);
+        const int row_height = DialogUnitHeight(page_window, 18);
+        const int hint_y = std::max(DialogUnitHeight(page_window, 8), button_y - hint_height - vertical_gap);
+        const int content_y = std::max(DialogUnitHeight(page_window, 8), hint_y - DialogUnitHeight(page_window, 54) - vertical_gap);
+        const int title_y = std::max(DialogUnitHeight(page_window, 8), content_y - row_height - DialogUnitHeight(page_window, 4));
+        const int key_y = std::max(DialogUnitHeight(page_window, 8), title_y - row_height - DialogUnitHeight(page_window, 4));
+        const int list_bottom = std::max(DialogUnitHeight(page_window, 104), key_y - vertical_gap);
+
+        MoveControl(
+            m_pList,
+            left_margin,
+            DialogUnitHeight(page_window, 5),
+            width - left_margin - right_margin,
+            list_bottom - DialogUnitHeight(page_window, 5)
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, IDC_P_KEY_LABEL),
+            left_margin,
+            key_y,
+            label_width,
+            DialogUnitHeight(page_window, 14)
+        );
+        MoveControl(
+            m_pKey,
+            control_left,
+            key_y - DialogUnitHeight(page_window, 1),
+            DialogUnitWidth(page_window, 140),
+            DialogUnitHeight(page_window, 16)
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, IDC_P_TITLE_LABEL),
+            left_margin,
+            title_y,
+            label_width,
+            DialogUnitHeight(page_window, 14)
+        );
+        MoveControl(
+            m_pTitle,
+            control_left,
+            title_y - DialogUnitHeight(page_window, 1),
+            width - control_left - right_margin,
+            DialogUnitHeight(page_window, 16)
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, IDC_P_CONTENT_LABEL),
+            left_margin,
+            content_y,
+            label_width,
+            DialogUnitHeight(page_window, 14)
+        );
+        MoveControl(
+            m_pContent,
+            control_left,
+            content_y - DialogUnitHeight(page_window, 1),
+            width - control_left - right_margin,
+            hint_y - content_y
+        );
+        MoveControl(
+            m_pContentHint,
+            left_margin,
+            hint_y,
+            width - left_margin - right_margin,
+            hint_height
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, kPSave),
+            width - DialogUnitWidth(page_window, 134),
+            button_y,
+            DialogUnitWidth(page_window, 60),
+            button_height
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, kPDelete),
+            width - DialogUnitWidth(page_window, 68),
+            button_y,
+            DialogUnitWidth(page_window, 60),
+            button_height
+        );
+
+        const int key_width = DialogUnitWidth(page_window, 58);
+        const int alias_width = DialogUnitWidth(page_window, 150);
+        ListView_SetColumnWidth(m_pList, 0, key_width);
+        ListView_SetColumnWidth(m_pList, 1, alias_width);
+        ListView_SetColumnWidth(
+            m_pList,
+            2,
+            std::max(80, width - key_width - alias_width - 20)
+        );
+    }
+
+    for (size_t index = 0; index < m_ignorePages.size(); ++index) {
+        const HWND page_window = m_ignorePages[index];
+        const HWND list = ::GetDlgItem(page_window, kIList);
+        if (page_window == nullptr || list == nullptr) {
+            continue;
+        }
+
+        RECT page{};
+        ::GetClientRect(page_window, &page);
+        const int width = std::max(0L, page.right - page.left);
+        const int height = std::max(0L, page.bottom - page.top);
+        const int left_margin = DialogUnitWidth(page_window, 8);
+        const int right_margin = DialogUnitWidth(page_window, 8);
+        const int button_height = DialogUnitHeight(page_window, 18);
+        const int description_height = DialogUnitHeight(page_window, 36);
+        const int bottom_margin = DialogUnitHeight(page_window, 8);
+        const int description_y = std::max(bottom_margin, height - description_height - bottom_margin);
+        const int button_y = std::max(bottom_margin, description_y - button_height - DialogUnitHeight(page_window, 10));
+        const int list_bottom = std::max(DialogUnitHeight(page_window, 80), button_y - DialogUnitHeight(page_window, 8));
+
+        MoveControl(
+            list,
+            left_margin,
+            DialogUnitHeight(page_window, 8),
+            width - left_margin - right_margin,
+            list_bottom - DialogUnitHeight(page_window, 8)
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, kIAdd),
+            left_margin,
+            button_y,
+            DialogUnitWidth(page_window, 28),
+            button_height
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, kIRemove),
+            DialogUnitWidth(page_window, 40),
+            button_y,
+            DialogUnitWidth(page_window, 28),
+            button_height
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, kIWhitelist),
+            DialogUnitWidth(page_window, 78),
+            button_y + DialogUnitHeight(page_window, 2),
+            width - DialogUnitWidth(page_window, 86),
+            DialogUnitHeight(page_window, 14)
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, kIReset),
+            width - DialogUnitWidth(page_window, 58),
+            button_y,
+            DialogUnitWidth(page_window, 50),
+            button_height
+        );
+        MoveControl(
+            ::GetDlgItem(page_window, IDC_I_DESCRIPTION),
+            left_margin,
+            description_y,
+            width - left_margin - right_margin,
+            description_height
+        );
+        SetListViewColumnWidth(list, width - left_margin - right_margin);
+    }
 }
 
 void SettingsWindow::PositionPages() {
@@ -561,6 +809,55 @@ void SettingsWindow::PositionPages() {
             );
         }
     }
+
+    LayoutFlexibleControls();
+}
+
+void SettingsWindow::EnsureCurrentPageFits() {
+    if (m_hWnd == nullptr || m_tabs.m_hWnd == nullptr) {
+        return;
+    }
+
+    const RECT page = PageRect();
+    const int page_width = std::max(0L, page.right - page.left);
+    const int page_height = std::max(0L, page.bottom - page.top);
+    const UINT dpi = WindowDpi(m_hWnd);
+    const PageDefinition &definition = kPageDefinitions[static_cast<size_t>(m_currentPage)];
+    const int required_page_width = MulDiv(
+        definition.width,
+        static_cast<int>(dpi),
+        USER_DEFAULT_SCREEN_DPI
+    );
+    const int required_page_height = MulDiv(
+        definition.height,
+        static_cast<int>(dpi),
+        USER_DEFAULT_SCREEN_DPI
+    );
+    if (page_width >= required_page_width && page_height >= required_page_height) {
+        return;
+    }
+
+    RECT window{};
+    ::GetWindowRect(m_hWnd, &window);
+    const int current_width = window.right - window.left;
+    const int current_height = window.bottom - window.top;
+    const int width = std::max(
+        current_width,
+        current_width + required_page_width - page_width
+    );
+    const int height = std::max(
+        current_height,
+        current_height + required_page_height - page_height
+    );
+    ::SetWindowPos(
+        m_hWnd,
+        nullptr,
+        window.left,
+        window.top,
+        width,
+        height,
+        SWP_NOZORDER | SWP_NOACTIVATE
+    );
 }
 
 void SettingsWindow::SetPage(int page) {
@@ -569,6 +866,7 @@ void SettingsWindow::SetPage(int page) {
         m_tabs.SetCurSel(m_currentPage);
     }
     PositionPages();
+    EnsureCurrentPageFits();
 }
 
 void SettingsWindow::SetIgnorePage(int page) {
@@ -579,7 +877,6 @@ void SettingsWindow::SetIgnorePage(int page) {
 
     const HWND page_window = m_ignorePages[static_cast<size_t>(m_ignorePage)];
     m_iList = ::GetDlgItem(page_window, kIList);
-    m_iEdit = ::GetDlgItem(page_window, kIEdit);
     m_iDescription = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
     if (m_ignorePage == 0) {
@@ -602,6 +899,7 @@ void SettingsWindow::SetIgnorePage(int page) {
     RefreshIgnoreList();
     PositionPages();
 }
+
 void SettingsWindow::LoadGeneralControls() {
     SetCheck(m_gLaunch, m_settings.launch_at_login);
     SetCheck(m_gUpdates, m_settings.check_for_updates);
@@ -615,7 +913,6 @@ void SettingsWindow::LoadGeneralControls() {
 }
 
 void SettingsWindow::LoadAppearanceControls() {
-    ::EnableWindow(m_aImageHeight, FALSE);
     SelectCombo(m_aPopupPosition, static_cast<int>(m_settings.popup_position));
     SendMessageW(m_aPopupScreen, CB_RESETCONTENT, 0, 0);
     const int monitor_count = std::max(1, GetSystemMetrics(SM_CMONITORS));
@@ -691,6 +988,7 @@ void SettingsWindow::LoadControlsFromSettings() {
     LoadAppearanceControls();
     LoadStorageControls();
     LoadAdvancedControls();
+    SetCheck(m_iWhitelist, m_settings.ignore_all_apps_except_listed);
     m_loading = false;
 }
 
@@ -698,45 +996,148 @@ void SettingsWindow::RefreshIgnoreList() {
     if (m_iList == nullptr) {
         return;
     }
-    DatabaseList list = DatabaseList::IgnoredApplications;
+    m_ignoreValues = m_database.GetList(IgnoreListForPage(m_ignorePage));
     if (m_ignorePage == 1) {
-        list = DatabaseList::IgnoredFormats;
-    } else if (m_ignorePage == 2) {
-        list = DatabaseList::IgnoredRegexps;
+        std::sort(m_ignoreValues.begin(), m_ignoreValues.end());
     }
-    const std::vector<std::wstring> values = m_database.GetList(list);
-    SendMessageW(m_iList, LB_RESETCONTENT, 0, 0);
-    for (const std::wstring &value : values) {
-        SendMessageW(m_iList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value.c_str()));
+    ListView_DeleteAllItems(m_iList);
+    if (m_ignorePage == 0 && m_ignoreImageList != nullptr) {
+        ImageList_RemoveAll(m_ignoreImageList);
     }
-    SendMessageW(m_iList, LB_SETCURSEL, 0, 0);
-    ::SetWindowTextW(m_iEdit, L"");
+    for (size_t index = 0; index < m_ignoreValues.size(); ++index) {
+        const std::wstring &value = m_ignoreValues[index];
+        std::wstring display = value;
+        LVITEMW item{};
+        item.mask = LVIF_TEXT | LVIF_PARAM;
+        item.iItem = static_cast<int>(index);
+        item.lParam = static_cast<LPARAM>(index);
+
+        if (m_ignorePage == 0) {
+            SHFILEINFOW file_info{};
+            const DWORD flags = SHGFI_DISPLAYNAME | SHGFI_ICON | SHGFI_SMALLICON;
+            if (SHGetFileInfoW(value.c_str(), 0, &file_info, sizeof(file_info), flags) != 0) {
+                if (file_info.szDisplayName[0] != L'\0') {
+                    display = file_info.szDisplayName;
+                }
+                if (m_ignoreImageList != nullptr && file_info.hIcon != nullptr) {
+                    const int image = ImageList_AddIcon(m_ignoreImageList, file_info.hIcon);
+                    if (image >= 0) {
+                        item.mask |= LVIF_IMAGE;
+                        item.iImage = image;
+                    }
+                    DestroyIcon(file_info.hIcon);
+                }
+            } else {
+                const std::filesystem::path path(value);
+                if (!path.filename().empty()) {
+                    display = path.filename().wstring();
+                }
+            }
+        }
+
+        item.pszText = display.data();
+        ListView_InsertItem(m_iList, &item);
+    }
+    if (!m_ignoreValues.empty()) {
+        ListView_SetItemState(
+            m_iList,
+            0,
+            LVIS_SELECTED | LVIS_FOCUSED,
+            LVIS_SELECTED | LVIS_FOCUSED
+        );
+    }
+    RECT list_rect{};
+    ::GetClientRect(m_iList, &list_rect);
+    SetListViewColumnWidth(m_iList, list_rect.right - list_rect.left);
 }
 
 void SettingsWindow::RefreshPinsList() {
     if (m_pList == nullptr) {
         return;
     }
+    const sqlite3_int64 previous_selection = m_selectedPinId;
     m_pins = m_database.GetPinnedItems();
-    SendMessageW(m_pList, LB_RESETCONTENT, 0, 0);
-    for (const ClipboardItem &item : m_pins) {
-        const std::wstring display = PinDisplay(item);
-        SendMessageW(m_pList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(display.c_str()));
+    std::stable_sort(m_pins.begin(), m_pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
+        if (lhs.first_copied_at != rhs.first_copied_at) {
+            return lhs.first_copied_at < rhs.first_copied_at;
+        }
+        return lhs.id < rhs.id;
+    });
+
+    ListView_DeleteAllItems(m_pList);
+    for (size_t index = 0; index < m_pins.size(); ++index) {
+        const ClipboardItem &item = m_pins[index];
+        LVITEMW row{};
+        row.mask = LVIF_TEXT | LVIF_PARAM;
+        row.iItem = static_cast<int>(index);
+        row.lParam = item.id;
+        row.pszText = const_cast<wchar_t *>(item.pin.c_str());
+        ListView_InsertItem(m_pList, &row);
+
+        ListView_SetItemText(
+            m_pList,
+            static_cast<int>(index),
+            1,
+            const_cast<wchar_t *>(item.title.c_str())
+        );
+        std::wstring content;
+        if (item.has_text) {
+            content = PinTextContent(item);
+            if (content.empty()) {
+                content = item.content;
+            }
+        } else {
+            content = L"不可编辑的内容（图像或文件）";
+        }
+        for (wchar_t &character : content) {
+            if (character == L'\r' || character == L'\n') {
+                character = L' ';
+            }
+        }
+        if (content.size() > 120) {
+            content.resize(120);
+            content += L"…";
+        }
+        ListView_SetItemText(
+            m_pList,
+            static_cast<int>(index),
+            2,
+            content.data()
+        );
     }
-    m_selectedPinId = 0;
-    if (!m_pins.empty()) {
-        SendMessageW(m_pList, LB_SETCURSEL, 0, 0);
+    m_selectedPinId = previous_selection;
+    int selected_index = -1;
+    for (size_t index = 0; index < m_pins.size(); ++index) {
+        if (m_pins[index].id == previous_selection) {
+            selected_index = static_cast<int>(index);
+            break;
+        }
+    }
+    if (selected_index < 0 && !m_pins.empty()) {
+        selected_index = 0;
+    }
+    if (selected_index >= 0) {
+        ListView_SetItemState(
+            m_pList,
+            selected_index,
+            LVIS_SELECTED | LVIS_FOCUSED,
+            LVIS_SELECTED | LVIS_FOCUSED
+        );
     }
     LoadSelectedPin();
 }
 
 void SettingsWindow::LoadSelectedPin() {
-    const LRESULT selected = SendMessageW(m_pList, LB_GETCURSEL, 0, 0);
-    if (selected == LB_ERR || static_cast<size_t>(selected) >= m_pins.size()) {
+    const int selected = SelectedListViewItem(m_pList);
+    if (selected < 0 || static_cast<size_t>(selected) >= m_pins.size()) {
         m_selectedPinId = 0;
+        m_originalPinContent.clear();
+        SendMessageW(m_pKey, CB_RESETCONTENT, 0, 0);
         ::SetWindowTextW(m_pKey, L"");
         ::SetWindowTextW(m_pTitle, L"");
         ::SetWindowTextW(m_pContent, L"");
+        ::EnableWindow(m_pKey, FALSE);
+        ::EnableWindow(m_pTitle, FALSE);
         ::EnableWindow(m_pContent, FALSE);
         m_selectedPinTextEditable = false;
         return;
@@ -744,17 +1145,39 @@ void SettingsWindow::LoadSelectedPin() {
     const ClipboardItem &item = m_pins[static_cast<size_t>(selected)];
     m_selectedPinId = item.id;
     m_originalPinContent = PinTextContent(item);
-    ::SetWindowTextW(m_pKey, item.pin.c_str());
+    SendMessageW(m_pKey, CB_RESETCONTENT, 0, 0);
+    const auto available_keys = PinKeyPolicy::Available(m_pins, m_settings, item.id);
+    std::vector<wchar_t> selectable_keys = available_keys;
+    const wchar_t current_key = item.pin.size() == 1 ? static_cast<wchar_t>(std::towlower(item.pin.front())) : L'\0';
+    if (current_key != L'\0' && std::find(selectable_keys.begin(), selectable_keys.end(), current_key) == selectable_keys.end()) {
+        selectable_keys.push_back(current_key);
+    }
+    std::sort(selectable_keys.begin(), selectable_keys.end());
+    int selected_key = CB_ERR;
+    for (const wchar_t key : selectable_keys) {
+        const std::wstring value(1, key);
+        const LRESULT index = SendMessageW(m_pKey, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value.c_str()));
+        if (key == current_key) {
+            selected_key = static_cast<int>(index);
+        }
+    }
+    if (selected_key != CB_ERR) {
+        SelectCombo(m_pKey, selected_key);
+    }
     ::SetWindowTextW(m_pTitle, item.title.c_str());
+    ::EnableWindow(m_pKey, TRUE);
+    ::EnableWindow(m_pTitle, TRUE);
+    ::SetWindowTextW(
+        m_pContentHint,
+        L"您可以自定义任何置顶项目的热键、标题和内容。\r\n要编辑，请双击该项目并输入新值。"
+    );
     m_selectedPinTextEditable = item.has_text && !item.has_image && !item.has_files;
     if (m_selectedPinTextEditable) {
-        ::SetWindowTextW(m_pContent, PinTextContent(item).c_str());
+        ::SetWindowTextW(m_pContent, m_originalPinContent.c_str());
         ::EnableWindow(m_pContent, TRUE);
-        ::SetWindowTextW(m_pContentHint, L"您可以自定义任何置顶项目的热键、标题和内容。\r\n要编辑，请双击该项目并输入新值。");
     } else {
         ::SetWindowTextW(m_pContent, L"不可编辑的内容（图像或文件）");
         ::EnableWindow(m_pContent, FALSE);
-        ::SetWindowTextW(m_pContentHint, L"您可以自定义任何置顶项目的热键、标题和内容。\r\n要编辑，请双击该项目并输入新值。");
     }
 }
 
@@ -855,36 +1278,21 @@ void SettingsWindow::NotifyOwner() {
     }
 }
 
-void SettingsWindow::SaveIgnoreList() {
-    DatabaseList list = DatabaseList::IgnoredApplications;
-    if (m_ignorePage == 1) {
-        list = DatabaseList::IgnoredFormats;
-    } else if (m_ignorePage == 2) {
-        list = DatabaseList::IgnoredRegexps;
-    }
-
-    std::vector<std::wstring> values;
-    const LRESULT count = SendMessageW(m_iList, LB_GETCOUNT, 0, 0);
-    for (LRESULT index = 0; index < count; ++index) {
-        const LRESULT length = SendMessageW(m_iList, LB_GETTEXTLEN, index, 0);
-        if (length <= 0) {
-            continue;
-        }
-        std::wstring value(static_cast<size_t>(length) + 1, L'\0');
-        SendMessageW(m_iList, LB_GETTEXT, index, reinterpret_cast<LPARAM>(value.data()));
-        value.resize(static_cast<size_t>(length));
-        values.push_back(std::move(value));
-    }
+bool SettingsWindow::SaveIgnoreList() {
     try {
-        m_database.ReplaceList(list, values);
+        m_database.ReplaceList(IgnoreListForPage(m_ignorePage), m_ignoreValues);
         NotifyOwner();
+        return true;
     } catch (const std::exception &error) {
+        RefreshIgnoreList();
         MessageBoxA(m_hWnd, error.what(), "Unable to save ignore list", MB_OK | MB_ICONERROR);
+        return false;
     }
 }
 
-void SettingsWindow::AddIgnoreValue(bool browse_for_application) {
-    if (browse_for_application) {
+void SettingsWindow::AddIgnoreValue() {
+    std::wstring value;
+    if (m_ignorePage == 0) {
         std::array<wchar_t, MAX_PATH> path{};
         OPENFILENAMEW dialog{};
         dialog.lStructSize = sizeof(dialog);
@@ -894,43 +1302,38 @@ void SettingsWindow::AddIgnoreValue(bool browse_for_application) {
         dialog.nMaxFile = static_cast<DWORD>(path.size());
         dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
         if (GetOpenFileNameW(&dialog)) {
-            ::SetWindowTextW(m_iEdit, path.data());
+            value = path.data();
         }
+    } else if (m_ignorePage == 1) {
+        value = L"xxx.yyy.zzz";
+    } else {
+        value = L"^[a-zA-Z0-9]{50}$";
     }
 
-    const std::wstring value = ReadWindowText(m_iEdit);
-    if (value.empty()) {
+    if (value.empty() || std::find(m_ignoreValues.begin(), m_ignoreValues.end(), value) != m_ignoreValues.end()) {
         return;
     }
-    const LRESULT exists = SendMessageW(m_iList, LB_FINDSTRINGEXACT, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(value.c_str()));
-    if (exists != LB_ERR) {
+    m_ignoreValues.push_back(std::move(value));
+    if (!SaveIgnoreList()) {
         return;
     }
-    SendMessageW(m_iList, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value.c_str()));
-    SaveIgnoreList();
-    ::SetWindowTextW(m_iEdit, L"");
-}
-
-void SettingsWindow::UpdateIgnoreValue() {
-    const LRESULT selected = SendMessageW(m_iList, LB_GETCURSEL, 0, 0);
-    const std::wstring value = ReadWindowText(m_iEdit);
-    if (selected == LB_ERR || value.empty()) {
-        return;
+    const int inserted = static_cast<int>(m_ignoreValues.size() - 1);
+    RefreshIgnoreList();
+    if (m_ignorePage != 0 && inserted >= 0 && inserted < static_cast<int>(m_ignoreValues.size())) {
+        ListView_EditLabel(m_iList, inserted);
     }
-    SendMessageW(m_iList, LB_DELETESTRING, selected, 0);
-    SendMessageW(m_iList, LB_INSERTSTRING, selected, reinterpret_cast<LPARAM>(value.c_str()));
-    SaveIgnoreList();
-    SendMessageW(m_iList, LB_SETCURSEL, selected, 0);
 }
 
 void SettingsWindow::RemoveIgnoreValue() {
-    const LRESULT selected = SendMessageW(m_iList, LB_GETCURSEL, 0, 0);
-    if (selected == LB_ERR) {
+    const int selected = SelectedListViewItem(m_iList);
+    if (selected < 0 || selected >= static_cast<int>(m_ignoreValues.size())) {
         return;
     }
-    SendMessageW(m_iList, LB_DELETESTRING, selected, 0);
-    SaveIgnoreList();
-    ::SetWindowTextW(m_iEdit, L"");
+    m_ignoreValues.erase(m_ignoreValues.begin() + selected);
+    if (!SaveIgnoreList()) {
+        return;
+    }
+    RefreshIgnoreList();
 }
 
 void SettingsWindow::ResetIgnoredFormats() {
@@ -948,15 +1351,8 @@ void SettingsWindow::SaveSelectedPin() {
         return;
     }
     std::wstring key = ReadWindowText(m_pKey);
-    std::transform(key.begin(), key.end(), key.begin(), towlower);
-    if (key.size() != 1 || key[0] < L'a' || key[0] > L'z' ||
-        std::wstring_view(L"acfuqvxyz").find(key[0]) != std::wstring_view::npos ||
-        towupper(key[0]) == m_settings.pin_hotkey.virtual_key ||
-        towupper(key[0]) == m_settings.delete_hotkey.virtual_key ||
-        towupper(key[0]) == m_settings.preview_hotkey.virtual_key ||
-        std::any_of(m_pins.begin(), m_pins.end(), [&](const auto &item) {
-            return item.id != m_selectedPinId && item.pin.size() == 1 && towlower(item.pin[0]) == key[0];
-        })) {
+    std::transform(key.begin(), key.end(), key.begin(), std::towlower);
+    if (!PinKeyPolicy::IsValid(key, m_pins, m_settings, m_selectedPinId)) {
         MessageBoxW(L"请选择未使用且不与搜索、编辑或已配置快捷键冲突的单个英文字母。", L"置顶快捷键", MB_OK | MB_ICONWARNING);
         return;
     }
@@ -1019,9 +1415,8 @@ void SettingsWindow::ResetPopupPosition() {
 
 LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    // The settings window is deliberately a normal fixed-size top-level
-    // window.  It has a title bar, participates in the taskbar and Alt+Tab,
-    // and does not inherit the main window's topmost behavior.
+    // Keep preferences as a normal top-level window so it remains visible in
+    // the taskbar and Alt+Tab without inheriting the main window's topmost state.
     ::SetWindowTextW(m_hWnd, L"偏好设置");
     const LONG_PTR extended_style = ::GetWindowLongPtrW(m_hWnd, GWL_EXSTYLE);
     ::SetWindowLongPtrW(
@@ -1040,13 +1435,6 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     );
 
     m_settings = AppSettings::Load(m_database);
-    HFONT gui_font = static_cast<HFONT>(::GetStockObject(DEFAULT_GUI_FONT));
-    LOGFONTW log_font{};
-    if (gui_font != nullptr && ::GetObjectW(gui_font, sizeof(log_font), &log_font) == sizeof(log_font)) {
-        log_font.lfWeight = FW_SEMIBOLD;
-        m_sectionFont = ::CreateFontIndirectW(&log_font);
-    }
-
     CreateTabs();
     if (!CreatePageWindows()) {
         handled = FALSE;
@@ -1056,6 +1444,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     LoadControlsFromSettings();
     SetPage(kPageGeneral);
     SetIgnorePage(0);
+    EnsureCurrentPageFits();
     return TRUE;
 }
 
@@ -1080,7 +1469,42 @@ LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled)
         );
     }
     SetControlFont(m_tabs.m_hWnd);
+    ConfigureIgnoreList();
+    ConfigurePinsList();
+    if (m_currentPage == kPageIgnore) {
+        RefreshIgnoreList();
+    }
     PositionPages();
+    EnsureCurrentPageFits();
+    return 0;
+}
+
+LRESULT SettingsWindow::OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+    handled = TRUE;
+    auto *limits = reinterpret_cast<MINMAXINFO *>(lParam);
+    if (limits == nullptr) {
+        return 0;
+    }
+
+    const UINT dpi = WindowDpi(m_hWnd);
+    int minimum_width = MulDiv(kMinimumSettingsWidth, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    int minimum_height = MulDiv(kMinimumSettingsHeight, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+    const RECT page = PageRect();
+    RECT window{};
+    ::GetWindowRect(m_hWnd, &window);
+    const int page_width = std::max(0L, page.right - page.left);
+    const int page_height = std::max(0L, page.bottom - page.top);
+    if (page_width > 0 && page_height > 0) {
+        const PageDefinition &definition = kPageDefinitions[static_cast<size_t>(m_currentPage)];
+        const int required_width = MulDiv(definition.width, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+        const int required_height = MulDiv(definition.height, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+        const int window_width = static_cast<int>(window.right - window.left);
+        const int window_height = static_cast<int>(window.bottom - window.top);
+        minimum_width = std::max(minimum_width, window_width + required_width - page_width);
+        minimum_height = std::max(minimum_height, window_height + required_height - page_height);
+    }
+    limits->ptMinTrackSize.x = minimum_width;
+    limits->ptMinTrackSize.y = minimum_height;
     return 0;
 }
 
@@ -1117,15 +1541,7 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         return 0;
     }
     if (id == kIAdd && notification == BN_CLICKED) {
-        AddIgnoreValue(false);
-        return 0;
-    }
-    if (id == kIBrowse && notification == BN_CLICKED) {
-        AddIgnoreValue(true);
-        return 0;
-    }
-    if (id == kIUpdate && notification == BN_CLICKED) {
-        UpdateIgnoreValue();
+        AddIgnoreValue();
         return 0;
     }
     if (id == kIRemove && notification == BN_CLICKED) {
@@ -1136,10 +1552,6 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         ResetIgnoredFormats();
         return 0;
     }
-    if (id == kPList && notification == LBN_SELCHANGE) {
-        LoadSelectedPin();
-        return 0;
-    }
     if (id == kPSave && notification == BN_CLICKED) {
         SaveSelectedPin();
         return 0;
@@ -1148,20 +1560,6 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         DeleteSelectedPin();
         return 0;
     }
-    if (id == kIList && notification == LBN_SELCHANGE) {
-        const LRESULT selected = SendMessageW(m_iList, LB_GETCURSEL, 0, 0);
-        if (selected != LB_ERR) {
-            const LRESULT length = SendMessageW(m_iList, LB_GETTEXTLEN, selected, 0);
-            if (length > 0) {
-                std::wstring value(static_cast<size_t>(length) + 1, L'\0');
-                SendMessageW(m_iList, LB_GETTEXT, selected, reinterpret_cast<LPARAM>(value.data()));
-                value.resize(static_cast<size_t>(length));
-                ::SetWindowTextW(m_iEdit, value.c_str());
-            }
-        }
-        return 0;
-    }
-
     const bool general_change =
         id == kGLaunch || id == kGUpdates || id == kGOpenHotKey || id == kGPinHotKey ||
         id == kGDeleteHotKey || id == kGPreviewHotKey || id == kGSearchMode ||
@@ -1211,6 +1609,46 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     if (header == nullptr) {
         return 0;
     }
+    if (header->hwndFrom == m_iList) {
+        if (header->code == LVN_KEYDOWN) {
+            const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
+            if (key != nullptr && key->wVKey == VK_DELETE) {
+                RemoveIgnoreValue();
+                return 0;
+            }
+        }
+        if (header->code == LVN_ENDLABELEDITW && m_ignorePage != 0) {
+            const auto *edit = reinterpret_cast<const NMLVDISPINFOW *>(lParam);
+            if (edit == nullptr || edit->item.pszText == nullptr || edit->item.pszText[0] == L'\0' ||
+                edit->item.iItem < 0 || edit->item.iItem >= static_cast<int>(m_ignoreValues.size())) {
+                return FALSE;
+            }
+            const std::wstring value = edit->item.pszText;
+            for (size_t index = 0; index < m_ignoreValues.size(); ++index) {
+                if (static_cast<int>(index) != edit->item.iItem && m_ignoreValues[index] == value) {
+                    return FALSE;
+                }
+            }
+            m_ignoreValues[static_cast<size_t>(edit->item.iItem)] = value;
+            return SaveIgnoreList() ? TRUE : FALSE;
+        }
+    }
+    if (header->hwndFrom == m_pList) {
+        if (header->code == LVN_KEYDOWN) {
+            const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
+            if (key != nullptr && key->wVKey == VK_DELETE) {
+                DeleteSelectedPin();
+                return 0;
+            }
+        }
+        if (header->code == LVN_ITEMCHANGED) {
+            const auto *change = reinterpret_cast<const NMLISTVIEW *>(lParam);
+            if (change != nullptr && (change->uNewState & LVIS_SELECTED) != 0) {
+                LoadSelectedPin();
+                return 0;
+            }
+        }
+    }
     if (header->idFrom == kTabs && header->code == TCN_SELCHANGE) {
         SaveCurrentPage();
         SetPage(m_tabs.GetCurSel());
@@ -1231,9 +1669,9 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    if (m_sectionFont != nullptr) {
-        ::DeleteObject(m_sectionFont);
-        m_sectionFont = nullptr;
+    if (m_ignoreImageList != nullptr) {
+        ImageList_Destroy(m_ignoreImageList);
+        m_ignoreImageList = nullptr;
     }
     m_hWnd = nullptr;
     return 0;

@@ -36,6 +36,7 @@ target_compile_definitions(sqlite3 PRIVATE
 add_executable(app WIN32
         src/main.cpp
         src/Database.cpp
+        src/PinKeys.cpp
         src/Settings.cpp
         src/SettingsWindow.cpp
         src/PreviewWindow.cpp
@@ -77,7 +78,7 @@ include(GNUInstallDirs)
 include(CTest)
 if(BUILD_TESTING)
     set_property(SOURCE tests/PopupTests.cpp APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-    add_executable(popup_tests tests/PopupTests.cpp src/Database.cpp src/Settings.cpp
+    add_executable(popup_tests tests/PopupTests.cpp src/Database.cpp src/PinKeys.cpp src/Settings.cpp
         src/SettingsWindow.cpp src/PreviewWindow.cpp src/MainWindow.rc src/SettingsWindow.rc)
     target_include_directories(popup_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/WTL10_01_Release/Include")
     target_compile_definitions(popup_tests PRIVATE UNICODE _UNICODE)

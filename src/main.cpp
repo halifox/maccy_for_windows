@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "Database.h"
+#include "PinKeys.h"
 #include "PreviewWindow.h"
 #include "Settings.h"
 #include "SettingsWindow.h"
@@ -62,7 +63,7 @@ constexpr int kMinimumPopupWidth = 320;
 constexpr int kMaximumPopupWidth = 1600;
 constexpr int kMinimumPopupHeight = 260;
 constexpr int kMaximumPopupHeight = 1200;
-constexpr int kHistoryWindowMargin = 6;
+constexpr int kHistoryWindowMargin = 5;  // Maccy uses 5px padding
 constexpr int kHistorySearchGap = 6;
 constexpr int kHistorySearchHeight = 23;
 // Match Maccy's compact header geometry while leaving enough room for the
@@ -71,9 +72,9 @@ constexpr int kHistorySearchIconWidth = 24;
 constexpr int kHistorySearchClearWidth = 20;
 constexpr int kHistoryPreviewWidth = 23;
 constexpr int kHistoryHeaderGap = 6;
-constexpr int kHistoryItemHeight = 22;
+constexpr int kHistoryItemHeight = 22;  // Maccy: 22px
 constexpr int kHistoryItemInset = 2;
-constexpr int kHistoryItemRadius = 7;
+constexpr int kHistoryItemRadius = 4;  // Maccy uses 4px corner radius
 constexpr int kHistoryItemLeftPadding = 10;
 constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
@@ -2147,24 +2148,7 @@ private:
     }
 
     std::wstring NextPinKey() const {
-        constexpr wchar_t keys[] = L"bdeghijklmnorstw";
-        const auto pins = m_database.SearchHistory(L"", 0, 0, false);
-        for (const wchar_t key : std::wstring_view(keys)) {
-            if (towupper(key) == m_settings.pin_hotkey.virtual_key ||
-                towupper(key) == m_settings.delete_hotkey.virtual_key ||
-                towupper(key) == m_settings.preview_hotkey.virtual_key) continue;
-            bool used = false;
-            for (const ClipboardItem &item : pins) {
-                if (item.pinned && item.pin.size() == 1 && item.pin[0] == key) {
-                    used = true;
-                    break;
-                }
-            }
-            if (!used) {
-                return std::wstring(1, key);
-            }
-        }
-        return L"";
+        return PinKeyPolicy::Next(m_database.SearchHistory({}, 0, 0, false), m_settings);
     }
 
     void ToggleSelectedPin() {
