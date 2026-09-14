@@ -374,6 +374,10 @@ bool IsHotKeyPressed(const HotKeyConfig &hotkey, WPARAM virtual_key) {
         win == ((hotkey.modifiers & MOD_WIN) != 0);
 }
 
+bool SameHotKey(const HotKeyConfig &lhs, const HotKeyConfig &rhs) {
+    return lhs.modifiers == rhs.modifiers && lhs.virtual_key == rhs.virtual_key;
+}
+
 bool SetLaunchAtLogin(bool enabled) {
     constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     constexpr wchar_t kValueName[] = L"Clipboard";

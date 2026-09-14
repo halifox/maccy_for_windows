@@ -35,6 +35,10 @@ target_compile_definitions(sqlite3 PRIVATE
 
 add_executable(app WIN32
         src/main.cpp
+        src/MainWindow.cpp
+        src/ClipboardMonitor.cpp
+        src/HistoryRenderer.cpp
+        src/KeyboardHandler.cpp
         src/Database.cpp
         src/PinKeys.cpp
         src/Settings.cpp
