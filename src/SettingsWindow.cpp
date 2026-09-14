@@ -454,16 +454,16 @@ void SettingsWindow::BindControls() {
     ApplySectionFont(m_pages[kPagePins], m_sectionFont, {IDC_P_SECTION_PINS});
     ApplySectionFont(m_pages[kPageAdvanced], m_sectionFont, {IDC_X_SECTION_CLIPBOARD});
 
-    AddComboItem(m_gSearchMode, L"精确（不区分大小写）");
+    AddComboItem(m_gSearchMode, L"精确");
     AddComboItem(m_gSearchMode, L"模糊");
     AddComboItem(m_gSearchMode, L"正则表达式");
-    AddComboItem(m_gSearchMode, L"混合（精确→正则→模糊）");
+    AddComboItem(m_gSearchMode, L"混合");
 
-    AddComboItem(m_aPopupPosition, L"光标附近");
-    AddComboItem(m_aPopupPosition, L"托盘图标附近");
-    AddComboItem(m_aPopupPosition, L"目标窗口中心");
-    AddComboItem(m_aPopupPosition, L"屏幕中心");
-    AddComboItem(m_aPopupPosition, L"上次位置");
+    AddComboItem(m_aPopupPosition, L"光标");
+    AddComboItem(m_aPopupPosition, L"菜单栏图标");
+    AddComboItem(m_aPopupPosition, L"窗口中心");
+    AddComboItem(m_aPopupPosition, L"屏幕中央");
+    AddComboItem(m_aPopupPosition, L"最后位置");
 
     AddComboItem(m_aPinTo, L"顶部");
     AddComboItem(m_aPinTo, L"底部");
@@ -471,17 +471,17 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_aHighlight, L"颜色");
     AddComboItem(m_aHighlight, L"粗体");
     AddComboItem(m_aHighlight, L"斜体");
-    AddComboItem(m_aHighlight, L"下划线");
+    AddComboItem(m_aHighlight, L"强调");
 
     AddComboItem(m_aMenuIcon, L"Maccy");
     AddComboItem(m_aMenuIcon, L"剪贴板");
     AddComboItem(m_aMenuIcon, L"剪刀");
     AddComboItem(m_aMenuIcon, L"回形针");
 
-    AddComboItem(m_aSearchVisibility, L"始终显示");
-    AddComboItem(m_aSearchVisibility, L"搜索时显示");
+    AddComboItem(m_aSearchVisibility, L"始终");
+    AddComboItem(m_aSearchVisibility, L"在搜索过程中");
 
-    AddComboItem(m_sSortBy, L"最近复制时间");
+    AddComboItem(m_sSortBy, L"上次复制时间");
     AddComboItem(m_sSortBy, L"首次复制时间");
     AddComboItem(m_sSortBy, L"复制次数");
 }
@@ -581,17 +581,17 @@ void SettingsWindow::SetIgnorePage(int page) {
     if (m_ignorePage == 0) {
         ::SetWindowTextW(
             m_iDescription,
-            L"忽略来自指定 Windows 应用程序的复制。建议优先使用剪贴板格式规则；列表中保存的是 exe 路径。\r\n开启白名单后，只记录列表中的应用。 "
+            L"忽略来自特定应用的内容。\r\n请注意此选项并非总是有效，最好使用忽略剪贴板类型设置。"
         );
     } else if (m_ignorePage == 1) {
         ::SetWindowTextW(
             m_iDescription,
-            L"忽略指定的 Windows 剪贴板格式。可填写标准名称（如 CF_UNICODETEXT、CF_HDROP）或注册格式名称。恢复默认将替换为内置忽略格式规则。"
+            L"忽略特定剪贴板内容类型。\r\n默认提供了一些已知的适用于特定应用的类型。您可以删除预置类型，或根据需要添加自定义类型。"
         );
     } else {
         ::SetWindowTextW(
             m_iDescription,
-            L"当 Unicode 文本匹配任意有效正则表达式时，不会记录该次复制。无效表达式会被安全忽略。"
+            L"可以根据定义的正则表达式忽略某些副本。"
         );
     }
 
@@ -745,11 +745,11 @@ void SettingsWindow::LoadSelectedPin() {
     if (m_selectedPinTextEditable) {
         ::SetWindowTextW(m_pContent, PinTextContent(item).c_str());
         ::EnableWindow(m_pContent, TRUE);
-        ::SetWindowTextW(m_pContentHint, L"可编辑纯文本；保存时会按照 Maccy 的行为丢弃其他格式。 ");
+        ::SetWindowTextW(m_pContentHint, L"您可以自定义任何置顶项目的热键、标题和内容。\r\n要编辑，请双击该项目并输入新值。");
     } else {
-        ::SetWindowTextW(m_pContent, L"非文本内容（图片或文件）");
+        ::SetWindowTextW(m_pContent, L"不可编辑的内容（图像或文件）");
         ::EnableWindow(m_pContent, FALSE);
-        ::SetWindowTextW(m_pContentHint, L"只能编辑按键与标题；图片和文件内容不可在 Windows 设置页中直接编辑。 ");
+        ::SetWindowTextW(m_pContentHint, L"您可以自定义任何置顶项目的热键、标题和内容。\r\n要编辑，请双击该项目并输入新值。");
     }
 }
 
@@ -1009,7 +1009,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     // The settings window is deliberately a normal fixed-size top-level
     // window.  It has a title bar, participates in the taskbar and Alt+Tab,
     // and does not inherit the main window's topmost behavior.
-    ::SetWindowTextW(m_hWnd, L"剪贴板设置");
+    ::SetWindowTextW(m_hWnd, L"偏好设置");
     const LONG_PTR extended_style = ::GetWindowLongPtrW(m_hWnd, GWL_EXSTYLE);
     ::SetWindowLongPtrW(
         m_hWnd,
