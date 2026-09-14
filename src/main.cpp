@@ -65,6 +65,8 @@ constexpr int kMaximumPopupHeight = 1200;
 constexpr int kHistoryWindowMargin = 6;
 constexpr int kHistorySearchGap = 6;
 constexpr int kHistorySearchHeight = 23;
+// Match Maccy's compact header geometry while leaving enough room for the
+// native Windows edit control and its DPI-scaled text metrics.
 constexpr int kHistorySearchIconWidth = 24;
 constexpr int kHistorySearchClearWidth = 20;
 constexpr int kHistoryPreviewWidth = 23;
@@ -765,7 +767,7 @@ private:
                 const HFONT font = m_smallFont != nullptr ? m_smallFont : m_normalFont;
                 const HGDIOBJ oldFont = font != nullptr ? ::SelectObject(dc, font) : nullptr;
                 SIZE textSize{};
-                if (::GetTextExtentPoint32W(dc, L"Clipboard", 9, &textSize)) {
+                if (::GetTextExtentPoint32W(dc, L"Maccy", 5, &textSize)) {
                     titleWidth = textSize.cx + 8;
                 }
                 if (oldFont != nullptr) ::SelectObject(dc, oldFont);
@@ -1985,10 +1987,26 @@ private:
             }
         }
         if (!IsRectEmpty(&layout.attachment)) {
-            HBRUSH brush = CreateSolidBrush(item.has_image ? RGB(225, 230, 235) : RGB(250, 220, 130));
-            FillRect(draw->hDC, &layout.attachment, brush);
-            DeleteObject(brush);
-            FrameRect(draw->hDC, &layout.attachment, GetSysColorBrush(COLOR_GRAYTEXT));
+            // Keep this marker cheap, but make its meaning visible instead of
+            // using an opaque color block. Full payloads remain on disk and
+            // are still loaded only by the preview/copy path.
+            const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
+            HPEN marker_pen = CreatePen(PS_SOLID, 1, marker);
+            HGDIOBJ old_pen = SelectObject(draw->hDC, marker_pen);
+            HGDIOBJ old_brush = SelectObject(draw->hDC, GetStockObject(NULL_BRUSH));
+            Rectangle(draw->hDC, layout.attachment.left + 1, layout.attachment.top + 2,
+                layout.attachment.right - 1, layout.attachment.bottom - 2);
+            if (item.has_image) {
+                MoveToEx(draw->hDC, layout.attachment.left + 3, layout.attachment.bottom - 4, nullptr);
+                LineTo(draw->hDC, layout.attachment.left + 7, layout.attachment.top + 7);
+                LineTo(draw->hDC, layout.attachment.left + 10, layout.attachment.bottom - 6);
+            } else {
+                MoveToEx(draw->hDC, layout.attachment.left + 4, layout.attachment.top + 5, nullptr);
+                LineTo(draw->hDC, layout.attachment.right - 4, layout.attachment.top + 5);
+            }
+            SelectObject(draw->hDC, old_brush);
+            SelectObject(draw->hDC, old_pen);
+            DeleteObject(marker_pen);
         }
 
         std::wstring shortcut;
@@ -2583,7 +2601,7 @@ private:
             const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
             const int previous_mode = SetBkMode(dc, TRANSPARENT);
             RECT title = m_titleRect;
-            DrawTextW(dc, L"Clipboard", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            DrawTextW(dc, L"Maccy", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
             SetBkMode(dc, previous_mode);
             SetTextColor(dc, previous_color);
             SelectObject(dc, previous_font);
