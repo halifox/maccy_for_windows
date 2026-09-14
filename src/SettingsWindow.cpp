@@ -20,8 +20,6 @@ enum SettingsControlId : int {
     kTabs = IDC_SETTINGS_TABS,
 
     kGLaunch = IDC_G_LAUNCH,
-    kGUpdates,
-    kGCheckNow,
     kGOpenHotKey,
     kGPinHotKey,
     kGDeleteHotKey,
@@ -29,18 +27,14 @@ enum SettingsControlId : int {
     kGSearchMode,
     kGPasteByDefault,
     kGRemoveFormatting,
-    kGNotifications,
 
     kAPopupPosition = IDC_A_POPUP_POSITION,
     kAPopupScreen = IDC_A_POPUP_SCREEN,
     kAResetPosition = IDC_A_RESET_POSITION,
     kAPinTo = IDC_A_PIN_TO,
-    kAWindowWidth = IDC_A_WINDOW_WIDTH,
-    kAWindowHeight = IDC_A_WINDOW_HEIGHT,
     kAImageHeight = IDC_A_IMAGE_HEIGHT,
     kAOpenPreview = IDC_A_OPEN_PREVIEW,
     kAPreviewDelay = IDC_A_PREVIEW_DELAY,
-    kAPreviewWidth = IDC_A_PREVIEW_WIDTH,
     kAHighlight = IDC_A_HIGHLIGHT,
     kAMenuIcon = IDC_A_MENU_ICON,
     kAShowStatus = IDC_A_SHOW_STATUS,
@@ -395,7 +389,6 @@ void SettingsWindow::BindControls() {
     };
 
     m_gLaunch = get(kPageGeneral, kGLaunch);
-    m_gUpdates = get(kPageGeneral, kGUpdates);
     m_gOpenHotKey = get(kPageGeneral, kGOpenHotKey);
     m_gPinHotKey = get(kPageGeneral, kGPinHotKey);
     m_gDeleteHotKey = get(kPageGeneral, kGDeleteHotKey);
@@ -407,12 +400,9 @@ void SettingsWindow::BindControls() {
     m_aPopupPosition = get(kPageAppearance, kAPopupPosition);
     m_aPopupScreen = get(kPageAppearance, kAPopupScreen);
     m_aPinTo = get(kPageAppearance, kAPinTo);
-    m_aWindowWidth = get(kPageAppearance, kAWindowWidth);
-    m_aWindowHeight = get(kPageAppearance, kAWindowHeight);
     m_aImageHeight = get(kPageAppearance, kAImageHeight);
     m_aOpenPreview = get(kPageAppearance, kAOpenPreview);
     m_aPreviewDelay = get(kPageAppearance, kAPreviewDelay);
-    m_aPreviewWidth = get(kPageAppearance, kAPreviewWidth);
     m_aHighlight = get(kPageAppearance, kAHighlight);
     m_aMenuIcon = get(kPageAppearance, kAMenuIcon);
     m_aShowStatus = get(kPageAppearance, kAShowStatus);
@@ -474,7 +464,6 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_aPopupPosition, L"目标窗口中心");
     AddComboItem(m_aPopupPosition, L"屏幕中心");
     AddComboItem(m_aPopupPosition, L"上次位置");
-    AddComboItem(m_aPopupPosition, L"目标窗口左上角附近");
 
     AddComboItem(m_aPinTo, L"顶部");
     AddComboItem(m_aPinTo, L"底部");
@@ -611,9 +600,6 @@ void SettingsWindow::SetIgnorePage(int page) {
 }
 void SettingsWindow::LoadGeneralControls() {
     SetCheck(m_gLaunch, m_settings.launch_at_login);
-    SetCheck(m_gUpdates, false);
-    ::EnableWindow(m_gUpdates, FALSE);
-    ::EnableWindow(::GetDlgItem(m_pages[kPageGeneral], kGCheckNow), FALSE);
     SetHotKeyControl(m_gOpenHotKey, m_settings.open_hotkey);
     SetHotKeyControl(m_gPinHotKey, m_settings.pin_hotkey);
     SetHotKeyControl(m_gDeleteHotKey, m_settings.delete_hotkey);
@@ -635,12 +621,9 @@ void SettingsWindow::LoadAppearanceControls() {
     }
     SelectCombo(m_aPopupScreen, std::clamp(m_settings.popup_screen, 0, monitor_count));
     SelectCombo(m_aPinTo, static_cast<int>(m_settings.pin_to));
-    ::SetWindowTextW(m_aWindowWidth, std::to_wstring(m_settings.window_width).c_str());
-    ::SetWindowTextW(m_aWindowHeight, std::to_wstring(m_settings.window_height).c_str());
     ::SetWindowTextW(m_aImageHeight, std::to_wstring(m_settings.image_max_height).c_str());
     SetCheck(m_aOpenPreview, m_settings.open_preview_automatically);
     ::SetWindowTextW(m_aPreviewDelay, std::to_wstring(m_settings.preview_delay).c_str());
-    ::SetWindowTextW(m_aPreviewWidth, std::to_wstring(m_settings.preview_width).c_str());
     SelectCombo(m_aHighlight, static_cast<int>(m_settings.highlight_match));
 
     const std::array<std::wstring, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
@@ -780,7 +763,6 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
         switch (m_currentPage) {
         case kPageGeneral:
             m_settings.launch_at_login = IsChecked(m_gLaunch);
-            m_settings.check_for_updates = IsChecked(m_gUpdates);
             m_settings.open_hotkey = HotKeyFromControl(m_gOpenHotKey);
             m_settings.pin_hotkey = HotKeyFromControl(m_gPinHotKey);
             m_settings.delete_hotkey = HotKeyFromControl(m_gDeleteHotKey);
@@ -793,18 +775,6 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             m_settings.popup_position = static_cast<PopupPosition>(ComboSelection(m_aPopupPosition));
             m_settings.popup_screen = ComboSelection(m_aPopupScreen);
             m_settings.pin_to = static_cast<PinPosition>(ComboSelection(m_aPinTo));
-            m_settings.window_width = ReadValidatedInteger(
-                m_aWindowWidth,
-                m_settings.window_width,
-                320,
-                1600
-            );
-            m_settings.window_height = ReadValidatedInteger(
-                m_aWindowHeight,
-                m_settings.window_height,
-                260,
-                1200
-            );
             m_settings.image_max_height = ReadValidatedInteger(
                 m_aImageHeight,
                 m_settings.image_max_height,
@@ -817,12 +787,6 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
                 m_settings.preview_delay,
                 200,
                 100000
-            );
-            m_settings.preview_width = ReadValidatedInteger(
-                m_aPreviewWidth,
-                m_settings.preview_width,
-                260,
-                1200
             );
             m_settings.highlight_match = static_cast<HighlightMatch>(ComboSelection(m_aHighlight));
             const std::array<const wchar_t *, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
@@ -1126,14 +1090,6 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         return 0;
     }
 
-    if (id == kGCheckNow && notification == BN_CLICKED) {
-        CheckForUpdatesNow();
-        return 0;
-    }
-    if (id == kGNotifications && notification == BN_CLICKED) {
-        OpenNotificationsSettings();
-        return 0;
-    }
     if (id == kAResetPosition && notification == BN_CLICKED) {
         ResetPopupPosition();
         return 0;
@@ -1185,13 +1141,12 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     }
 
     const bool general_change =
-        id == kGLaunch || id == kGUpdates || id == kGOpenHotKey || id == kGPinHotKey ||
+        id == kGLaunch || id == kGOpenHotKey || id == kGPinHotKey ||
         id == kGDeleteHotKey || id == kGPreviewHotKey || id == kGSearchMode ||
         id == kGPasteByDefault || id == kGRemoveFormatting;
     const bool appearance_change =
-        id == kAPopupPosition || id == kAPopupScreen || id == kAPinTo || id == kAWindowWidth ||
-        id == kAWindowHeight || id == kAImageHeight || id == kAOpenPreview || id == kAPreviewDelay ||
-        id == kAPreviewWidth || id == kAHighlight || id == kAMenuIcon ||
+        id == kAPopupPosition || id == kAPopupScreen || id == kAPinTo || id == kAImageHeight ||
+        id == kAOpenPreview || id == kAPreviewDelay || id == kAHighlight || id == kAMenuIcon ||
         id == kAShowStatus || id == kAShowRecent || id == kAShowSearch || id == kASearchVisibility ||
         id == kAShowTitle || id == kAShowFooter || id == kAShowSpecial || id == kAShowIcons || id == kAShowSwatch;
     const bool storage_change =
@@ -1204,8 +1159,7 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     const bool hotkey_changed = notification == EN_CHANGE &&
         (id == kGOpenHotKey || id == kGPinHotKey || id == kGDeleteHotKey || id == kGPreviewHotKey);
     const bool numeric_finished = notification == EN_KILLFOCUS &&
-        (id == kAWindowWidth || id == kAWindowHeight || id == kAImageHeight || id == kAPreviewDelay ||
-         id == kAPreviewWidth || id == kSHistorySize);
+        (id == kAImageHeight || id == kAPreviewDelay || id == kSHistorySize);
 
     if ((general_change && (checkbox_changed || combo_changed || hotkey_changed)) ||
         (appearance_change && (checkbox_changed || combo_changed || numeric_finished)) ||

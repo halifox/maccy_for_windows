@@ -977,9 +977,7 @@ private:
         const bool has_target = m_targetWindow != nullptr
             && ::IsWindow(m_targetWindow)
             && ::GetWindowRect(m_targetWindow, &target) == TRUE;
-        const HMONITOR monitor = m_settings.popup_position == PopupPosition::WindowTopLeft && has_target
-            ? ::MonitorFromWindow(m_targetWindow, MONITOR_DEFAULTTONEAREST)
-            : SelectedMonitor();
+        const HMONITOR monitor = SelectedMonitor();
         MONITORINFO monitor_info{sizeof(monitor_info)};
         if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitor_info)) {
             return;
@@ -999,12 +997,6 @@ private:
             }
             break;
         }
-        case PopupPosition::WindowTopLeft:
-            if (has_target) {
-                x = target.left;
-                y = target.top;
-            }
-            break;
         case PopupPosition::ScreenCenter:
             x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
             y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
