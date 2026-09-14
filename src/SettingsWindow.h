@@ -16,6 +16,64 @@
 #include "Settings.h"
 #include "resource.h"
 
+class EditPinDialog : public CDialogImpl<EditPinDialog> {
+public:
+    enum { IDD = IDD_EDIT_PIN };
+
+    EditPinDialog(Database &database, const AppSettings &settings, sqlite3_int64 item_id, const std::vector<ClipboardItem> &pins);
+
+    std::wstring GetKey() const { return m_key; }
+    std::wstring GetTitle() const { return m_title; }
+    std::wstring GetContent() const { return m_content; }
+    bool ContentModified() const { return m_contentModified; }
+
+    BEGIN_MSG_MAP(EditPinDialog)
+        MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        COMMAND_ID_HANDLER(IDOK, OnOK)
+        COMMAND_ID_HANDLER(IDCANCEL, OnCancel)
+    END_MSG_MAP()
+
+private:
+    LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnOK(WORD, WORD, HWND, BOOL &handled);
+    LRESULT OnCancel(WORD, WORD, HWND, BOOL &handled);
+
+    Database &m_database;
+    const AppSettings &m_settings;
+    sqlite3_int64 m_itemId;
+    const std::vector<ClipboardItem> &m_pins;
+    std::wstring m_key;
+    std::wstring m_title;
+    std::wstring m_content;
+    std::wstring m_originalContent;
+    bool m_contentModified = false;
+    bool m_textEditable = false;
+};
+
+class EditIgnoreDialog : public CDialogImpl<EditIgnoreDialog> {
+public:
+    enum { IDD = IDD_EDIT_IGNORE };
+
+    EditIgnoreDialog(const std::wstring &value, const std::wstring &description, int ignore_page);
+
+    std::wstring GetValue() const { return m_value; }
+
+    BEGIN_MSG_MAP(EditIgnoreDialog)
+        MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        COMMAND_ID_HANDLER(IDOK, OnOK)
+        COMMAND_ID_HANDLER(IDCANCEL, OnCancel)
+    END_MSG_MAP()
+
+private:
+    LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnOK(WORD, WORD, HWND, BOOL &handled);
+    LRESULT OnCancel(WORD, WORD, HWND, BOOL &handled);
+
+    std::wstring m_value;
+    std::wstring m_description;
+    int m_ignorePage;
+};
+
 class SettingsWindow : public CDialogImpl<SettingsWindow> {
 public:
     enum { IDD = IDD_SETTINGS };
@@ -61,15 +119,15 @@ private:
     void UpdateDependencies();
     void RefreshIgnoreList();
     void RefreshPinsList();
-    void LoadSelectedPin();
 
     void SaveCurrentPage(bool notify = true);
     void NotifyOwner();
     bool SaveIgnoreList();
     void AddIgnoreValue();
+    void EditIgnoreValue();
     void RemoveIgnoreValue();
     void ResetIgnoredFormats();
-    void SaveSelectedPin();
+    void EditSelectedPin();
     void DeleteSelectedPin();
     void OpenNotificationsSettings();
     void CheckForUpdatesNow();
@@ -129,6 +187,7 @@ private:
     HWND m_sHistorySize = nullptr;
     HWND m_sSortBy = nullptr;
     HWND m_sStorageSize = nullptr;
+    HWND m_sCurrentSize = nullptr;
 
     CTabCtrl m_ignoreTabs;
     HWND m_iList = nullptr;
@@ -139,13 +198,6 @@ private:
     int m_ignorePage = 0;
 
     HWND m_pList = nullptr;
-    HWND m_pKey = nullptr;
-    HWND m_pTitle = nullptr;
-    HWND m_pContent = nullptr;
-    HWND m_pContentHint = nullptr;
-    std::wstring m_originalPinContent;
-    sqlite3_int64 m_selectedPinId = 0;
-    bool m_selectedPinTextEditable = false;
     std::vector<ClipboardItem> m_pins;
 
     HWND m_xIgnoreEvents = nullptr;

@@ -15,6 +15,188 @@
 
 #include "PinKeys.h"
 
+// EditPinDialog 实现
+EditPinDialog::EditPinDialog(Database &database, const AppSettings &settings, sqlite3_int64 item_id, const std::vector<ClipboardItem> &pins)
+    : m_database(database), m_settings(settings), m_itemId(item_id), m_pins(pins) {
+}
+
+LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    CenterWindow(GetParent());
+
+    HWND keyCombo = GetDlgItem(IDC_EDIT_PIN_KEY);
+    HWND titleEdit = GetDlgItem(IDC_EDIT_PIN_TITLE);
+    HWND contentEdit = GetDlgItem(IDC_EDIT_PIN_CONTENT);
+    HWND hintLabel = GetDlgItem(IDC_P_CONTENT_HINT);
+
+    // 加载当前项目数据
+    std::optional<ClipboardItem> itemOpt = m_database.GetItem(m_itemId);
+    if (!itemOpt) {
+        EndDialog(IDCANCEL);
+        return TRUE;
+    }
+
+    ClipboardItem item = std::move(*itemOpt);
+    m_key = item.pin;
+    m_title = item.title;
+    m_originalContent = item.content;
+
+    // 填充键位下拉框
+    for (wchar_t ch = L'a'; ch <= L'z'; ++ch) {
+        std::wstring key(1, ch);
+        ::SendMessageW(keyCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(key.c_str()));
+    }
+    for (wchar_t ch = L'0'; ch <= L'9'; ++ch) {
+        std::wstring key(1, ch);
+        ::SendMessageW(keyCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(key.c_str()));
+    }
+
+    // 设置当前键位
+    int keyIndex = ::SendMessageW(keyCombo, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1), reinterpret_cast<LPARAM>(m_key.c_str()));
+    if (keyIndex != CB_ERR) {
+        ::SendMessageW(keyCombo, CB_SETCURSEL, keyIndex, 0);
+    }
+
+    // 设置标题和内容
+    ::SetWindowTextW(titleEdit, m_title.c_str());
+
+    // 检查是否可编辑文本内容
+    m_textEditable = item.has_text && !item.has_image && !item.has_files;
+    if (m_textEditable) {
+        ::SetWindowTextW(contentEdit, m_originalContent.c_str());
+        ::EnableWindow(contentEdit, TRUE);
+        ::SetWindowTextW(hintLabel, L"");
+    } else {
+        ::SetWindowTextW(contentEdit, m_originalContent.c_str());
+        ::EnableWindow(contentEdit, FALSE);
+        ::SetWindowTextW(hintLabel, L"此项目包含格式或非文本内容，无法在此编辑。");
+    }
+
+    return TRUE;
+}
+
+LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
+    handled = TRUE;
+
+    HWND keyCombo = GetDlgItem(IDC_EDIT_PIN_KEY);
+    HWND titleEdit = GetDlgItem(IDC_EDIT_PIN_TITLE);
+    HWND contentEdit = GetDlgItem(IDC_EDIT_PIN_CONTENT);
+
+    // 读取键位
+    int keyIndex = static_cast<int>(::SendMessageW(keyCombo, CB_GETCURSEL, 0, 0));
+    if (keyIndex != CB_ERR) {
+        wchar_t keyBuffer[256] = {};
+        ::SendMessageW(keyCombo, CB_GETLBTEXT, keyIndex, reinterpret_cast<LPARAM>(keyBuffer));
+        m_key = keyBuffer;
+    }
+
+    // 验证键位
+    std::wstring keyLower = m_key;
+    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), std::towlower);
+    if (!PinKeyPolicy::IsValid(keyLower, m_pins, m_settings, m_itemId)) {
+        MessageBoxW(L"请选择未使用且不与搜索、编辑或已配置快捷键冲突的单个英文字母。", L"置顶快捷键", MB_OK | MB_ICONWARNING);
+        return 0;
+    }
+    m_key = keyLower;
+
+    // 读取标题
+    int titleLen = ::GetWindowTextLengthW(titleEdit);
+    if (titleLen > 0) {
+        std::vector<wchar_t> buffer(titleLen + 1);
+        ::GetWindowTextW(titleEdit, buffer.data(), titleLen + 1);
+        m_title = buffer.data();
+    } else {
+        m_title.clear();
+    }
+
+    // 读取内容（如果可编辑）
+    if (m_textEditable) {
+        int contentLen = ::GetWindowTextLengthW(contentEdit);
+        if (contentLen > 0) {
+            std::vector<wchar_t> buffer(contentLen + 1);
+            ::GetWindowTextW(contentEdit, buffer.data(), contentLen + 1);
+            m_content = buffer.data();
+        } else {
+            m_content.clear();
+        }
+
+        if (m_content != m_originalContent) {
+            if (MessageBoxW(L"修改内容将保存为纯文本并移除原有格式。继续？", L"修改置顶内容",
+                MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING) != IDYES) {
+                return 0;
+            }
+            m_contentModified = true;
+        }
+    }
+
+    EndDialog(IDOK);
+    return 0;
+}
+
+LRESULT EditPinDialog::OnCancel(WORD, WORD, HWND, BOOL &handled) {
+    handled = TRUE;
+    EndDialog(IDCANCEL);
+    return 0;
+}
+
+// EditIgnoreDialog 实现
+EditIgnoreDialog::EditIgnoreDialog(const std::wstring &value, const std::wstring &description, int ignore_page)
+    : m_value(value), m_description(description), m_ignorePage(ignore_page) {
+}
+
+LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    CenterWindow(GetParent());
+
+    HWND valueEdit = GetDlgItem(IDC_EDIT_IGNORE_VALUE);
+    HWND descLabel = GetDlgItem(IDC_I_DESCRIPTION);
+
+    ::SetWindowTextW(valueEdit, m_value.c_str());
+    ::SetWindowTextW(descLabel, m_description.c_str());
+
+    // 如果是新建，设置默认值
+    if (m_value.empty()) {
+        if (m_ignorePage == 1) {
+            ::SetWindowTextW(valueEdit, L"xxx.yyy.zzz");
+        } else if (m_ignorePage == 2) {
+            ::SetWindowTextW(valueEdit, L"^[a-zA-Z0-9]{50}$");
+        }
+    }
+
+    ::SendMessageW(valueEdit, EM_SETSEL, 0, -1);
+    ::SetFocus(valueEdit);
+
+    return FALSE; // 返回 FALSE 表示我们已经设置了焦点
+}
+
+LRESULT EditIgnoreDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
+    handled = TRUE;
+
+    HWND valueEdit = GetDlgItem(IDC_EDIT_IGNORE_VALUE);
+    int len = ::GetWindowTextLengthW(valueEdit);
+    if (len > 0) {
+        std::vector<wchar_t> buffer(len + 1);
+        ::GetWindowTextW(valueEdit, buffer.data(), len + 1);
+        m_value = buffer.data();
+    } else {
+        m_value.clear();
+    }
+
+    if (m_value.empty()) {
+        MessageBoxW(L"值不能为空。", L"错误", MB_OK | MB_ICONWARNING);
+        return 0;
+    }
+
+    EndDialog(IDOK);
+    return 0;
+}
+
+LRESULT EditIgnoreDialog::OnCancel(WORD, WORD, HWND, BOOL &handled) {
+    handled = TRUE;
+    EndDialog(IDCANCEL);
+    return 0;
+}
+
 namespace {
 
 enum SettingsControlId : int {
@@ -57,6 +239,7 @@ enum SettingsControlId : int {
     kSHistorySize = IDC_S_HISTORY_SIZE,
     kSSortBy = IDC_S_SORT_BY,
     kSStorageSize = IDC_S_STORAGE_SIZE,
+    kSCurrentSize = IDC_S_CURRENT_SIZE,
 
     kIgnoreTabs = IDC_IGNORE_TABS,
     kIList = IDC_I_LIST,
@@ -487,14 +670,11 @@ void SettingsWindow::BindControls() {
     m_sHistorySize = get(kPageStorage, kSHistorySize);
     m_sSortBy = get(kPageStorage, kSSortBy);
     m_sStorageSize = get(kPageStorage, kSStorageSize);
+    m_sCurrentSize = get(kPageStorage, kSCurrentSize);
 
     m_iWhitelist = ::GetDlgItem(m_ignorePages[0], kIWhitelist);
 
     m_pList = get(kPagePins, kPList);
-    m_pKey = get(kPagePins, kPKey);
-    m_pTitle = get(kPagePins, kPTitle);
-    m_pContent = get(kPagePins, kPContent);
-    m_pContentHint = get(kPagePins, IDC_P_CONTENT_HINT);
 
     m_xIgnoreEvents = get(kPageAdvanced, kXIgnoreEvents);
     m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
@@ -601,88 +781,17 @@ void SettingsWindow::LayoutFlexibleControls() {
         const int height = std::max(0L, page.bottom - page.top);
         const int left_margin = DialogUnitWidth(page_window, 8);
         const int right_margin = DialogUnitWidth(page_window, 8);
-        const int control_left = DialogUnitWidth(page_window, 82);
-        const int label_width = DialogUnitWidth(page_window, 70);
-        const int button_height = DialogUnitHeight(page_window, 18);
-        const int button_y = std::max(DialogUnitHeight(page_window, 8), height - button_height - DialogUnitHeight(page_window, 8));
-        const int hint_height = DialogUnitHeight(page_window, 32);
-        const int vertical_gap = DialogUnitHeight(page_window, 8);
-        const int row_height = DialogUnitHeight(page_window, 18);
-        const int hint_y = std::max(DialogUnitHeight(page_window, 8), button_y - hint_height - vertical_gap);
-        const int content_y = std::max(DialogUnitHeight(page_window, 8), hint_y - DialogUnitHeight(page_window, 54) - vertical_gap);
-        const int title_y = std::max(DialogUnitHeight(page_window, 8), content_y - row_height - DialogUnitHeight(page_window, 4));
-        const int key_y = std::max(DialogUnitHeight(page_window, 8), title_y - row_height - DialogUnitHeight(page_window, 4));
-        const int list_bottom = std::max(DialogUnitHeight(page_window, 104), key_y - vertical_gap);
+        const int hint_height = DialogUnitHeight(page_window, 14);
+        const int top_margin = DialogUnitHeight(page_window, 5);
+        const int bottom_margin = DialogUnitHeight(page_window, 8);
+        const int list_height = std::max(100, height - top_margin - hint_height - bottom_margin - DialogUnitHeight(page_window, 8));
 
         MoveControl(
             m_pList,
             left_margin,
-            DialogUnitHeight(page_window, 5),
+            top_margin,
             width - left_margin - right_margin,
-            list_bottom - DialogUnitHeight(page_window, 5)
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, IDC_P_KEY_LABEL),
-            left_margin,
-            key_y,
-            label_width,
-            DialogUnitHeight(page_window, 14)
-        );
-        MoveControl(
-            m_pKey,
-            control_left,
-            key_y - DialogUnitHeight(page_window, 1),
-            DialogUnitWidth(page_window, 140),
-            DialogUnitHeight(page_window, 16)
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, IDC_P_TITLE_LABEL),
-            left_margin,
-            title_y,
-            label_width,
-            DialogUnitHeight(page_window, 14)
-        );
-        MoveControl(
-            m_pTitle,
-            control_left,
-            title_y - DialogUnitHeight(page_window, 1),
-            width - control_left - right_margin,
-            DialogUnitHeight(page_window, 16)
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, IDC_P_CONTENT_LABEL),
-            left_margin,
-            content_y,
-            label_width,
-            DialogUnitHeight(page_window, 14)
-        );
-        MoveControl(
-            m_pContent,
-            control_left,
-            content_y - DialogUnitHeight(page_window, 1),
-            width - control_left - right_margin,
-            hint_y - content_y
-        );
-        MoveControl(
-            m_pContentHint,
-            left_margin,
-            hint_y,
-            width - left_margin - right_margin,
-            hint_height
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, kPSave),
-            width - DialogUnitWidth(page_window, 134),
-            button_y,
-            DialogUnitWidth(page_window, 60),
-            button_height
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, kPDelete),
-            width - DialogUnitWidth(page_window, 68),
-            button_y,
-            DialogUnitWidth(page_window, 60),
-            button_height
+            list_height
         );
 
         const int key_width = DialogUnitWidth(page_window, 58);
@@ -692,7 +801,7 @@ void SettingsWindow::LayoutFlexibleControls() {
         ListView_SetColumnWidth(
             m_pList,
             2,
-            std::max(80, width - key_width - alias_width - 20)
+            std::max(80, width - key_width - alias_width - left_margin - right_margin - 20)
         );
     }
 
@@ -971,6 +1080,10 @@ void SettingsWindow::LoadStorageControls() {
     ::SetWindowTextW(m_sHistorySize, std::to_wstring(m_settings.history_size).c_str());
     SelectCombo(m_sSortBy, m_settings.sort_by);
     ::SetWindowTextW(m_sStorageSize, FormatByteCount(m_database.StorageBytes()).c_str());
+
+    const sqlite3_int64 current_count = m_database.CountItems();
+    const std::wstring current_size_text = L"（当前: " + std::to_wstring(current_count) + L" 项）";
+    ::SetWindowTextW(m_sCurrentSize, current_size_text.c_str());
 }
 
 void SettingsWindow::LoadAdvancedControls() {
@@ -1055,7 +1168,14 @@ void SettingsWindow::RefreshPinsList() {
     if (m_pList == nullptr) {
         return;
     }
-    const sqlite3_int64 previous_selection = m_selectedPinId;
+
+    // 保存当前选中项的 ID
+    sqlite3_int64 previous_selection = 0;
+    const int current_selected = SelectedListViewItem(m_pList);
+    if (current_selected >= 0 && current_selected < static_cast<int>(m_pins.size())) {
+        previous_selection = m_pins[current_selected].id;
+    }
+
     m_pins = m_database.GetPinnedItems();
     std::stable_sort(m_pins.begin(), m_pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
         if (lhs.first_copied_at != rhs.first_copied_at) {
@@ -1105,12 +1225,15 @@ void SettingsWindow::RefreshPinsList() {
             content.data()
         );
     }
-    m_selectedPinId = previous_selection;
+
+    // 恢复选中项
     int selected_index = -1;
-    for (size_t index = 0; index < m_pins.size(); ++index) {
-        if (m_pins[index].id == previous_selection) {
-            selected_index = static_cast<int>(index);
-            break;
+    if (previous_selection != 0) {
+        for (size_t index = 0; index < m_pins.size(); ++index) {
+            if (m_pins[index].id == previous_selection) {
+                selected_index = static_cast<int>(index);
+                break;
+            }
         }
     }
     if (selected_index < 0 && !m_pins.empty()) {
@@ -1123,61 +1246,6 @@ void SettingsWindow::RefreshPinsList() {
             LVIS_SELECTED | LVIS_FOCUSED,
             LVIS_SELECTED | LVIS_FOCUSED
         );
-    }
-    LoadSelectedPin();
-}
-
-void SettingsWindow::LoadSelectedPin() {
-    const int selected = SelectedListViewItem(m_pList);
-    if (selected < 0 || static_cast<size_t>(selected) >= m_pins.size()) {
-        m_selectedPinId = 0;
-        m_originalPinContent.clear();
-        SendMessageW(m_pKey, CB_RESETCONTENT, 0, 0);
-        ::SetWindowTextW(m_pKey, L"");
-        ::SetWindowTextW(m_pTitle, L"");
-        ::SetWindowTextW(m_pContent, L"");
-        ::EnableWindow(m_pKey, FALSE);
-        ::EnableWindow(m_pTitle, FALSE);
-        ::EnableWindow(m_pContent, FALSE);
-        m_selectedPinTextEditable = false;
-        return;
-    }
-    const ClipboardItem &item = m_pins[static_cast<size_t>(selected)];
-    m_selectedPinId = item.id;
-    m_originalPinContent = PinTextContent(item);
-    SendMessageW(m_pKey, CB_RESETCONTENT, 0, 0);
-    const auto available_keys = PinKeyPolicy::Available(m_pins, m_settings, item.id);
-    std::vector<wchar_t> selectable_keys = available_keys;
-    const wchar_t current_key = item.pin.size() == 1 ? static_cast<wchar_t>(std::towlower(item.pin.front())) : L'\0';
-    if (current_key != L'\0' && std::find(selectable_keys.begin(), selectable_keys.end(), current_key) == selectable_keys.end()) {
-        selectable_keys.push_back(current_key);
-    }
-    std::sort(selectable_keys.begin(), selectable_keys.end());
-    int selected_key = CB_ERR;
-    for (const wchar_t key : selectable_keys) {
-        const std::wstring value(1, key);
-        const LRESULT index = SendMessageW(m_pKey, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(value.c_str()));
-        if (key == current_key) {
-            selected_key = static_cast<int>(index);
-        }
-    }
-    if (selected_key != CB_ERR) {
-        SelectCombo(m_pKey, selected_key);
-    }
-    ::SetWindowTextW(m_pTitle, item.title.c_str());
-    ::EnableWindow(m_pKey, TRUE);
-    ::EnableWindow(m_pTitle, TRUE);
-    ::SetWindowTextW(
-        m_pContentHint,
-        L"您可以自定义任何置顶项目的热键、标题和内容。\r\n要编辑，请双击该项目并输入新值。"
-    );
-    m_selectedPinTextEditable = item.has_text && !item.has_image && !item.has_files;
-    if (m_selectedPinTextEditable) {
-        ::SetWindowTextW(m_pContent, m_originalPinContent.c_str());
-        ::EnableWindow(m_pContent, TRUE);
-    } else {
-        ::SetWindowTextW(m_pContent, L"不可编辑的内容（图像或文件）");
-        ::EnableWindow(m_pContent, FALSE);
     }
 }
 
@@ -1291,7 +1359,16 @@ bool SettingsWindow::SaveIgnoreList() {
 }
 
 void SettingsWindow::AddIgnoreValue() {
-    std::wstring value;
+    std::wstring description;
+    if (m_ignorePage == 0) {
+        description = L"选择要忽略的应用程序。";
+    } else if (m_ignorePage == 1) {
+        description = L"输入要忽略的 pasteboard 类型（例如：com.example.custom）。";
+    } else {
+        description = L"输入正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。";
+    }
+
+    // 对于应用程序页面，使用文件选择对话框
     if (m_ignorePage == 0) {
         std::array<wchar_t, MAX_PATH> path{};
         OPENFILENAMEW dialog{};
@@ -1301,15 +1378,26 @@ void SettingsWindow::AddIgnoreValue() {
         dialog.lpstrFile = path.data();
         dialog.nMaxFile = static_cast<DWORD>(path.size());
         dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-        if (GetOpenFileNameW(&dialog)) {
-            value = path.data();
+        if (!GetOpenFileNameW(&dialog)) {
+            return;
         }
-    } else if (m_ignorePage == 1) {
-        value = L"xxx.yyy.zzz";
-    } else {
-        value = L"^[a-zA-Z0-9]{50}$";
+        std::wstring value = path.data();
+        if (value.empty() || std::find(m_ignoreValues.begin(), m_ignoreValues.end(), value) != m_ignoreValues.end()) {
+            return;
+        }
+        m_ignoreValues.push_back(std::move(value));
+        SaveIgnoreList();
+        RefreshIgnoreList();
+        return;
     }
 
+    // 对于其他页面，使用编辑对话框
+    EditIgnoreDialog dialog(L"", description, m_ignorePage);
+    if (dialog.DoModal(m_hWnd) != IDOK) {
+        return;
+    }
+
+    std::wstring value = dialog.GetValue();
     if (value.empty() || std::find(m_ignoreValues.begin(), m_ignoreValues.end(), value) != m_ignoreValues.end()) {
         return;
     }
@@ -1317,11 +1405,47 @@ void SettingsWindow::AddIgnoreValue() {
     if (!SaveIgnoreList()) {
         return;
     }
-    const int inserted = static_cast<int>(m_ignoreValues.size() - 1);
     RefreshIgnoreList();
-    if (m_ignorePage != 0 && inserted >= 0 && inserted < static_cast<int>(m_ignoreValues.size())) {
-        ListView_EditLabel(m_iList, inserted);
+}
+
+void SettingsWindow::EditIgnoreValue() {
+    const int selected = SelectedListViewItem(m_iList);
+    if (selected < 0 || selected >= static_cast<int>(m_ignoreValues.size())) {
+        return;
     }
+
+    std::wstring description;
+    if (m_ignorePage == 0) {
+        description = L"编辑要忽略的应用程序路径。";
+    } else if (m_ignorePage == 1) {
+        description = L"编辑要忽略的 pasteboard 类型（例如：com.example.custom）。";
+    } else {
+        description = L"编辑正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。";
+    }
+
+    EditIgnoreDialog dialog(m_ignoreValues[selected], description, m_ignorePage);
+    if (dialog.DoModal(m_hWnd) != IDOK) {
+        return;
+    }
+
+    std::wstring value = dialog.GetValue();
+    if (value.empty()) {
+        return;
+    }
+
+    // 检查是否与其他项重复
+    for (size_t index = 0; index < m_ignoreValues.size(); ++index) {
+        if (static_cast<int>(index) != selected && m_ignoreValues[index] == value) {
+            MessageBoxW(L"该值已存在。", L"错误", MB_OK | MB_ICONWARNING);
+            return;
+        }
+    }
+
+    m_ignoreValues[selected] = value;
+    if (!SaveIgnoreList()) {
+        return;
+    }
+    RefreshIgnoreList();
 }
 
 void SettingsWindow::RemoveIgnoreValue() {
@@ -1346,23 +1470,23 @@ void SettingsWindow::ResetIgnoredFormats() {
     }
 }
 
-void SettingsWindow::SaveSelectedPin() {
-    if (m_selectedPinId == 0) {
+void SettingsWindow::EditSelectedPin() {
+    const int selected = SelectedListViewItem(m_pList);
+    if (selected < 0 || selected >= static_cast<int>(m_pins.size())) {
         return;
     }
-    std::wstring key = ReadWindowText(m_pKey);
-    std::transform(key.begin(), key.end(), key.begin(), std::towlower);
-    if (!PinKeyPolicy::IsValid(key, m_pins, m_settings, m_selectedPinId)) {
-        MessageBoxW(L"请选择未使用且不与搜索、编辑或已配置快捷键冲突的单个英文字母。", L"置顶快捷键", MB_OK | MB_ICONWARNING);
+
+    const sqlite3_int64 itemId = m_pins[selected].id;
+    EditPinDialog dialog(m_database, m_settings, itemId, m_pins);
+    if (dialog.DoModal(m_hWnd) != IDOK) {
         return;
     }
-    const std::wstring title = ReadWindowText(m_pTitle);
+
     try {
-        if (m_selectedPinTextEditable && ReadWindowText(m_pContent) != m_originalPinContent) {
-            if (MessageBoxW(L"修改内容将保存为纯文本并移除原有格式。继续？", L"修改置顶内容", MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING) != IDYES) return;
-            m_database.UpdatePinnedItem(m_selectedPinId, key, title, ReadWindowText(m_pContent));
+        if (dialog.ContentModified()) {
+            m_database.UpdatePinnedItem(itemId, dialog.GetKey(), dialog.GetTitle(), dialog.GetContent());
         } else {
-            m_database.UpdatePinnedMetadata(m_selectedPinId, key, title);
+            m_database.UpdatePinnedMetadata(itemId, dialog.GetKey(), dialog.GetTitle());
         }
         RefreshPinsList();
         NotifyOwner();
@@ -1372,14 +1496,15 @@ void SettingsWindow::SaveSelectedPin() {
 }
 
 void SettingsWindow::DeleteSelectedPin() {
-    if (m_selectedPinId == 0) {
+    const int selected = SelectedListViewItem(m_pList);
+    if (selected < 0 || selected >= static_cast<int>(m_pins.size())) {
         return;
     }
     if (::MessageBoxW(m_hWnd, L"删除当前置顶项目？", L"确认", MB_YESNO | MB_ICONQUESTION) != IDYES) {
         return;
     }
     try {
-        m_database.DeleteItem(m_selectedPinId);
+        m_database.DeleteItem(m_pins[selected].id);
         RefreshPinsList();
         NotifyOwner();
     } catch (const std::exception &error) {
@@ -1552,14 +1677,6 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         ResetIgnoredFormats();
         return 0;
     }
-    if (id == kPSave && notification == BN_CLICKED) {
-        SaveSelectedPin();
-        return 0;
-    }
-    if (id == kPDelete && notification == BN_CLICKED) {
-        DeleteSelectedPin();
-        return 0;
-    }
     const bool general_change =
         id == kGLaunch || id == kGUpdates || id == kGOpenHotKey || id == kGPinHotKey ||
         id == kGDeleteHotKey || id == kGPreviewHotKey || id == kGSearchMode ||
@@ -1610,6 +1727,10 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         return 0;
     }
     if (header->hwndFrom == m_iList) {
+        if (header->code == NM_DBLCLK) {
+            EditIgnoreValue();
+            return 0;
+        }
         if (header->code == LVN_KEYDOWN) {
             const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
             if (key != nullptr && key->wVKey == VK_DELETE) {
@@ -1617,34 +1738,16 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
                 return 0;
             }
         }
-        if (header->code == LVN_ENDLABELEDITW && m_ignorePage != 0) {
-            const auto *edit = reinterpret_cast<const NMLVDISPINFOW *>(lParam);
-            if (edit == nullptr || edit->item.pszText == nullptr || edit->item.pszText[0] == L'\0' ||
-                edit->item.iItem < 0 || edit->item.iItem >= static_cast<int>(m_ignoreValues.size())) {
-                return FALSE;
-            }
-            const std::wstring value = edit->item.pszText;
-            for (size_t index = 0; index < m_ignoreValues.size(); ++index) {
-                if (static_cast<int>(index) != edit->item.iItem && m_ignoreValues[index] == value) {
-                    return FALSE;
-                }
-            }
-            m_ignoreValues[static_cast<size_t>(edit->item.iItem)] = value;
-            return SaveIgnoreList() ? TRUE : FALSE;
-        }
     }
     if (header->hwndFrom == m_pList) {
+        if (header->code == NM_DBLCLK) {
+            EditSelectedPin();
+            return 0;
+        }
         if (header->code == LVN_KEYDOWN) {
             const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
             if (key != nullptr && key->wVKey == VK_DELETE) {
                 DeleteSelectedPin();
-                return 0;
-            }
-        }
-        if (header->code == LVN_ITEMCHANGED) {
-            const auto *change = reinterpret_cast<const NMLISTVIEW *>(lParam);
-            if (change != nullptr && (change->uNewState & LVIS_SELECTED) != 0) {
-                LoadSelectedPin();
                 return 0;
             }
         }
