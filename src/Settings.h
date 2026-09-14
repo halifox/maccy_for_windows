@@ -50,7 +50,7 @@ struct HotKeyConfig {
 
 struct AppSettings {
     bool launch_at_login = false;
-    bool check_for_updates = true;
+    bool check_for_updates = false;
 
     bool clear_on_quit = false;
     bool clear_system_clipboard = false;

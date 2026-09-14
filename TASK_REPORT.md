@@ -24,7 +24,8 @@ Windows 端没有引入资源编辑器、复杂 UI 框架或重量级组件；�
 - 精确、模糊、正则、混合搜索。
 - 选择后自动粘贴。
 - 默认去除格式：保留纯文本和文件，过滤 HTML/RTF 等富文本格式。
-- 检查更新：打开 Maccy GitHub 的 latest release 页面。
+- 自动检查更新开关：保存到 Windows 设置数据库；Windows 版暂未实现后台下载、签名校验和自动安装。
+- 检查更新按钮：打开 Maccy GitHub 的 latest release 页面。
 - Windows 通知设置入口：打开 `ms-settings:notifications`。
 
 ### 外观
@@ -102,7 +103,7 @@ cmake --build cmake-build-release --config Release --parallel 2
 
 以下差异来自 macOS API 与 Windows API 的平台边界，并非 WTL 控件缺失：
 
-1. **Sparkle 自动更新**：Windows 版没有实现后台下载、签名校验和自动安装。设置项会保存，“立即检查”打开 GitHub 发布页。
+1. **Sparkle 自动更新**：Windows 版没有实现后台下载、签名校验和自动安装。自动检查更新开关会保存，检查更新按钮打开 GitHub 发布页。
 2. **macOS 通知声音**：通知入口映射到 Windows 通知设置；Maccy 的 per-copy `knock` 声音没有一比一实现。
 3. **菜单栏语义**：Windows 没有 macOS menu bar。`showRecentCopyInMenuBar` 等价实现为通知区域图标 Tooltip；菜单图标使用 Windows 系统图标映射，不使用 macOS SF Symbols/NSImage 资源。
 4. **NSPasteboard 类型**：Windows 没有 `NSPasteboard.PasteboardType` 的统一类型集合。当前实现支持 Unicode/ANSI/HTML/RTF、`CF_HDROP`、DIB/DIBV5 及注册格式名；动态 macOS 类型、Apple 专用类型和 `CF_BITMAP` 原生句柄没有跨平台等价的持久化表示。

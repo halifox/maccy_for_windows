@@ -20,13 +20,16 @@ enum SettingsControlId : int {
     kTabs = IDC_SETTINGS_TABS,
 
     kGLaunch = IDC_G_LAUNCH,
-    kGOpenHotKey,
-    kGPinHotKey,
-    kGDeleteHotKey,
-    kGPreviewHotKey,
-    kGSearchMode,
-    kGPasteByDefault,
-    kGRemoveFormatting,
+    kGUpdates = IDC_G_UPDATES,
+    kGCheckNow = IDC_G_CHECK_NOW,
+    kGOpenHotKey = IDC_G_OPEN_HOTKEY,
+    kGPinHotKey = IDC_G_PIN_HOTKEY,
+    kGDeleteHotKey = IDC_G_DELETE_HOTKEY,
+    kGPreviewHotKey = IDC_G_PREVIEW_HOTKEY,
+    kGSearchMode = IDC_G_SEARCH_MODE,
+    kGPasteByDefault = IDC_G_PASTE_BY_DEFAULT,
+    kGRemoveFormatting = IDC_G_REMOVE_FORMATTING,
+    kGNotifications = IDC_G_NOTIFICATIONS,
 
     kAPopupPosition = IDC_A_POPUP_POSITION,
     kAPopupScreen = IDC_A_POPUP_SCREEN,
@@ -389,6 +392,7 @@ void SettingsWindow::BindControls() {
     };
 
     m_gLaunch = get(kPageGeneral, kGLaunch);
+    m_gUpdates = get(kPageGeneral, kGUpdates);
     m_gOpenHotKey = get(kPageGeneral, kGOpenHotKey);
     m_gPinHotKey = get(kPageGeneral, kGPinHotKey);
     m_gDeleteHotKey = get(kPageGeneral, kGDeleteHotKey);
@@ -438,7 +442,7 @@ void SettingsWindow::BindControls() {
     ApplySectionFont(
         m_pages[kPageGeneral],
         m_sectionFont,
-        {IDC_G_SECTION_STARTUP, IDC_G_SECTION_HOTKEYS, IDC_G_SECTION_BEHAVIOR}
+        {IDC_G_SECTION_BEHAVIOR}
     );
     ApplySectionFont(
         m_pages[kPageAppearance],
@@ -600,6 +604,7 @@ void SettingsWindow::SetIgnorePage(int page) {
 }
 void SettingsWindow::LoadGeneralControls() {
     SetCheck(m_gLaunch, m_settings.launch_at_login);
+    SetCheck(m_gUpdates, m_settings.check_for_updates);
     SetHotKeyControl(m_gOpenHotKey, m_settings.open_hotkey);
     SetHotKeyControl(m_gPinHotKey, m_settings.pin_hotkey);
     SetHotKeyControl(m_gDeleteHotKey, m_settings.delete_hotkey);
@@ -763,6 +768,7 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
         switch (m_currentPage) {
         case kPageGeneral:
             m_settings.launch_at_login = IsChecked(m_gLaunch);
+            m_settings.check_for_updates = IsChecked(m_gUpdates);
             m_settings.open_hotkey = HotKeyFromControl(m_gOpenHotKey);
             m_settings.pin_hotkey = HotKeyFromControl(m_gPinHotKey);
             m_settings.delete_hotkey = HotKeyFromControl(m_gDeleteHotKey);
@@ -990,7 +996,14 @@ void SettingsWindow::OpenNotificationsSettings() {
 }
 
 void SettingsWindow::CheckForUpdatesNow() {
-    MessageBoxW(L"此 Windows 版本尚未提供更新服务。", L"检查更新", MB_OK);
+    ShellExecuteW(
+        m_hWnd,
+        L"open",
+        L"https://github.com/p0deje/Maccy/releases/latest",
+        nullptr,
+        nullptr,
+        SW_SHOWNORMAL
+    );
 }
 
 void SettingsWindow::ResetPopupPosition() {
@@ -1090,6 +1103,15 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         return 0;
     }
 
+    if (id == kGCheckNow && notification == BN_CLICKED) {
+        CheckForUpdatesNow();
+        return 0;
+    }
+    if (id == kGNotifications && notification == BN_CLICKED) {
+        OpenNotificationsSettings();
+        return 0;
+    }
+
     if (id == kAResetPosition && notification == BN_CLICKED) {
         ResetPopupPosition();
         return 0;
@@ -1141,7 +1163,7 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     }
 
     const bool general_change =
-        id == kGLaunch || id == kGOpenHotKey || id == kGPinHotKey ||
+        id == kGLaunch || id == kGUpdates || id == kGOpenHotKey || id == kGPinHotKey ||
         id == kGDeleteHotKey || id == kGPreviewHotKey || id == kGSearchMode ||
         id == kGPasteByDefault || id == kGRemoveFormatting;
     const bool appearance_change =
