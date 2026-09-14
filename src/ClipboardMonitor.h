@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <shellapi.h>
 
 #include "Database.h"
 #include "Settings.h"
