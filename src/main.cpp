@@ -50,7 +50,7 @@ constexpr UINT kHotkeyId = 1006;
 constexpr UINT_PTR kSearchTimerId = 1;
 constexpr UINT_PTR kPreviewTimerId = 2;
 constexpr UINT_PTR kPasteTimerId = 3;
-constexpr UINT kSearchDebounceMilliseconds = 180;
+constexpr UINT kSearchDebounceMilliseconds = 200;
 
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
@@ -61,7 +61,7 @@ constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 // Appearance page or by resizing the borderless popup directly.
 constexpr int kMinimumPopupWidth = 320;
 constexpr int kMaximumPopupWidth = 1600;
-constexpr int kMinimumPopupHeight = 260;
+constexpr int kMinimumPopupHeight = 150;
 constexpr int kMaximumPopupHeight = 1200;
 constexpr int kHistoryWindowMargin = 5;  // Maccy uses 5px padding
 constexpr int kHistorySearchGap = 6;
@@ -2214,9 +2214,60 @@ private:
         return false;
     }
 
-    static std::pair<bool, bool> ResolvePasteAction(bool paste, bool plain, bool alt, bool shift) {
-        if (alt) paste = !paste;
-        if (shift) { paste = true; plain = !plain; }
+    // Resolve paste action based on modifier keys, matching Maccy 2.7.1 behavior.
+    //
+    // Maccy's modifier key semantics:
+    // - Cmd (Ctrl on Windows): Primary modifier, use default settings explicitly
+    // - Option (Alt on Windows): Secondary modifier, toggle paste/copy behavior
+    // - Shift: Must combine with Cmd/Option, toggle formatting behavior
+    //
+    // Supported combinations:
+    // - None: Use default settings
+    // - Ctrl: Use default settings (explicit intent)
+    // - Alt: Toggle paste/copy, keep formatting
+    // - Ctrl+Shift: Use default paste/copy, toggle formatting
+    // - Alt+Shift: Toggle paste/copy, toggle formatting
+    // - Other combinations: Fall back to default settings
+    //
+    // Parameters:
+    // - paste_default: Value of paste_by_default setting
+    // - plain_default: Value of remove_formatting_by_default setting
+    // - ctrl: VK_CONTROL is pressed
+    // - alt: VK_MENU (Alt) is pressed
+    // - shift: VK_SHIFT is pressed
+    //
+    // Returns: {should_paste, should_remove_formatting}
+    static std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
+                                                      bool ctrl, bool alt, bool shift) {
+        bool paste = paste_default;
+        bool plain = plain_default;
+
+        // Ctrl 单独：明确使用默认设置（Maccy 的 Cmd）
+        if (ctrl && !alt && !shift) {
+            paste = paste_default;
+            plain = plain_default;
+        }
+        // Alt 单独：反转粘贴/复制（Maccy 的 Option）
+        else if (alt && !ctrl && !shift) {
+            paste = !paste_default;
+            plain = plain_default;
+        }
+        // Ctrl+Shift：主操作 + 反转格式化（Maccy 的 Cmd+Shift）
+        else if (ctrl && shift && !alt) {
+            paste = paste_default;
+            plain = !plain_default;
+        }
+        // Alt+Shift：次操作 + 反转格式化（Maccy 的 Option+Shift）
+        else if (alt && shift && !ctrl) {
+            paste = !paste_default;
+            plain = !plain_default;
+        }
+        // 无修饰键或其他组合：使用默认设置
+        else {
+            paste = paste_default;
+            plain = plain_default;
+        }
+
         return {paste, plain};
     }
 
@@ -2228,9 +2279,13 @@ private:
         const HWND target_focus = m_targetFocusWindow;
         const sqlite3_int64 id = m_items[static_cast<size_t>(index)].id;
         try {
-            const auto [paste, plain] = ResolvePasteAction(m_settings.paste_by_default,
-                m_settings.remove_formatting_by_default, (GetKeyState(VK_MENU) & 0x8000) != 0,
-                (GetKeyState(VK_SHIFT) & 0x8000) != 0);
+            const auto [paste, plain] = ResolvePasteAction(
+                m_settings.paste_by_default,
+                m_settings.remove_formatting_by_default,
+                (GetKeyState(VK_CONTROL) & 0x8000) != 0,
+                (GetKeyState(VK_MENU) & 0x8000) != 0,
+                (GetKeyState(VK_SHIFT) & 0x8000) != 0
+            );
             const auto item = m_database.GetItem(id, true);
             if (!item || !SetClipboardItem(*item, plain)) {
                 return;
