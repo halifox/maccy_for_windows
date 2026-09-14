@@ -1,8 +1,6 @@
 #pragma once
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
+#include "PlatformConfig.h"
 
 #include <cstdint>
 #include <filesystem>

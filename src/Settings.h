@@ -1,10 +1,6 @@
 #pragma once
 
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-
-#include <windows.h>
+#include "PlatformConfig.h"
 
 #include <cstdint>
 #include <string>

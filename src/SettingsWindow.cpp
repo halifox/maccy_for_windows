@@ -1,5 +1,5 @@
-#define NOMINMAX
 #include "SettingsWindow.h"
+#include "Constants.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -861,7 +861,7 @@ void SettingsWindow::EnsureCurrentPageFits() {
 }
 
 void SettingsWindow::SetPage(int page) {
-    m_currentPage = std::clamp(page, 0, kPageCount - 1);
+    m_currentPage = std::clamp(page, 0, AppConstants::SettingsUI::kPageCount - 1);
     if (m_tabs.m_hWnd != nullptr) {
         m_tabs.SetCurSel(m_currentPage);
     }
@@ -870,7 +870,7 @@ void SettingsWindow::SetPage(int page) {
 }
 
 void SettingsWindow::SetIgnorePage(int page) {
-    m_ignorePage = std::clamp(page, 0, kIgnorePageCount - 1);
+    m_ignorePage = std::clamp(page, 0, AppConstants::SettingsUI::kIgnorePageCount - 1);
     if (m_ignoreTabs.m_hWnd != nullptr) {
         m_ignoreTabs.SetCurSel(m_ignorePage);
     }
@@ -1274,7 +1274,7 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
 
 void SettingsWindow::NotifyOwner() {
     if (m_owner != nullptr && ::IsWindow(m_owner)) {
-        SendMessageW(m_owner, kSettingsChangedMessage, 0, 0);
+        SendMessageW(m_owner, AppConstants::kSettingsChangedMessage, 0, 0);
     }
 }
 

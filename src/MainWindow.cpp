@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Constants.h"
 #include "SettingsWindow.h"
 #include "PinKeys.h"
 
@@ -1556,7 +1557,7 @@ bool MainWindow::AddTrayIcon() {
     m_notifyIcon.hWnd = m_hWnd;
     m_notifyIcon.uID = kTrayIconId;
     m_notifyIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    m_notifyIcon.uCallbackMessage = kTrayIconMessage;
+    m_notifyIcon.uCallbackMessage = AppConstants::kTrayIconMessage;
     m_notifyIcon.hIcon = TrayIconForName(m_settings.menu_icon);
     UpdateTrayTooltip();
     m_trayIconAdded = Shell_NotifyIconW(NIM_ADD, &m_notifyIcon) == TRUE;

@@ -1,7 +1,7 @@
 #pragma once
 
-#define NOMINMAX
-#include <windows.h>
+#include "PlatformConfig.h"
+#include "Constants.h"
 
 #include <array>
 #include <string>
@@ -15,8 +15,6 @@
 #include "Database.h"
 #include "Settings.h"
 #include "resource.h"
-
-constexpr UINT kSettingsChangedMessage = WM_APP + 2;
 
 class SettingsWindow : public CDialogImpl<SettingsWindow> {
 public:
@@ -41,9 +39,6 @@ public:
     END_MSG_MAP()
 
 private:
-    static constexpr int kPageCount = 6;
-    static constexpr int kIgnorePageCount = 3;
-
     void CreateTabs();
     bool CreatePageWindows();
     void BindControls();
@@ -92,8 +87,8 @@ private:
     Database &m_database;
     HWND m_owner = nullptr;
     CTabCtrl m_tabs;
-    std::array<HWND, kPageCount> m_pages{};
-    std::array<HWND, kIgnorePageCount> m_ignorePages{};
+    std::array<HWND, AppConstants::SettingsUI::kPageCount> m_pages{};
+    std::array<HWND, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePages{};
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;

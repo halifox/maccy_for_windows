@@ -1,4 +1,3 @@
-#define NOMINMAX
 #include "PreviewWindow.h"
 
 #include <wincodec.h>

@@ -1,4 +1,5 @@
-#define NOMINMAX
+#include "PlatformConfig.h"
+
 #include <windows.h>
 #include <shellapi.h>
 #include <shlobj.h>

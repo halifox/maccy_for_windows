@@ -1,7 +1,6 @@
 #pragma once
 
-#define NOMINMAX
-#include <windows.h>
+#include "PlatformConfig.h"
 
 #include <atlbase.h>
 #include <atlwin.h>

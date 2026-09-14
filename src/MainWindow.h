@@ -1,7 +1,7 @@
 #pragma once
 
-#define NOMINMAX
-#include <windows.h>
+#include "PlatformConfig.h"
+#include "Constants.h"
 
 #include <atlbase.h>
 #include <atlapp.h>
@@ -22,9 +22,6 @@
 #include "SettingsWindow.h"
 
 class SettingsWindow;
-
-// Custom window messages
-constexpr UINT kTrayIconMessage = WM_APP + 1;
 
 // Main application window - coordinates all components
 class MainWindow : public CDialogImpl<MainWindow> {
@@ -69,8 +66,8 @@ public:
         MESSAGE_HANDLER(WM_IME_STARTCOMPOSITION, OnImeStart)
         MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnImeEnd)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
-        MESSAGE_HANDLER(kTrayIconMessage, OnTrayIcon)
-        MESSAGE_HANDLER(kSettingsChangedMessage, OnSettingsChanged)
+        MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
+        MESSAGE_HANDLER(AppConstants::kSettingsChangedMessage, OnSettingsChanged)
     END_MSG_MAP()
 
     bool AddTrayIcon();
