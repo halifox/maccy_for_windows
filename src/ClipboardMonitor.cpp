@@ -20,13 +20,13 @@ std::wstring Lower(std::wstring_view value) {
     std::wstring result;
     result.reserve(value.size());
     for (const wchar_t character : value) {
-        result.push_back(static_cast<wchar_t>(std::towlower(character)));
+        result.push_back(static_cast<wchar_t>(::towlower(character)));
     }
     return result;
 }
 
 std::wstring Trim(std::wstring value) {
-    const auto is_space = [](wchar_t character) { return std::iswspace(character) != 0; };
+    const auto is_space = [](wchar_t character) { return ::iswspace(character) != 0; };
     const auto first = std::find_if_not(value.begin(), value.end(), is_space);
     const auto last = std::find_if_not(value.rbegin(), value.rend(), is_space).base();
     if (first >= last) {

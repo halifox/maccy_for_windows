@@ -1,5 +1,6 @@
 #include "KeyboardHandler.h"
 
+#include <array>
 #include <imm.h>
 #include <windowsx.h>
 

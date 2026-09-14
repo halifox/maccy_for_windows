@@ -1,11 +1,14 @@
 #include "HistoryRenderer.h"
 
 #include <algorithm>
+#include <array>
 #include <cwctype>
 #include <regex>
 
 #include <shellapi.h>
 #include <shlobj.h>
+
+#include "resource.h"
 
 namespace {
 

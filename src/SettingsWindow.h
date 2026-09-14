@@ -16,7 +16,7 @@
 #include "Settings.h"
 #include "resource.h"
 
-constexpr UINT kSettingsChangedMessage = WM_APP + 20;
+constexpr UINT kSettingsChangedMessage = WM_APP + 2;
 
 class SettingsWindow : public CDialogImpl<SettingsWindow> {
 public:

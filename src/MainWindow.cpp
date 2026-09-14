@@ -1,12 +1,15 @@
 #include "MainWindow.h"
 #include "SettingsWindow.h"
+#include "PinKeys.h"
 
 #include <algorithm>
 #include <array>
 
+// External global module instance
+extern CAppModule _Module;
+
 namespace {
 
-constexpr UINT kTrayIconMessage = WM_APP + 1;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayCommandShow = 1001;
 constexpr UINT kTrayCommandSettings = 1002;
@@ -103,6 +106,8 @@ MainWindow::MainWindow(Database& database, bool isolated)
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
       m_isolated(isolated) {}
+
+MainWindow::~MainWindow() = default;
 
 LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
@@ -1080,7 +1085,7 @@ void MainWindow::OnScheduleSearchCallback(void* context) {
     auto* window = static_cast<MainWindow*>(context);
     const auto query = ReadWindowText(window->m_search);
     if (query != window->m_searchQuery) {
-        KillTimer(window->m_hWnd, kSearchTimerId);
+        ::KillTimer(window->m_hWnd, kSearchTimerId);
         window->RefreshHistory(query);
     }
 }

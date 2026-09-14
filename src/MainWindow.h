@@ -19,8 +19,12 @@
 #include "PreviewWindow.h"
 #include "Settings.h"
 #include "resource.h"
+#include "SettingsWindow.h"
 
 class SettingsWindow;
+
+// Custom window messages
+constexpr UINT kTrayIconMessage = WM_APP + 1;
 
 // Main application window - coordinates all components
 class MainWindow : public CDialogImpl<MainWindow> {
@@ -35,6 +39,7 @@ public:
     };
 
     explicit MainWindow(Database& database, bool isolated = false);
+    ~MainWindow();
 
     BEGIN_MSG_MAP(MainWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
