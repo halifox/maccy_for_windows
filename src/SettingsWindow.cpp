@@ -627,6 +627,17 @@ bool SettingsWindow::CreatePageWindows() {
         }
     }
 
+    // 初始化独立的忽略页面对象
+    m_ignorePageObjects[0] = std::make_unique<IgnoreApplicationsPage>();
+    m_ignorePageObjects[1] = std::make_unique<IgnoreFormatsPage>();
+    m_ignorePageObjects[2] = std::make_unique<IgnoreRegexpsPage>();
+
+    for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
+        if (m_ignorePageObjects[page] != nullptr) {
+            m_ignorePageObjects[page]->Initialize(m_ignorePages[page], m_database);
+        }
+    }
+
     PositionPages();
     return true;
 }
@@ -671,8 +682,6 @@ void SettingsWindow::BindControls() {
     m_sSortBy = get(kPageStorage, kSSortBy);
     m_sStorageSize = get(kPageStorage, kSStorageSize);
     m_sCurrentSize = get(kPageStorage, kSCurrentSize);
-
-    m_iWhitelist = ::GetDlgItem(m_ignorePages[0], kIWhitelist);
 
     m_pList = get(kPagePins, kPList);
 
@@ -974,6 +983,12 @@ void SettingsWindow::SetPage(int page) {
     if (m_tabs.m_hWnd != nullptr) {
         m_tabs.SetCurSel(m_currentPage);
     }
+
+    // 如果切换到忽略页面，需要初始化当前忽略子标签页
+    if (m_currentPage == kPageIgnore) {
+        SetIgnorePage(m_ignorePage);
+    }
+
     PositionPages();
     EnsureCurrentPageFits();
 }
@@ -984,35 +999,19 @@ void SettingsWindow::SetIgnorePage(int page) {
         m_ignoreTabs.SetCurSel(m_ignorePage);
     }
 
-    const HWND page_window = m_ignorePages[static_cast<size_t>(m_ignorePage)];
-    m_iList = ::GetDlgItem(page_window, kIList);
-    m_iDescription = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
-
-    if (m_ignorePage == 0) {
-        ::SetWindowTextW(
-            m_iDescription,
-            L"忽略来自特定应用的内容。\r\n请注意此选项并非总是有效，最好使用忽略剪贴板类型设置。"
-        );
-    } else if (m_ignorePage == 1) {
-        ::SetWindowTextW(
-            m_iDescription,
-            L"忽略特定剪贴板内容类型。\r\n默认提供了一些已知的适用于特定应用的类型。您可以删除预置类型，或根据需要添加自定义类型。"
-        );
-    } else {
-        ::SetWindowTextW(
-            m_iDescription,
-            L"可以根据定义的正则表达式忽略某些副本。"
-        );
+    // 隐藏所有子页面
+    for (size_t i = 0; i < m_ignorePageObjects.size(); ++i) {
+        if (m_ignorePageObjects[i] != nullptr) {
+            m_ignorePageObjects[i]->Hide();
+        }
     }
 
-    RefreshIgnoreList();
+    // 显示当前子页面
+    if (m_ignorePageObjects[m_ignorePage] != nullptr) {
+        m_ignorePageObjects[m_ignorePage]->Show();
+    }
+
     PositionPages();
-
-    // 强制重绘当前忽略子页面
-    if (page_window != nullptr) {
-        ::InvalidateRect(page_window, nullptr, TRUE);
-        ::UpdateWindow(page_window);
-    }
 }
 
 void SettingsWindow::LoadGeneralControls() {
@@ -1107,67 +1106,14 @@ void SettingsWindow::LoadControlsFromSettings() {
     LoadAppearanceControls();
     LoadStorageControls();
     LoadAdvancedControls();
-    SetCheck(m_iWhitelist, m_settings.ignore_all_apps_except_listed);
+
+    // 加载 whitelist 复选框（从 IgnoreFormatsPage 获取）
+    if (m_ignorePageObjects[1] != nullptr) {
+        HWND whitelist = ::GetDlgItem(m_ignorePageObjects[1]->GetPageWindow(), IDC_I_WHITELIST);
+        SetCheck(whitelist, m_settings.ignore_all_apps_except_listed);
+    }
+
     m_loading = false;
-}
-
-void SettingsWindow::RefreshIgnoreList() {
-    if (m_iList == nullptr) {
-        return;
-    }
-    m_ignoreValues = m_database.GetList(IgnoreListForPage(m_ignorePage));
-    if (m_ignorePage == 1) {
-        std::sort(m_ignoreValues.begin(), m_ignoreValues.end());
-    }
-    ListView_DeleteAllItems(m_iList);
-    if (m_ignorePage == 0 && m_ignoreImageList != nullptr) {
-        ImageList_RemoveAll(m_ignoreImageList);
-    }
-    for (size_t index = 0; index < m_ignoreValues.size(); ++index) {
-        const std::wstring &value = m_ignoreValues[index];
-        std::wstring display = value;
-        LVITEMW item{};
-        item.mask = LVIF_TEXT | LVIF_PARAM;
-        item.iItem = static_cast<int>(index);
-        item.lParam = static_cast<LPARAM>(index);
-
-        if (m_ignorePage == 0) {
-            SHFILEINFOW file_info{};
-            const DWORD flags = SHGFI_DISPLAYNAME | SHGFI_ICON | SHGFI_SMALLICON;
-            if (SHGetFileInfoW(value.c_str(), 0, &file_info, sizeof(file_info), flags) != 0) {
-                if (file_info.szDisplayName[0] != L'\0') {
-                    display = file_info.szDisplayName;
-                }
-                if (m_ignoreImageList != nullptr && file_info.hIcon != nullptr) {
-                    const int image = ImageList_AddIcon(m_ignoreImageList, file_info.hIcon);
-                    if (image >= 0) {
-                        item.mask |= LVIF_IMAGE;
-                        item.iImage = image;
-                    }
-                    DestroyIcon(file_info.hIcon);
-                }
-            } else {
-                const std::filesystem::path path(value);
-                if (!path.filename().empty()) {
-                    display = path.filename().wstring();
-                }
-            }
-        }
-
-        item.pszText = display.data();
-        ListView_InsertItem(m_iList, &item);
-    }
-    if (!m_ignoreValues.empty()) {
-        ListView_SetItemState(
-            m_iList,
-            0,
-            LVIS_SELECTED | LVIS_FOCUSED,
-            LVIS_SELECTED | LVIS_FOCUSED
-        );
-    }
-    RECT list_rect{};
-    ::GetClientRect(m_iList, &list_rect);
-    SetListViewColumnWidth(m_iList, list_rect.right - list_rect.left);
 }
 
 void SettingsWindow::RefreshPinsList() {
@@ -1318,7 +1264,11 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             m_settings.sort_by = std::clamp(ComboSelection(m_sSortBy), 0, 2);
             break;
         case kPageIgnore:
-            m_settings.ignore_all_apps_except_listed = IsChecked(m_iWhitelist);
+            // 从 IgnoreFormatsPage 获取 whitelist 复选框状态
+            if (m_ignorePageObjects[1] != nullptr) {
+                HWND whitelist = ::GetDlgItem(m_ignorePageObjects[1]->GetPageWindow(), IDC_I_WHITELIST);
+                m_settings.ignore_all_apps_except_listed = IsChecked(whitelist);
+            }
             break;
         case kPageAdvanced:
             m_settings.ignore_events = IsChecked(m_xIgnoreEvents);
@@ -1349,130 +1299,6 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
 void SettingsWindow::NotifyOwner() {
     if (m_owner != nullptr && ::IsWindow(m_owner)) {
         SendMessageW(m_owner, AppConstants::kSettingsChangedMessage, 0, 0);
-    }
-}
-
-bool SettingsWindow::SaveIgnoreList() {
-    try {
-        m_database.ReplaceList(IgnoreListForPage(m_ignorePage), m_ignoreValues);
-        NotifyOwner();
-        return true;
-    } catch (const std::exception &error) {
-        RefreshIgnoreList();
-        MessageBoxA(m_hWnd, error.what(), "Unable to save ignore list", MB_OK | MB_ICONERROR);
-        return false;
-    }
-}
-
-void SettingsWindow::AddIgnoreValue() {
-    std::wstring description;
-    if (m_ignorePage == 0) {
-        description = L"选择要忽略的应用程序。";
-    } else if (m_ignorePage == 1) {
-        description = L"输入要忽略的 pasteboard 类型（例如：com.example.custom）。";
-    } else {
-        description = L"输入正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。";
-    }
-
-    // 对于应用程序页面，使用文件选择对话框
-    if (m_ignorePage == 0) {
-        std::array<wchar_t, MAX_PATH> path{};
-        OPENFILENAMEW dialog{};
-        dialog.lStructSize = sizeof(dialog);
-        dialog.hwndOwner = m_hWnd;
-        dialog.lpstrFilter = L"Windows application (*.exe)\0*.exe\0All files (*.*)\0*.*\0\0";
-        dialog.lpstrFile = path.data();
-        dialog.nMaxFile = static_cast<DWORD>(path.size());
-        dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-        if (!GetOpenFileNameW(&dialog)) {
-            return;
-        }
-        std::wstring value = path.data();
-        if (value.empty() || std::find(m_ignoreValues.begin(), m_ignoreValues.end(), value) != m_ignoreValues.end()) {
-            return;
-        }
-        m_ignoreValues.push_back(std::move(value));
-        SaveIgnoreList();
-        RefreshIgnoreList();
-        return;
-    }
-
-    // 对于其他页面，使用编辑对话框
-    EditIgnoreDialog dialog(L"", description, m_ignorePage);
-    if (dialog.DoModal(m_hWnd) != IDOK) {
-        return;
-    }
-
-    std::wstring value = dialog.GetValue();
-    if (value.empty() || std::find(m_ignoreValues.begin(), m_ignoreValues.end(), value) != m_ignoreValues.end()) {
-        return;
-    }
-    m_ignoreValues.push_back(std::move(value));
-    if (!SaveIgnoreList()) {
-        return;
-    }
-    RefreshIgnoreList();
-}
-
-void SettingsWindow::EditIgnoreValue() {
-    const int selected = SelectedListViewItem(m_iList);
-    if (selected < 0 || selected >= static_cast<int>(m_ignoreValues.size())) {
-        return;
-    }
-
-    std::wstring description;
-    if (m_ignorePage == 0) {
-        description = L"编辑要忽略的应用程序路径。";
-    } else if (m_ignorePage == 1) {
-        description = L"编辑要忽略的 pasteboard 类型（例如：com.example.custom）。";
-    } else {
-        description = L"编辑正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。";
-    }
-
-    EditIgnoreDialog dialog(m_ignoreValues[selected], description, m_ignorePage);
-    if (dialog.DoModal(m_hWnd) != IDOK) {
-        return;
-    }
-
-    std::wstring value = dialog.GetValue();
-    if (value.empty()) {
-        return;
-    }
-
-    // 检查是否与其他项重复
-    for (size_t index = 0; index < m_ignoreValues.size(); ++index) {
-        if (static_cast<int>(index) != selected && m_ignoreValues[index] == value) {
-            MessageBoxW(L"该值已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return;
-        }
-    }
-
-    m_ignoreValues[selected] = value;
-    if (!SaveIgnoreList()) {
-        return;
-    }
-    RefreshIgnoreList();
-}
-
-void SettingsWindow::RemoveIgnoreValue() {
-    const int selected = SelectedListViewItem(m_iList);
-    if (selected < 0 || selected >= static_cast<int>(m_ignoreValues.size())) {
-        return;
-    }
-    m_ignoreValues.erase(m_ignoreValues.begin() + selected);
-    if (!SaveIgnoreList()) {
-        return;
-    }
-    RefreshIgnoreList();
-}
-
-void SettingsWindow::ResetIgnoredFormats() {
-    try {
-        m_database.ResetIgnoredFormats();
-        RefreshIgnoreList();
-        NotifyOwner();
-    } catch (const std::exception &error) {
-        MessageBoxA(m_hWnd, error.what(), "Unable to reset ignored formats", MB_OK | MB_ICONERROR);
     }
 }
 
@@ -1602,8 +1428,8 @@ LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled)
     SetControlFont(m_tabs.m_hWnd);
     ConfigureIgnoreList();
     ConfigurePinsList();
-    if (m_currentPage == kPageIgnore) {
-        RefreshIgnoreList();
+    if (m_currentPage == kPageIgnore && m_ignorePageObjects[m_ignorePage] != nullptr) {
+        m_ignorePageObjects[m_ignorePage]->Refresh();
     }
     PositionPages();
     EnsureCurrentPageFits();
@@ -1672,15 +1498,21 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         return 0;
     }
     if (id == kIAdd && notification == BN_CLICKED) {
-        AddIgnoreValue();
+        if (m_ignorePageObjects[m_ignorePage] != nullptr) {
+            m_ignorePageObjects[m_ignorePage]->AddValue();
+        }
         return 0;
     }
     if (id == kIRemove && notification == BN_CLICKED) {
-        RemoveIgnoreValue();
+        if (m_ignorePageObjects[m_ignorePage] != nullptr) {
+            m_ignorePageObjects[m_ignorePage]->RemoveValue();
+        }
         return 0;
     }
     if (id == kIReset && notification == BN_CLICKED) {
-        ResetIgnoredFormats();
+        if (m_ignorePageObjects[m_ignorePage] != nullptr) {
+            m_ignorePageObjects[m_ignorePage]->ResetToDefaults();
+        }
         return 0;
     }
     const bool general_change =
@@ -1732,19 +1564,24 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     if (header == nullptr) {
         return 0;
     }
-    if (header->hwndFrom == m_iList) {
-        if (header->code == NM_DBLCLK) {
-            EditIgnoreValue();
-            return 0;
-        }
-        if (header->code == LVN_KEYDOWN) {
-            const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
-            if (key != nullptr && key->wVKey == VK_DELETE) {
-                RemoveIgnoreValue();
+    // 检查是否来自当前忽略页面的列表
+    if (m_ignorePageObjects[m_ignorePage] != nullptr) {
+        HWND currentIgnoreList = ::GetDlgItem(m_ignorePageObjects[m_ignorePage]->GetPageWindow(), IDC_I_LIST);
+        if (header->hwndFrom == currentIgnoreList) {
+            if (header->code == NM_DBLCLK) {
+                m_ignorePageObjects[m_ignorePage]->EditValue();
                 return 0;
+            }
+            if (header->code == LVN_KEYDOWN) {
+                const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
+                if (key != nullptr && key->wVKey == VK_DELETE) {
+                    m_ignorePageObjects[m_ignorePage]->RemoveValue();
+                    return 0;
+                }
             }
         }
     }
+
     if (header->hwndFrom == m_pList) {
         if (header->code == NM_DBLCLK) {
             EditSelectedPin();

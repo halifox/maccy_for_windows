@@ -4,6 +4,7 @@
 #include "Constants.h"
 
 #include <array>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include "Database.h"
 #include "Settings.h"
 #include "resource.h"
+#include "IgnorePages.h"
 
 class EditPinDialog : public CDialogImpl<EditPinDialog> {
 public:
@@ -117,16 +119,10 @@ private:
     void LoadStorageControls();
     void LoadAdvancedControls();
     void UpdateDependencies();
-    void RefreshIgnoreList();
     void RefreshPinsList();
 
     void SaveCurrentPage(bool notify = true);
     void NotifyOwner();
-    bool SaveIgnoreList();
-    void AddIgnoreValue();
-    void EditIgnoreValue();
-    void RemoveIgnoreValue();
-    void ResetIgnoredFormats();
     void EditSelectedPin();
     void DeleteSelectedPin();
     void OpenNotificationsSettings();
@@ -190,11 +186,8 @@ private:
     HWND m_sCurrentSize = nullptr;
 
     CTabCtrl m_ignoreTabs;
-    HWND m_iList = nullptr;
-    HWND m_iWhitelist = nullptr;
-    HWND m_iDescription = nullptr;
+    std::array<std::unique_ptr<IgnorePageBase>, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePageObjects;
     HIMAGELIST m_ignoreImageList = nullptr;
-    std::vector<std::wstring> m_ignoreValues;
     int m_ignorePage = 0;
 
     HWND m_pList = nullptr;

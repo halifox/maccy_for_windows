@@ -43,6 +43,7 @@ add_executable(app WIN32
         src/PinKeys.cpp
         src/Settings.cpp
         src/SettingsWindow.cpp
+        src/IgnorePages.cpp
         src/PreviewWindow.cpp
         src/SettingsWindow.rc
         src/MainWindow.rc
