@@ -1,6 +1,5 @@
 #include "KeyboardHandler.h"
 #include "Constants.h"
-#include "HistoryView.h"
 
 #include <array>
 #include <imm.h>
@@ -94,14 +93,36 @@ void KeyboardHandler::SetActiveFooter(int index, const std::vector<ClipboardItem
 
 HWND KeyboardHandler::ListForItem(int index, const std::vector<ClipboardItem>& items,
                                   HWND historyList, HWND pinsList) const {
-    if (m_historyView == nullptr) return nullptr;
-    return m_historyView->ListForItem(index);
+    if (index < 0 || static_cast<size_t>(index) >= items.size()) return nullptr;
+    return items[static_cast<size_t>(index)].pinned ? pinsList : historyList;
 }
 
 int KeyboardHandler::RowForItem(int index, const std::vector<ClipboardItem>& items,
                                HWND historyList, HWND pinsList) const {
-    if (m_historyView == nullptr) return -1;
-    return m_historyView->RowForItem(index);
+    const HWND list = ListForItem(index, items, historyList, pinsList);
+    if (list == nullptr) return -1;
+    const int count = static_cast<int>(SendMessageW(list, LB_GETCOUNT, 0, 0));
+    for (int row = 0; row < count; ++row) {
+        if (ItemIndexAtRow(list, row, items) == index) return row;
+    }
+    return -1;
+}
+
+int KeyboardHandler::ItemIndexAtRow(HWND list, int row,
+                                    const std::vector<ClipboardItem>& items) const {
+    if (list == nullptr || row < 0) return -1;
+    const LRESULT value = SendMessageW(list, LB_GETITEMDATA, row, 0);
+    if (value == LB_ERR || static_cast<size_t>(value) >= items.size()) return -1;
+    return static_cast<int>(value);
+}
+
+int KeyboardHandler::HistoryItemAtPoint(HWND window, POINT point,
+                                        HWND historyList, HWND pinsList,
+                                        const std::vector<ClipboardItem>& items) const {
+    if (window != historyList && window != pinsList) return -1;
+    const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0, MAKELPARAM(point.x, point.y));
+    if (HIWORD(hit) != 0) return -1;
+    return ItemIndexAtRow(window, LOWORD(hit), items);
 }
 
 void KeyboardHandler::InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
@@ -171,9 +192,7 @@ void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
     m_hoverList = window;
     BeginHistoryMouseTracking();
 
-    const int index = m_historyView != nullptr
-        ? m_historyView->ItemIndexAtPoint(window, point)
-        : -1;
+    const int index = HistoryItemAtPoint(window, point, historyList, pinsList, items);
     if (index < 0) {
         ClearHistoryHover();
         return;

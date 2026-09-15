@@ -8,22 +8,19 @@
 #include <atlwin.h>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "ClipboardMonitor.h"
 #include "Database.h"
 #include "HistoryRenderer.h"
-#include "HistoryController.h"
-#include "HistoryView.h"
 #include "KeyboardHandler.h"
-#include "PopupLayout.h"
 #include "PreviewWindow.h"
 #include "Settings.h"
-#include "UiState.h"
 #include "resource.h"
-#include "SettingsWindow.h"
 
 class SettingsWindow;
 
@@ -179,7 +176,6 @@ private:
     static void OnOpenSettingsCallback(void* context);
     static void OnExitCallback(void* context);
     static void OnHideWindowCallback(void* context);
-    static void OnHistoryRefreshRequested(void* context, std::wstring_view query);
 
     Database& m_database;
     AppSettings m_settings;
@@ -187,7 +183,6 @@ private:
     // Components
     ClipboardMonitor m_clipboardMonitor;
     HistoryRenderer m_historyRenderer;
-    HistoryController m_historyController;
     KeyboardHandler m_keyboardHandler;
     PreviewWindow m_previewWindow;
     std::unique_ptr<SettingsWindow> m_settingsWindow;
@@ -211,22 +206,19 @@ private:
 
     // History data
     std::vector<ClipboardItem> m_items;
-    HistoryView m_historyView;
-
-    // Cross-message state and coalesced update requests
-    UiState m_uiState;
-    // Compatibility aliases keep the existing message handlers readable;
-    // the storage is owned by UiState and is not duplicated.
-    std::wstring& m_searchQuery;
-    sqlite3_int64& m_previewCandidateId;
-    sqlite3_int64& m_previewItemId;
-    bool& m_previewSuppressed;
-    bool& m_popupVisible;
+    std::wstring m_searchQuery;
+    sqlite3_int64 m_selectedItemId = 0;
+    sqlite3_int64 m_previewCandidateId = 0;
+    sqlite3_int64 m_previewItemId = 0;
+    bool m_previewSuppressed = false;
+    bool m_popupVisible = false;
+    bool m_loadingList = false;
+    std::uint32_t m_pendingUpdates = 0;
+    bool m_updateMessagePosted = false;
 
     // Layout
     RECT m_searchRect{};
     RECT m_titleRect{};
-    int m_searchHeight = 0;
     int m_pinSeparatorY = -1;
     int m_footerSeparatorY = -1;
 

@@ -16,7 +16,6 @@
 #include "Database.h"
 #include "Settings.h"
 #include "resource.h"
-#include "IgnorePages.h"
 
 class EditPinDialog : public CDialogImpl<EditPinDialog> {
 public:
@@ -74,6 +73,81 @@ private:
     std::wstring m_value;
     std::wstring m_description;
     int m_ignorePage;
+};
+
+class IgnorePageBase {
+public:
+    virtual ~IgnorePageBase() = default;
+
+    virtual void Initialize(HWND page_window, Database &database) = 0;
+    virtual void Show() = 0;
+    virtual void Hide() = 0;
+    virtual void Refresh() = 0;
+    virtual bool AddValue() = 0;
+    virtual bool EditValue() = 0;
+    virtual bool RemoveValue() = 0;
+    virtual bool ResetToDefaults() = 0;
+    virtual bool SaveList() = 0;
+
+    HWND GetPageWindow() const { return m_pageWindow; }
+
+protected:
+    HWND m_pageWindow = nullptr;
+    HWND m_list = nullptr;
+    HWND m_description = nullptr;
+    Database *m_database = nullptr;
+    std::vector<std::wstring> m_values;
+};
+
+class IgnoreApplicationsPage : public IgnorePageBase {
+public:
+    void Initialize(HWND page_window, Database &database) override;
+    void Show() override;
+    void Hide() override;
+    void Refresh() override;
+    bool AddValue() override;
+    bool EditValue() override;
+    bool RemoveValue() override;
+    bool ResetToDefaults() override;
+    bool SaveList() override;
+
+private:
+    void LoadList();
+    void UpdateDescription();
+};
+
+class IgnoreFormatsPage : public IgnorePageBase {
+public:
+    void Initialize(HWND page_window, Database &database) override;
+    void Show() override;
+    void Hide() override;
+    void Refresh() override;
+    bool AddValue() override;
+    bool EditValue() override;
+    bool RemoveValue() override;
+    bool ResetToDefaults() override;
+    bool SaveList() override;
+
+private:
+    void LoadList();
+    void UpdateDescription();
+};
+
+class IgnoreRegexpsPage : public IgnorePageBase {
+public:
+    void Initialize(HWND page_window, Database &database) override;
+    void Show() override;
+    void Hide() override;
+    void Refresh() override;
+    bool AddValue() override;
+    bool EditValue() override;
+    bool RemoveValue() override;
+    bool ResetToDefaults() override;
+    bool SaveList() override;
+
+private:
+    void LoadList();
+    void UpdateDescription();
 };
 
 class SettingsWindow : public CDialogImpl<SettingsWindow> {

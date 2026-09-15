@@ -10,8 +10,6 @@
 #include "Database.h"
 #include "Settings.h"
 
-class HistoryView;
-
 // Keyboard navigation and input handling component
 class KeyboardHandler {
 public:
@@ -24,7 +22,6 @@ public:
     // Lifecycle
     bool Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
                     const std::array<HWND, 4>& footerButtons);
-    void SetHistoryView(HistoryView& view) noexcept { m_historyView = &view; }
     void Shutdown();
 
     // Hotkey management
@@ -76,6 +73,11 @@ public:
     void SetImeComposing(bool composing) { m_imeComposing = composing; }
 
     // Helper for list operations
+    int ItemIndexAtRow(HWND list, int row,
+                       const std::vector<ClipboardItem>& items) const;
+    int HistoryItemAtPoint(HWND window, POINT point,
+                           HWND historyList, HWND pinsList,
+                           const std::vector<ClipboardItem>& items) const;
     void InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
                               HWND historyList, HWND pinsList);
 
@@ -114,7 +116,6 @@ private:
     void BeginHistoryMouseTracking();
 
     AppSettings& m_settings;
-    HistoryView* m_historyView = nullptr;
     HWND m_owner = nullptr;
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;
