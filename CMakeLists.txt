@@ -66,6 +66,7 @@ target_link_libraries(maccy PRIVATE
         advapi32
         comdlg32
         comctl32
+        dwmapi
         windowscodecs
         ole32
 )

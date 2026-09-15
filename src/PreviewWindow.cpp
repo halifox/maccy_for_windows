@@ -1,5 +1,6 @@
 #include "PreviewWindow.h"
 
+#include <dwmapi.h>
 #include <wincodec.h>
 
 #include <algorithm>
@@ -19,6 +20,16 @@ constexpr int kPreviewWindowMargin = 8;
 constexpr int kPreviewContentGap = 8;
 constexpr int kPreviewStatusHeight = 76;
 constexpr int kPreviewButtonHeight = 24;
+
+void ApplySystemRoundedCorners(HWND window) {
+    const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
+    ::DwmSetWindowAttribute(
+        window,
+        DWMWA_WINDOW_CORNER_PREFERENCE,
+        &preference,
+        sizeof(preference)
+    );
+}
 
 bool IsUnicodeText(const ClipboardFormatData &data) {
     return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
@@ -455,6 +466,7 @@ bool PreviewWindow::ContainsWindow(HWND window) const noexcept {
 
 LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    ApplySystemRoundedCorners(m_hWnd);
     m_image = ::GetDlgItem(m_hWnd, IDC_PREVIEW_IMAGE);
     m_text = ::GetDlgItem(m_hWnd, IDC_PREVIEW_TEXT);
     m_status = ::GetDlgItem(m_hWnd, IDC_PREVIEW_STATUS);
