@@ -41,6 +41,7 @@ public:
     BEGIN_MSG_MAP(MainWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
+        MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         MESSAGE_HANDLER(WM_MOVE, OnMove)
         MESSAGE_HANDLER(WM_EXITSIZEMOVE, OnExitSizeMove)
         MESSAGE_HANDLER(WM_ENTERSIZEMOVE, OnEnterSizeMove)
@@ -82,6 +83,7 @@ private:
 
     // Control management
     bool BindControls();
+    void ApplyHistoryFonts();
     void LayoutHistoryControls();
     void RedrawHistoryLists();
     void RedrawFooterButtons();
@@ -143,6 +145,7 @@ private:
     // Message handlers
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnMove(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnEnterSizeMove(UINT, WPARAM, LPARAM, BOOL& handled);

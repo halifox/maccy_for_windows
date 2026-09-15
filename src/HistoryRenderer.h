@@ -20,6 +20,7 @@ public:
 
     // Lifecycle
     bool Initialize(HWND owner);
+    bool UpdateFonts(UINT dpi);
     void Shutdown();
 
     // Drawing operations

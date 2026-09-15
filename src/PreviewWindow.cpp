@@ -1,4 +1,5 @@
 #include "PreviewWindow.h"
+#include "UiFont.h"
 
 #include <dwmapi.h>
 #include <wincodec.h>
@@ -470,20 +471,26 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_image = ::GetDlgItem(m_hWnd, IDC_PREVIEW_IMAGE);
     m_text = ::GetDlgItem(m_hWnd, IDC_PREVIEW_TEXT);
     m_status = ::GetDlgItem(m_hWnd, IDC_PREVIEW_STATUS);
-    m_font = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
-        OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-    const HFONT font = m_font;
+    UpdateFont(UiFont::DpiForWindow(m_hWnd));
+    ::SendMessageW(m_text, EM_SETLIMITTEXT, 4 * 1024 * 1024, 0);
+    ::ShowWindow(m_image, SW_HIDE);
+    ::ShowWindow(m_text, SW_HIDE);
+    LayoutControls();
+    return TRUE;
+}
+
+bool PreviewWindow::UpdateFont(UINT dpi) {
+    HFONT font = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
+    if (font == nullptr) return false;
     for (HWND control : {m_image, m_text, m_status, ::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN),
         ::GetDlgItem(m_hWnd, IDC_PREVIEW_DELETE), ::GetDlgItem(m_hWnd, IDC_PREVIEW_CLOSE)}) {
         if (control != nullptr) {
             ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
     }
-    ::SendMessageW(m_text, EM_SETLIMITTEXT, 4 * 1024 * 1024, 0);
-    ::ShowWindow(m_image, SW_HIDE);
-    ::ShowWindow(m_text, SW_HIDE);
-    LayoutControls();
-    return TRUE;
+    if (m_font != nullptr) DeleteObject(m_font);
+    m_font = font;
+    return true;
 }
 
 LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
@@ -492,8 +499,9 @@ LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
     return 0;
 }
 
-LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
     handled = TRUE;
+    UpdateFont(HIWORD(wParam));
     const auto *suggested = reinterpret_cast<const RECT *>(lParam);
     if (suggested != nullptr) {
         ::SetWindowPos(m_hWnd, nullptr, suggested->left, suggested->top,

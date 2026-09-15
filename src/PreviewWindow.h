@@ -39,6 +39,7 @@ public:
 private:
     void ClearBitmap();
     void LayoutControls();
+    bool UpdateFont(UINT dpi);
     bool LoadBitmapForItem(const ClipboardItem &item);
     void UpdateStatus(const ClipboardItem &item);
 

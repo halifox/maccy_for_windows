@@ -1,4 +1,5 @@
 #include "HistoryRenderer.h"
+#include "UiFont.h"
 
 #include <algorithm>
 #include <array>
@@ -73,35 +74,32 @@ HistoryRenderer::~HistoryRenderer() {
 
 bool HistoryRenderer::Initialize(HWND owner) {
     m_owner = owner;
+    return UpdateFonts(UiFont::DpiForWindow(owner));
+}
 
-    // Create fonts
-    LOGFONTW log_font{};
-    log_font.lfHeight = -12;
-    log_font.lfWeight = FW_NORMAL;
-    log_font.lfCharSet = DEFAULT_CHARSET;
-    log_font.lfQuality = CLEARTYPE_QUALITY;
-    wcscpy_s(log_font.lfFaceName, L"Segoe UI");
-    m_normalFont = CreateFontIndirectW(&log_font);
-
-    LOGFONTW small_log_font = log_font;
-    small_log_font.lfWeight = FW_NORMAL;
-    if (small_log_font.lfHeight < 0) {
-        small_log_font.lfHeight = std::max<LONG>(-1, (small_log_font.lfHeight * 4) / 5);
-    } else {
-        small_log_font.lfHeight = std::max<LONG>(1, (small_log_font.lfHeight * 4) / 5);
+bool HistoryRenderer::UpdateFonts(UINT dpi) {
+    HFONT normalFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
+    HFONT smallFont = UiFont::CreateSegoeUi(dpi, UiFont::kSmallPointSize);
+    HFONT boldFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_BOLD);
+    HFONT italicFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE);
+    HFONT underlineFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE);
+    if (normalFont == nullptr || smallFont == nullptr || boldFont == nullptr ||
+        italicFont == nullptr || underlineFont == nullptr) {
+        for (HFONT font : {normalFont, smallFont, boldFont, italicFont, underlineFont}) {
+            if (font != nullptr) DeleteObject(font);
+        }
+        return false;
     }
-    m_smallFont = CreateFontIndirectW(&small_log_font);
 
-    log_font.lfWeight = FW_BOLD;
-    m_boldFont = CreateFontIndirectW(&log_font);
-    log_font.lfWeight = FW_NORMAL;
-    log_font.lfItalic = TRUE;
-    m_italicFont = CreateFontIndirectW(&log_font);
-    log_font.lfItalic = FALSE;
-    log_font.lfUnderline = TRUE;
-    m_underlineFont = CreateFontIndirectW(&log_font);
-
-    return m_normalFont != nullptr;
+    for (HFONT font : {m_normalFont, m_smallFont, m_boldFont, m_italicFont, m_underlineFont}) {
+        if (font != nullptr) DeleteObject(font);
+    }
+    m_normalFont = normalFont;
+    m_smallFont = smallFont;
+    m_boldFont = boldFont;
+    m_italicFont = italicFont;
+    m_underlineFont = underlineFont;
+    return true;
 }
 
 void HistoryRenderer::Shutdown() {

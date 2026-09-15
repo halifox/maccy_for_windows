@@ -234,23 +234,16 @@ bool MainWindow::BindControls() {
     m_originalHistoryListProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(
         m_historyList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&MainWindow::HistoryListWindowProc)));
 
-    const HFONT font = m_historyRenderer.GetNormalFont();
-    SendMessageW(::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE), WM_SETFONT,
-        reinterpret_cast<WPARAM>(m_historyRenderer.GetSmallFont()), TRUE);
-    for (HWND control : {m_search, m_historyList, m_footerClear, m_footerSettings, m_footerAbout, m_footerExit}) {
-        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-    }
+    ApplyHistoryFonts();
 
     SetPropW(m_pinsList, kControlOwnerProperty, reinterpret_cast<HANDLE>(this));
     m_originalPinsProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(m_pinsList, GWLP_WNDPROC,
         reinterpret_cast<LONG_PTR>(&MainWindow::HistoryListWindowProc)));
-    SendMessageW(m_pinsList, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
 
     for (HWND button : FooterButtons()) {
         SetWindowSubclass(button, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
     }
     for (HWND button : {m_searchClear, m_previewToggle}) {
-        SendMessageW(button, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         SetWindowSubclass(button, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
     }
 
@@ -290,6 +283,18 @@ bool MainWindow::BindControls() {
     }
 
     return true;
+}
+
+void MainWindow::ApplyHistoryFonts() {
+    SendMessageW(::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE), WM_SETFONT,
+        reinterpret_cast<WPARAM>(m_historyRenderer.GetSmallFont()), TRUE);
+    const HFONT font = m_historyRenderer.GetNormalFont();
+    for (HWND control : {m_search, m_historyList, m_pinsList, m_footerClear, m_footerSettings,
+                         m_footerAbout, m_footerExit, m_searchClear, m_previewToggle}) {
+        if (control != nullptr) {
+            SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+        }
+    }
 }
 
 void MainWindow::LayoutHistoryControls() {
@@ -1155,6 +1160,23 @@ LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
     if (m_previewWindow.IsVisible()) {
         PositionPreviewWindow();
     }
+    return 0;
+}
+
+LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
+    handled = TRUE;
+    if (m_historyRenderer.UpdateFonts(HIWORD(wParam))) {
+        ApplyHistoryFonts();
+    }
+    const auto* suggested = reinterpret_cast<const RECT*>(lParam);
+    if (suggested != nullptr) {
+        ::SetWindowPos(m_hWnd, nullptr, suggested->left, suggested->top,
+            suggested->right - suggested->left, suggested->bottom - suggested->top,
+            SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    LayoutHistoryControls();
+    RedrawHistoryLists();
+    RedrawFooterButtons();
     return 0;
 }
 
