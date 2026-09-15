@@ -794,7 +794,7 @@ void SettingsWindow::LayoutFlexibleControls() {
         const int top_margin = DialogUnitHeight(page_window, 5);
         const int bottom_margin = DialogUnitHeight(page_window, 8);
         const int hint_y = std::max(top_margin, height - bottom_margin - hint_height);
-        const int list_height = std::max(0, hint_y - DialogUnitHeight(page_window, 8) - top_margin);
+        const int list_height = std::max(0, hint_y - DialogUnitHeight(page_window, 4) - top_margin);
 
         MoveControl(
             m_pList,
@@ -842,8 +842,8 @@ void SettingsWindow::LayoutFlexibleControls() {
         const int description_height = DialogUnitHeight(page_window, 36);
         const int bottom_margin = DialogUnitHeight(page_window, 8);
         const int description_y = std::max(bottom_margin, height - description_height - bottom_margin);
-        const int button_y = std::max(bottom_margin, description_y - button_height - DialogUnitHeight(page_window, 10));
-        const int list_bottom = std::max(DialogUnitHeight(page_window, 80), button_y - DialogUnitHeight(page_window, 8));
+        const int button_y = std::max(bottom_margin, description_y - button_height - DialogUnitHeight(page_window, 4));
+        const int list_bottom = std::max(DialogUnitHeight(page_window, 80), button_y - DialogUnitHeight(page_window, 4));
 
         MoveControl(
             list,
