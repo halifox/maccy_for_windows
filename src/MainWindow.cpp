@@ -191,6 +191,17 @@ std::array<HWND, 4> MainWindow::FooterButtons() const {
     return {m_footerClear, m_footerSettings, m_footerAbout, m_footerExit};
 }
 
+void MainWindow::RedrawHistoryLists() {
+    // A resized owner-draw list can retain pixels from the previous item
+    // width. Repaint the complete visible list after its final geometry is set.
+    for (HWND list : {m_historyList, m_pinsList}) {
+        if (list == nullptr || !::IsWindowVisible(list)) {
+            continue;
+        }
+        ::RedrawWindow(list, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+    }
+}
+
 bool MainWindow::BindControls() {
     m_search = ::GetDlgItem(m_hWnd, kSearchControlId);
     m_historyList = ::GetDlgItem(m_hWnd, kHistoryListControlId);
@@ -364,6 +375,7 @@ void MainWindow::LayoutHistoryControls() {
     }
 
     UpdateFooterControls();
+    RedrawHistoryLists();
     ::InvalidateRect(m_hWnd, nullptr, TRUE);
 }
 
@@ -662,10 +674,8 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
             m_keyboardHandler.SetActiveHistoryItem(selected, m_items, m_historyList, m_pinsList);
         }
         m_loadingList = false;
-        for (HWND list : {m_historyList, m_pinsList}) {
-            SendMessageW(list, WM_SETREDRAW, TRUE, 0);
-            ::InvalidateRect(list, nullptr, TRUE);
-        }
+        for (HWND list : {m_historyList, m_pinsList}) SendMessageW(list, WM_SETREDRAW, TRUE, 0);
+        RedrawHistoryLists();
         ApplyHistoryVisibility();
         if (m_popupVisible && !m_inSizeMove) {
             RECT rect{}; ::GetWindowRect(m_hWnd, &rect);
