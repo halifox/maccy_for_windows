@@ -91,7 +91,6 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
-        MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
@@ -103,7 +102,6 @@ private:
     bool CreatePageWindows();
     void BindControls();
     void PositionPages();
-    void EnsureCurrentPageFits();
     void LayoutFlexibleControls();
     void ConfigureIgnoreList();
     void ConfigurePinsList();
@@ -132,7 +130,6 @@ private:
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
-    LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);

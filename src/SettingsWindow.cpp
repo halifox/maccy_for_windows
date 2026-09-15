@@ -268,8 +268,6 @@ constexpr int kPageAppearance = 2;
 constexpr int kPagePins = 3;
 constexpr int kPageIgnore = 4;
 constexpr int kPageAdvanced = 5;
-constexpr int kMinimumSettingsWidth = 456;
-constexpr int kMinimumSettingsHeight = 320;
 
 UINT WindowDpi(HWND window) {
     if (window != nullptr) {
@@ -481,17 +479,15 @@ void SetListViewColumnWidth(HWND list, int width) {
 struct PageDefinition {
     UINT resource_id;
     const wchar_t *title;
-    int width;
-    int height;
 };
 
 constexpr std::array<PageDefinition, 6> kPageDefinitions = {
-    PageDefinition{IDD_PAGE_GENERAL, L"通用", 450, 300},
-    PageDefinition{IDD_PAGE_STORAGE, L"存储", 450, 260},
-    PageDefinition{IDD_PAGE_APPEARANCE, L"外观", 650, 300},
-    PageDefinition{IDD_PAGE_PINS, L"置顶项", 500, 400},
-    PageDefinition{IDD_PAGE_IGNORE, L"忽略", 500, 400},
-    PageDefinition{IDD_PAGE_ADVANCED, L"高级", 450, 340},
+    PageDefinition{IDD_PAGE_GENERAL, L"通用"},
+    PageDefinition{IDD_PAGE_STORAGE, L"存储"},
+    PageDefinition{IDD_PAGE_APPEARANCE, L"外观"},
+    PageDefinition{IDD_PAGE_PINS, L"置顶项"},
+    PageDefinition{IDD_PAGE_IGNORE, L"忽略"},
+    PageDefinition{IDD_PAGE_ADVANCED, L"高级"},
 };
 
 struct IgnorePageDefinition {
@@ -582,18 +578,11 @@ bool SettingsWindow::CreateOrShow() {
 
     RECT window_rect{};
     ::GetWindowRect(window, &window_rect);
-    const UINT dpi = WindowDpi(window);
-    const int window_width = std::max(
-        MulDiv(kMinimumSettingsWidth, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI),
-        static_cast<int>(window_rect.right - window_rect.left)
-    );
-    const int window_height = std::max(
-        MulDiv(kMinimumSettingsHeight, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI),
-        static_cast<int>(window_rect.bottom - window_rect.top)
-    );
+    const int window_width = window_rect.right - window_rect.left;
+    const int window_height = window_rect.bottom - window_rect.top;
     const int x = work_area.left + ((work_area.right - work_area.left) - window_width) / 2;
     const int y = work_area.top + ((work_area.bottom - work_area.top) - window_height) / 2;
-    ::SetWindowPos(window, HWND_NOTOPMOST, x, y, window_width, window_height, SWP_SHOWWINDOW);
+    ::SetWindowPos(window, HWND_NOTOPMOST, x, y, 0, 0, SWP_SHOWWINDOW | SWP_NOSIZE);
     ::SetForegroundWindow(window);
     return true;
 }
@@ -844,8 +833,8 @@ void SettingsWindow::LayoutFlexibleControls() {
 
         RECT list_client{};
         ::GetClientRect(m_pList, &list_client);
-        const int key_width = DialogUnitWidth(page_window, 58);
-        const int alias_width = DialogUnitWidth(page_window, 150);
+        const int key_width = DialogUnitWidth(page_window, 36);
+        const int alias_width = DialogUnitWidth(page_window, 90);
         ListView_SetColumnWidth(m_pList, 0, key_width);
         ListView_SetColumnWidth(m_pList, 1, alias_width);
         ListView_SetColumnWidth(
@@ -952,6 +941,34 @@ void SettingsWindow::PositionPages() {
         }
     }
 
+    for (HWND page_window : m_pages) {
+        if (page_window == nullptr) {
+            continue;
+        }
+        for (HWND control = ::GetWindow(page_window, GW_CHILD);
+             control != nullptr; control = ::GetWindow(control, GW_HWNDNEXT)) {
+            wchar_t class_name[16]{};
+            ::GetClassNameW(control, class_name, 16);
+            if (::lstrcmpiW(class_name, L"Static") != 0 ||
+                (::GetWindowLongPtrW(control, GWL_STYLE) & SS_TYPEMASK) != SS_ETCHEDHORZ) {
+                continue;
+            }
+            RECT rect{};
+            ::GetWindowRect(control, &rect);
+            ::MapWindowPoints(HWND_DESKTOP, page_window, reinterpret_cast<POINT *>(&rect), 2);
+            MoveControl(control, rect.left, rect.top,
+                        width - rect.left - DialogUnitWidth(page_window, 8),
+                        rect.bottom - rect.top);
+        }
+    }
+
+    const HWND ignore_window = m_pages[kPageIgnore];
+    if (ignore_window != nullptr) {
+        MoveControl(m_ignoreTabs.m_hWnd,
+                    DialogUnitWidth(ignore_window, 8), DialogUnitHeight(ignore_window, 5),
+                    width - DialogUnitWidth(ignore_window, 16),
+                    height - DialogUnitHeight(ignore_window, 12));
+    }
     const RECT ignore_page = IgnorePageRect();
     const int ignore_width = std::max(0L, ignore_page.right - ignore_page.left);
     const int ignore_height = std::max(0L, ignore_page.bottom - ignore_page.top);
@@ -976,53 +993,6 @@ void SettingsWindow::PositionPages() {
     LayoutFlexibleControls();
 }
 
-void SettingsWindow::EnsureCurrentPageFits() {
-    if (m_hWnd == nullptr || m_tabs.m_hWnd == nullptr) {
-        return;
-    }
-
-    const RECT page = PageRect();
-    const int page_width = std::max(0L, page.right - page.left);
-    const int page_height = std::max(0L, page.bottom - page.top);
-    const UINT dpi = WindowDpi(m_hWnd);
-    const PageDefinition &definition = kPageDefinitions[static_cast<size_t>(m_currentPage)];
-    const int required_page_width = MulDiv(
-        definition.width,
-        static_cast<int>(dpi),
-        USER_DEFAULT_SCREEN_DPI
-    );
-    const int required_page_height = MulDiv(
-        definition.height,
-        static_cast<int>(dpi),
-        USER_DEFAULT_SCREEN_DPI
-    );
-    if (page_width >= required_page_width && page_height >= required_page_height) {
-        return;
-    }
-
-    RECT window{};
-    ::GetWindowRect(m_hWnd, &window);
-    const int current_width = window.right - window.left;
-    const int current_height = window.bottom - window.top;
-    const int width = std::max(
-        current_width,
-        current_width + required_page_width - page_width
-    );
-    const int height = std::max(
-        current_height,
-        current_height + required_page_height - page_height
-    );
-    ::SetWindowPos(
-        m_hWnd,
-        nullptr,
-        window.left,
-        window.top,
-        width,
-        height,
-        SWP_NOZORDER | SWP_NOACTIVATE
-    );
-}
-
 void SettingsWindow::SetPage(int page) {
     m_currentPage = std::clamp(page, 0, AppConstants::SettingsUI::kPageCount - 1);
     if (m_tabs.m_hWnd != nullptr) {
@@ -1035,7 +1005,6 @@ void SettingsWindow::SetPage(int page) {
     }
 
     PositionPages();
-    EnsureCurrentPageFits();
 }
 
 void SettingsWindow::SetIgnorePage(int page) {
@@ -1447,7 +1416,6 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     LoadControlsFromSettings();
     SetPage(kPageGeneral);
     SetIgnorePage(0);
-    EnsureCurrentPageFits();
     return TRUE;
 }
 
@@ -1457,20 +1425,8 @@ LRESULT SettingsWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
     return 0;
 }
 
-LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
+LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    const auto *suggested = reinterpret_cast<const RECT *>(lParam);
-    if (suggested != nullptr) {
-        ::SetWindowPos(
-            m_hWnd,
-            nullptr,
-            suggested->left,
-            suggested->top,
-            suggested->right - suggested->left,
-            suggested->bottom - suggested->top,
-            SWP_NOZORDER | SWP_NOACTIVATE
-        );
-    }
     SetControlFont(m_tabs.m_hWnd);
     ConfigureIgnoreList();
     ConfigurePinsList();
@@ -1478,36 +1434,6 @@ LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM lParam, BOOL &handled)
         m_ignorePageObjects[m_ignorePage]->Refresh();
     }
     PositionPages();
-    EnsureCurrentPageFits();
-    return 0;
-}
-
-LRESULT SettingsWindow::OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
-    handled = TRUE;
-    auto *limits = reinterpret_cast<MINMAXINFO *>(lParam);
-    if (limits == nullptr) {
-        return 0;
-    }
-
-    const UINT dpi = WindowDpi(m_hWnd);
-    int minimum_width = MulDiv(kMinimumSettingsWidth, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-    int minimum_height = MulDiv(kMinimumSettingsHeight, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-    const RECT page = PageRect();
-    RECT window{};
-    ::GetWindowRect(m_hWnd, &window);
-    const int page_width = std::max(0L, page.right - page.left);
-    const int page_height = std::max(0L, page.bottom - page.top);
-    if (page_width > 0 && page_height > 0) {
-        const PageDefinition &definition = kPageDefinitions[static_cast<size_t>(m_currentPage)];
-        const int required_width = MulDiv(definition.width, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-        const int required_height = MulDiv(definition.height, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-        const int window_width = static_cast<int>(window.right - window.left);
-        const int window_height = static_cast<int>(window.bottom - window.top);
-        minimum_width = std::max(minimum_width, window_width + required_width - page_width);
-        minimum_height = std::max(minimum_height, window_height + required_height - page_height);
-    }
-    limits->ptMinTrackSize.x = minimum_width;
-    limits->ptMinTrackSize.y = minimum_height;
     return 0;
 }
 
