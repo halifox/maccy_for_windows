@@ -76,7 +76,7 @@ bool HistoryRenderer::Initialize(HWND owner) {
 
     // Create fonts
     LOGFONTW log_font{};
-    log_font.lfHeight = -13;
+    log_font.lfHeight = -12;
     log_font.lfWeight = FW_NORMAL;
     log_font.lfCharSet = DEFAULT_CHARSET;
     log_font.lfQuality = CLEARTYPE_QUALITY;

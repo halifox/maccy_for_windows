@@ -35,7 +35,8 @@ public:
 
     // Navigation
     void SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,
-                              HWND historyList, HWND pinsList);
+                              HWND historyList, HWND pinsList,
+                              bool keepScrollPosition = false);
     void NavigateHistoryFromSearch(bool forward, const std::vector<ClipboardItem>& items,
                                    HWND historyList, HWND pinsList, bool showFooter);
     int GetActiveItemIndex() const { return m_activeItemIndex; }
@@ -109,6 +110,7 @@ private:
                     HWND historyList, HWND pinsList) const;
     int RowForItem(int index, const std::vector<ClipboardItem>& items,
                   HWND historyList, HWND pinsList) const;
+    void SetListSelection(HWND list, int row, bool keepScrollPosition) const;
     void BeginHistoryMouseTracking();
 
     AppSettings& m_settings;

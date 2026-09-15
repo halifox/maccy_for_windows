@@ -124,19 +124,33 @@ void KeyboardHandler::InvalidateHistoryItem(int index, const std::vector<Clipboa
     }
 }
 
+void KeyboardHandler::SetListSelection(HWND list, int row, bool keepScrollPosition) const {
+    if (list == nullptr) return;
+
+    const LRESULT topIndex = keepScrollPosition
+        ? SendMessageW(list, LB_GETTOPINDEX, 0, 0)
+        : LB_ERR;
+    SendMessageW(list, LB_SETCURSEL, row, 0);
+    if (keepScrollPosition && topIndex != LB_ERR) {
+        // LB_SETCURSEL scrolls a native list box to the selected row.
+        SendMessageW(list, LB_SETTOPINDEX, topIndex, 0);
+    }
+}
+
 void KeyboardHandler::SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,
-                                          HWND historyList, HWND pinsList) {
+                                          HWND historyList, HWND pinsList,
+                                          bool keepScrollPosition) {
     if (index < 0 || static_cast<size_t>(index) >= items.size()) return;
     const int previous = m_activeItemIndex;
     m_activeItemIndex = index;
     m_activeItemId = items[index].id;
     m_activeFooter = -1;
 
-    SendMessageW(historyList, LB_SETCURSEL, -1, 0);
-    SendMessageW(pinsList, LB_SETCURSEL, -1, 0);
+    SetListSelection(historyList, -1, keepScrollPosition);
+    SetListSelection(pinsList, -1, keepScrollPosition);
     HWND list = ListForItem(index, items, historyList, pinsList);
     if (list) {
-        SendMessageW(list, LB_SETCURSEL, RowForItem(index, items, historyList, pinsList), 0);
+        SetListSelection(list, RowForItem(index, items, historyList, pinsList), keepScrollPosition);
     }
 
     InvalidateHistoryItem(previous, items, historyList, pinsList);
@@ -176,7 +190,7 @@ void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
 
     const sqlite3_int64 item_id = items[static_cast<size_t>(index)].id;
     if (index == m_hoveredItemIndex && item_id == m_hoveredItemId) {
-        SetActiveHistoryItem(index, items, historyList, pinsList);
+        SetActiveHistoryItem(index, items, historyList, pinsList, true);
         if (m_previewCallback && m_callbackContext) {
             m_previewCallback(m_callbackContext, item_id, false);
         }
@@ -186,7 +200,7 @@ void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
     const int previous_index = m_hoveredItemIndex;
     m_hoveredItemIndex = index;
     m_hoveredItemId = item_id;
-    SetActiveHistoryItem(index, items, historyList, pinsList);
+    SetActiveHistoryItem(index, items, historyList, pinsList, true);
 
     InvalidateHistoryItem(previous_index, items, historyList, pinsList);
     InvalidateHistoryItem(index, items, historyList, pinsList);
