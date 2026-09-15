@@ -1,6 +1,6 @@
 #pragma code_page(65001)
 
-#include <windows.h>
+#include <winresrc.h>
 #include "resource.h"
 
 // The history popup deliberately has no caption. Its title and footer are
