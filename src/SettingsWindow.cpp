@@ -869,9 +869,9 @@ void SettingsWindow::LayoutFlexibleControls() {
         MoveControl(
             ::GetDlgItem(page_window, kIWhitelist),
             DialogUnitWidth(page_window, 78),
-            button_y,
+            button_y + DialogUnitHeight(page_window, 2),
             width - DialogUnitWidth(page_window, 86),
-            DialogUnitHeight(page_window, 14)
+            DialogUnitHeight(page_window, 10)
         );
         MoveControl(
             ::GetDlgItem(page_window, kIReset),
