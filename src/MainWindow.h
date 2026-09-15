@@ -84,6 +84,7 @@ private:
     bool BindControls();
     void LayoutHistoryControls();
     void RedrawHistoryLists();
+    void RedrawFooterButtons();
     void RestoreControlSubclass(HWND control, WNDPROC original);
     void RestoreControlSubclasses();
     std::array<HWND, 4> FooterButtons() const;

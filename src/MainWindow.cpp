@@ -201,6 +201,15 @@ void MainWindow::RedrawHistoryLists() {
     }
 }
 
+void MainWindow::RedrawFooterButtons() {
+    for (HWND button : FooterButtons()) {
+        if (button == nullptr || !::IsWindowVisible(button)) {
+            continue;
+        }
+        ::RedrawWindow(button, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW);
+    }
+}
+
 bool MainWindow::BindControls() {
     m_search = ::GetDlgItem(m_hWnd, kSearchControlId);
     m_historyList = ::GetDlgItem(m_hWnd, kHistoryListControlId);
@@ -375,6 +384,7 @@ void MainWindow::LayoutHistoryControls() {
 
     UpdateFooterControls();
     RedrawHistoryLists();
+    RedrawFooterButtons();
     ::InvalidateRect(m_hWnd, nullptr, TRUE);
 }
 
