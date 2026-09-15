@@ -231,7 +231,6 @@ private:
     // State flags
     bool m_popupVisible = false;
     bool m_loadingList = false;
-    bool m_mouseSelectionUpdate = false;
     bool m_modalShowing = false;
     bool m_exiting = false;
     bool m_trayMenuShowing = false;

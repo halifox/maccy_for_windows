@@ -2,6 +2,7 @@
 
 #include "PlatformConfig.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -19,7 +20,8 @@ public:
     KeyboardHandler& operator=(const KeyboardHandler&) = delete;
 
     // Lifecycle
-    bool Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList);
+    bool Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
+                    const std::array<HWND, 4>& footerButtons);
     void Shutdown();
 
     // Hotkey management
@@ -36,7 +38,7 @@ public:
     // Navigation
     void SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,
                               HWND historyList, HWND pinsList,
-                              bool keepScrollPosition = false);
+                              bool scrollIntoView = true);
     void NavigateHistoryFromSearch(bool forward, const std::vector<ClipboardItem>& items,
                                    HWND historyList, HWND pinsList, bool showFooter);
     int GetActiveItemIndex() const { return m_activeItemIndex; }
@@ -60,8 +62,7 @@ public:
     bool IsKeyboardNavigating() const { return m_keyboardNavigating; }
 
     // Footer navigation
-    void SelectFooter(int index, int oldActiveIndex, HWND historyList, HWND pinsList,
-                     const std::array<HWND, 4>& footerButtons);
+    void SetActiveFooter(int index, const std::vector<ClipboardItem>& items);
 
     // Utilities
     bool MouseCanSelect();
@@ -110,7 +111,8 @@ private:
                     HWND historyList, HWND pinsList) const;
     int RowForItem(int index, const std::vector<ClipboardItem>& items,
                   HWND historyList, HWND pinsList) const;
-    void SetListSelection(HWND list, int row, bool keepScrollPosition) const;
+    void SetListSelection(HWND list, int row) const;
+    void InvalidateFooterButtons() const;
     void BeginHistoryMouseTracking();
 
     AppSettings& m_settings;
@@ -118,6 +120,7 @@ private:
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;
     HWND m_pinsList = nullptr;
+    std::array<HWND, 4> m_footerButtons{};
 
     bool m_hotkeyRegistered = false;
     bool m_keyboardNavigating = false;

@@ -164,9 +164,8 @@ LRESULT CALLBACK MainWindow::MenuControlProc(HWND window, UINT message, WPARAM w
         const auto buttons = owner->FooterButtons();
         const auto it = std::find(buttons.begin(), buttons.end(), window);
         if (it != buttons.end()) {
-            owner->m_keyboardHandler.SelectFooter(static_cast<int>(it - buttons.begin()),
-                owner->m_keyboardHandler.GetActiveItemIndex(),
-                owner->m_historyList, owner->m_pinsList, buttons);
+            owner->m_keyboardHandler.SetActiveFooter(static_cast<int>(it - buttons.begin()),
+                owner->m_items);
         }
     }
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && wParam == VK_RETURN &&
@@ -702,11 +701,19 @@ void MainWindow::ScheduleSearch() {
 void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id, PreviewSource source) {
     KillTimer(kPreviewTimerId);
     m_previewCandidateId = 0;
-    if (!m_popupVisible || m_previewSuppressed || !m_settings.open_preview_automatically ||
-        item_id == 0 || m_previewWindow.IsVisible()) {
+    if (!m_popupVisible || m_previewSuppressed || item_id == 0) {
         return;
     }
     m_previewSource = source;
+    if (m_previewWindow.IsVisible()) {
+        if (m_previewItemId != item_id) {
+            ShowPreviewForItem(item_id);
+        }
+        return;
+    }
+    if (!m_settings.open_preview_automatically) {
+        return;
+    }
     m_previewCandidateId = item_id;
     ::SetTimer(m_hWnd, kPreviewTimerId, static_cast<UINT>(m_settings.preview_delay), nullptr);
 }
@@ -1149,7 +1156,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         return FALSE;
     }
 
-    m_keyboardHandler.Initialize(m_hWnd, m_search, m_historyList, m_pinsList);
+    m_keyboardHandler.Initialize(m_hWnd, m_search, m_historyList, m_pinsList, FooterButtons());
     m_keyboardHandler.SetCallbacks(
         this,
         OnPreviewCallback,
@@ -1413,7 +1420,7 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
     }
     if ((command == kHistoryListControlId || command == IDC_HISTORY_PINS) && notification == LBN_SELCHANGE) {
         handled = TRUE;
-        if (!m_loadingList && !m_mouseSelectionUpdate) {
+        if (!m_loadingList) {
             const HWND list = reinterpret_cast<HWND>(lParam);
             const LRESULT selected = SendMessageW(list, LB_GETCURSEL, 0, 0);
             if (selected != LB_ERR) {
@@ -1421,7 +1428,8 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
                 if (itemData != LB_ERR && static_cast<size_t>(itemData) < m_items.size()) {
                     const int selected_index = static_cast<int>(itemData);
                     const bool selected_by_mouse = m_keyboardHandler.GetHoveredItemIndex() == selected_index;
-                    m_keyboardHandler.SetActiveHistoryItem(selected_index, m_items, m_historyList, m_pinsList);
+                    m_keyboardHandler.SetActiveHistoryItem(selected_index, m_items, m_historyList,
+                        m_pinsList, !selected_by_mouse);
                     if (!selected_by_mouse) {
                         m_keyboardHandler.ClearHistoryHover();
                         if (m_previewWindow.IsVisible()) {

@@ -18,11 +18,13 @@ KeyboardHandler::~KeyboardHandler() {
     Shutdown();
 }
 
-bool KeyboardHandler::Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList) {
+bool KeyboardHandler::Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
+                                 const std::array<HWND, 4>& footerButtons) {
     m_owner = owner;
     m_search = search;
     m_historyList = historyList;
     m_pinsList = pinsList;
+    m_footerButtons = footerButtons;
     return true;
 }
 
@@ -78,15 +80,21 @@ void KeyboardHandler::FocusSearchOrPopup(HWND search, HWND mainWindow, bool sear
     ::SetFocus(searchVisible ? search : mainWindow);
 }
 
-void KeyboardHandler::SelectFooter(int index, int oldActiveIndex,
-                                   HWND historyList, HWND pinsList,
-                                   const std::array<HWND, 4>& footerButtons) {
-    if (m_activeFooter == index) return;
-    m_activeFooter = index;
-    InvalidateHistoryItem(oldActiveIndex, {}, historyList, pinsList);
-    for (HWND button : footerButtons) {
-        ::InvalidateRect(button, nullptr, FALSE);
+void KeyboardHandler::SetActiveFooter(int index, const std::vector<ClipboardItem>& items) {
+    if (index < 0 || index >= static_cast<int>(m_footerButtons.size()) ||
+        (m_activeFooter == index && m_activeItemIndex < 0)) {
+        return;
     }
+
+    const int previousItem = m_activeItemIndex;
+    m_activeFooter = index;
+    m_activeItemIndex = -1;
+    m_activeItemId = 0;
+    ClearHistoryHover();
+    SetListSelection(m_historyList, -1);
+    SetListSelection(m_pinsList, -1);
+    InvalidateHistoryItem(previousItem, items, m_historyList, m_pinsList);
+    InvalidateFooterButtons();
 }
 
 int KeyboardHandler::ItemIndex(HWND list, int row, const std::vector<ClipboardItem>& items) const {
@@ -124,37 +132,43 @@ void KeyboardHandler::InvalidateHistoryItem(int index, const std::vector<Clipboa
     }
 }
 
-void KeyboardHandler::SetListSelection(HWND list, int row, bool keepScrollPosition) const {
+void KeyboardHandler::SetListSelection(HWND list, int row) const {
     if (list == nullptr) return;
-
-    const LRESULT topIndex = keepScrollPosition
-        ? SendMessageW(list, LB_GETTOPINDEX, 0, 0)
-        : LB_ERR;
     SendMessageW(list, LB_SETCURSEL, row, 0);
-    if (keepScrollPosition && topIndex != LB_ERR) {
-        // LB_SETCURSEL scrolls a native list box to the selected row.
-        SendMessageW(list, LB_SETTOPINDEX, topIndex, 0);
+}
+
+void KeyboardHandler::InvalidateFooterButtons() const {
+    for (HWND button : m_footerButtons) {
+        if (button != nullptr) {
+            ::InvalidateRect(button, nullptr, FALSE);
+        }
     }
 }
 
 void KeyboardHandler::SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,
-                                          HWND historyList, HWND pinsList,
-                                          bool keepScrollPosition) {
+                                           HWND historyList, HWND pinsList,
+                                           bool scrollIntoView) {
     if (index < 0 || static_cast<size_t>(index) >= items.size()) return;
     const int previous = m_activeItemIndex;
+    const int previousFooter = m_activeFooter;
     m_activeItemIndex = index;
     m_activeItemId = items[index].id;
     m_activeFooter = -1;
 
-    SetListSelection(historyList, -1, keepScrollPosition);
-    SetListSelection(pinsList, -1, keepScrollPosition);
-    HWND list = ListForItem(index, items, historyList, pinsList);
-    if (list) {
-        SetListSelection(list, RowForItem(index, items, historyList, pinsList), keepScrollPosition);
+    if (scrollIntoView) {
+        SetListSelection(historyList, -1);
+        SetListSelection(pinsList, -1);
+        HWND list = ListForItem(index, items, historyList, pinsList);
+        if (list) {
+            SetListSelection(list, RowForItem(index, items, historyList, pinsList));
+        }
     }
 
     InvalidateHistoryItem(previous, items, historyList, pinsList);
     InvalidateHistoryItem(index, items, historyList, pinsList);
+    if (previousFooter >= 0) {
+        InvalidateFooterButtons();
+    }
 }
 
 int KeyboardHandler::HistoryItemAtPoint(HWND window, POINT point,
@@ -190,9 +204,11 @@ void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
 
     const sqlite3_int64 item_id = items[static_cast<size_t>(index)].id;
     if (index == m_hoveredItemIndex && item_id == m_hoveredItemId) {
-        SetActiveHistoryItem(index, items, historyList, pinsList, true);
-        if (m_previewCallback && m_callbackContext) {
-            m_previewCallback(m_callbackContext, item_id, false);
+        if (m_activeFooter >= 0 || m_activeItemIndex != index) {
+            SetActiveHistoryItem(index, items, historyList, pinsList, false);
+            if (m_previewCallback && m_callbackContext) {
+                m_previewCallback(m_callbackContext, item_id, false);
+            }
         }
         return;
     }
@@ -200,7 +216,7 @@ void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
     const int previous_index = m_hoveredItemIndex;
     m_hoveredItemIndex = index;
     m_hoveredItemId = item_id;
-    SetActiveHistoryItem(index, items, historyList, pinsList, true);
+    SetActiveHistoryItem(index, items, historyList, pinsList, false);
 
     InvalidateHistoryItem(previous_index, items, historyList, pinsList);
     InvalidateHistoryItem(index, items, historyList, pinsList);
@@ -248,6 +264,7 @@ void KeyboardHandler::NavigateHistoryFromSearch(bool forward,
                                                bool showFooter) {
     m_keyboardNavigating = true;
     GetCursorPos(&m_keyboardPointer);
+    ClearHistoryHover();
 
     const int count = static_cast<int>(items.size());
     const int total = count + (showFooter ? 4 : 0);
@@ -257,11 +274,7 @@ void KeyboardHandler::NavigateHistoryFromSearch(bool forward,
     const int target = std::clamp(current + (forward ? 1 : -1), 0, total - 1);
 
     if (target >= count) {
-        // Navigate to footer
-        m_hoveredItemIndex = -1;
-        m_hoveredItemId = 0;
-        m_activeFooter = target - count;
-        m_activeItemIndex = -1;
+        SetActiveFooter(target - count, items);
     } else {
         SetActiveHistoryItem(target, items, historyList, pinsList);
         if (m_previewCallback && m_callbackContext) {
@@ -295,14 +308,21 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, HWND search, const std::vector<
         return true;
     }
     if (key == VK_UP || key == VK_DOWN || key == VK_TAB) {
+        const bool shift = (::GetKeyState(VK_SHIFT) & 0x8000) != 0;
+        const bool forward = key == VK_DOWN || (key == VK_TAB && !shift);
+        NavigateHistoryFromSearch(forward, items, m_historyList, m_pinsList, m_settings.show_footer);
         return true;
     }
     if ((ctrl && (key == VK_HOME || key == VK_END)) || key == VK_PRIOR || key == VK_NEXT) {
         m_keyboardNavigating = true;
         GetCursorPos(&m_keyboardPointer);
+        ClearHistoryHover();
         if (!items.empty()) {
             const int target = (key == VK_HOME || key == VK_PRIOR) ? 0 : static_cast<int>(items.size()) - 1;
             SetActiveHistoryItem(target, items, m_historyList, m_pinsList);
+            if (m_previewCallback && m_callbackContext) {
+                m_previewCallback(m_callbackContext, m_activeItemId, true);
+            }
         }
         return true;
     }
