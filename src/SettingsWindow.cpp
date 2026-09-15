@@ -793,7 +793,8 @@ void SettingsWindow::LayoutFlexibleControls() {
         const int hint_height = DialogUnitHeight(page_window, 14);
         const int top_margin = DialogUnitHeight(page_window, 5);
         const int bottom_margin = DialogUnitHeight(page_window, 8);
-        const int list_height = std::max(100, height - top_margin - hint_height - bottom_margin - DialogUnitHeight(page_window, 8));
+        const int hint_y = std::max(top_margin, height - bottom_margin - hint_height);
+        const int list_height = std::max(0, hint_y - DialogUnitHeight(page_window, 8) - top_margin);
 
         MoveControl(
             m_pList,
@@ -803,6 +804,16 @@ void SettingsWindow::LayoutFlexibleControls() {
             list_height
         );
 
+        MoveControl(
+            ::GetDlgItem(page_window, IDC_P_LIST_HINT),
+            left_margin,
+            hint_y,
+            width - left_margin - right_margin,
+            hint_height
+        );
+
+        RECT list_client{};
+        ::GetClientRect(m_pList, &list_client);
         const int key_width = DialogUnitWidth(page_window, 58);
         const int alias_width = DialogUnitWidth(page_window, 150);
         ListView_SetColumnWidth(m_pList, 0, key_width);
@@ -810,7 +821,7 @@ void SettingsWindow::LayoutFlexibleControls() {
         ListView_SetColumnWidth(
             m_pList,
             2,
-            std::max(80, width - key_width - alias_width - left_margin - right_margin - 20)
+            std::max(0L, list_client.right - key_width - alias_width)
         );
     }
 
@@ -884,6 +895,10 @@ void SettingsWindow::PositionPages() {
     if (m_tabs.m_hWnd == nullptr) {
         return;
     }
+
+    RECT client{};
+    ::GetClientRect(m_hWnd, &client);
+    MoveControl(m_tabs.m_hWnd, 0, 0, client.right, client.bottom);
 
     const RECT page = PageRect();
     const int width = std::max(0L, page.right - page.left);
