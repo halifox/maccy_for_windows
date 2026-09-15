@@ -6,14 +6,14 @@
 // The history popup deliberately has no caption. Its title and footer are
 // content-area options controlled by AppSettings, and its border is used for
 // native edge resizing.
-// Keep the resource close to Maccy's default ~450 px content width. Runtime
+// Keep the resource close to maccy's default ~450 px content width. Runtime
 // settings still control the actual persisted width and DPI-aware placement.
 IDD_HISTORY DIALOGEX 0, 0, 450, 277
 STYLE WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS
 EXSTYLE WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_CONTROLPARENT
 FONT 9, "Segoe UI"
 BEGIN
-    LTEXT "Maccy", IDC_HISTORY_TITLE, 0, 0, 62, 20, SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX
+    LTEXT "maccy", IDC_HISTORY_TITLE, 0, 0, 62, 20, SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX
     EDITTEXT IDC_HISTORY_SEARCH, 0, 0, 380, 20, ES_AUTOHSCROLL | WS_TABSTOP | WS_VISIBLE
     LISTBOX IDC_HISTORY_LIST, 0, 26, 450, 160, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | LBS_OWNERDRAWFIXED | WS_VSCROLL | WS_TABSTOP | WS_VISIBLE
     LISTBOX IDC_HISTORY_PINS, 0, 26, 450, 48, LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | LBS_HASSTRINGS | LBS_OWNERDRAWFIXED | WS_VSCROLL | WS_TABSTOP

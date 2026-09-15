@@ -14,6 +14,7 @@
 #include "Database.h"
 #include "MainWindow.h"
 #include "Settings.h"
+#include "Constants.h"
 
 CAppModule _Module;
 
@@ -32,9 +33,9 @@ std::filesystem::path GetDatabasePath() {
     }
     std::filesystem::path path(local_app_data);
     CoTaskMemFree(local_app_data);
-    path /= L"Clipboard";
+    path /= L"maccy";
     std::filesystem::create_directories(path);
-    path /= L"clipboard.db";
+    path /= AppConstants::DB::kDatabaseFileName;
     return path;
 }
 
@@ -62,7 +63,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         _Module.Term();
         CoUninitialize();
         const std::wstring message = L"InitCommonControlsEx failed: " + std::to_wstring(error);
-        MessageBoxW(nullptr, message.c_str(), L"Clipboard error", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, message.c_str(), L"maccy error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -88,7 +89,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         CoUninitialize();
         return static_cast<int>(message.wParam);
     } catch (const std::exception &error) {
-        MessageBoxA(nullptr, error.what(), "Clipboard error", MB_OK | MB_ICONERROR);
+        MessageBoxA(nullptr, error.what(), "maccy error", MB_OK | MB_ICONERROR);
         _Module.Term();
         CoUninitialize();
         return 1;

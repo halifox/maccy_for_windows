@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(app VERSION 1.0.0 LANGUAGES C CXX)
+project(maccy VERSION 1.0.0 LANGUAGES C CXX)
 
 if(MSVC)
     # Preserve the compiler's actual output bytes. Some installations only
@@ -33,7 +33,7 @@ target_compile_definitions(sqlite3 PRIVATE
         SQLITE_THREADSAFE=1
 )
 
-add_executable(app WIN32
+add_executable(maccy WIN32
         src/main.cpp
         src/MainWindow.cpp
         src/ClipboardMonitor.cpp
@@ -49,15 +49,15 @@ add_executable(app WIN32
         src/MainWindow.rc
 )
 
-set_target_properties(app PROPERTIES
-        OUTPUT_NAME "clipboard"
+set_target_properties(maccy PROPERTIES
+        OUTPUT_NAME "maccy"
 )
 
-target_include_directories(app PRIVATE
+target_include_directories(maccy PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/WTL10_01_Release/Include"
 )
 
-target_link_libraries(app PRIVATE
+target_link_libraries(maccy PRIVATE
         sqlite3
         user32
         imm32
@@ -70,12 +70,12 @@ target_link_libraries(app PRIVATE
         ole32
 )
 
-target_compile_definitions(app PRIVATE UNICODE _UNICODE)
+target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
     target_compile_options(sqlite3 PRIVATE /utf-8)
-    target_compile_options(app PRIVATE /utf-8)
-    target_link_options(app PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
+    target_compile_options(maccy PRIVATE /utf-8)
+    target_link_options(maccy PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()
 
 include(GNUInstallDirs)
@@ -95,7 +95,7 @@ include(GNUInstallDirs)
 #    add_test(NAME popup_regressions COMMAND popup_tests)
 #endif()
 
-install(TARGETS app
+install(TARGETS maccy
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
@@ -141,27 +141,27 @@ if(MSVC AND WIN32)
     endif()
 endif()
 
-set(CPACK_PACKAGE_NAME "Clipboard")
-set(CPACK_PACKAGE_VENDOR "Clipboard")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Clipboard system tray application")
+set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
+set(CPACK_PACKAGE_VENDOR "${PROJECT_NAME}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_NAME} system tray application")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_INSTALL_DIRECTORY "Clipboard")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "${PROJECT_NAME}")
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(_app_package_platform "win64")
 else()
     set(_app_package_platform "win32")
 endif()
-set(CPACK_PACKAGE_FILE_NAME "Clipboard-${PROJECT_VERSION}-${_app_package_platform}")
+set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-${_app_package_platform}")
 
 set(CPACK_GENERATOR "NSIS")
-set(CPACK_NSIS_DISPLAY_NAME "Clipboard")
-set(CPACK_NSIS_PACKAGE_NAME "Clipboard")
+set(CPACK_NSIS_DISPLAY_NAME "${PROJECT_NAME}")
+set(CPACK_NSIS_PACKAGE_NAME "${PROJECT_NAME}")
 set(CPACK_NSIS_EXECUTABLES_DIRECTORY "bin")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MODIFY_PATH OFF)
 
 # Create a Start Menu shortcut and a desktop shortcut for the installed app.
-set(CPACK_PACKAGE_EXECUTABLES "app;Clipboard")
-set(CPACK_CREATE_DESKTOP_LINKS "app")
+set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")
+set(CPACK_CREATE_DESKTOP_LINKS "${PROJECT_NAME}")
 
 include(CPack)

@@ -10,7 +10,6 @@
 
 namespace AppConstants {
     // 应用程序信息
-    constexpr const wchar_t* kAppName = L"ClipboardManager";
     constexpr const wchar_t* kAppVersion = L"1.0.0";
 
     // ========================================================================
@@ -66,6 +65,6 @@ namespace AppConstants {
     // ========================================================================
     namespace DB {
         constexpr int kDefaultHistorySize = 200;
-        constexpr const wchar_t* kDatabaseFileName = L"clipboard.db";
+        constexpr const wchar_t* kDatabaseFileName = L"maccy.db";
     }
 }

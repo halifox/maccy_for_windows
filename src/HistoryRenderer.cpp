@@ -597,7 +597,7 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
         const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
         const int previous_mode = SetBkMode(dc, TRANSPARENT);
         RECT title = titleRect;
-        DrawTextW(dc, L"Maccy", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        DrawTextW(dc, L"maccy", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         SetBkMode(dc, previous_mode);
         SetTextColor(dc, previous_color);
         SelectObject(dc, previous_font);

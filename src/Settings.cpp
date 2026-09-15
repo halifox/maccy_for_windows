@@ -380,7 +380,6 @@ bool SameHotKey(const HotKeyConfig &lhs, const HotKeyConfig &rhs) {
 
 bool SetLaunchAtLogin(bool enabled) {
     constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    constexpr wchar_t kValueName[] = L"Clipboard";
     HKEY key = nullptr;
     if (RegCreateKeyExW(
         HKEY_CURRENT_USER,
@@ -406,7 +405,7 @@ bool SetLaunchAtLogin(bool enabled) {
             const std::wstring command = L"\"" + std::wstring(path.data(), length) + L"\"";
             result = RegSetValueExW(
                 key,
-                kValueName,
+                L"maccy",
                 0,
                 REG_SZ,
                 reinterpret_cast<const BYTE *>(command.c_str()),
@@ -414,7 +413,7 @@ bool SetLaunchAtLogin(bool enabled) {
             );
         }
     } else {
-        result = RegDeleteValueW(key, kValueName);
+        result = RegDeleteValueW(key, L"maccy");
         if (result == ERROR_FILE_NOT_FOUND) {
             result = ERROR_SUCCESS;
         }
@@ -425,12 +424,11 @@ bool SetLaunchAtLogin(bool enabled) {
 
 bool IsLaunchAtLogin() {
     constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-    constexpr wchar_t kValueName[] = L"Clipboard";
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
         return false;
     }
-    const LONG result = RegQueryValueExW(key, kValueName, nullptr, nullptr, nullptr, nullptr);
+    const LONG result = RegQueryValueExW(key, L"maccy", nullptr, nullptr, nullptr, nullptr);
     RegCloseKey(key);
     return result == ERROR_SUCCESS;
 }

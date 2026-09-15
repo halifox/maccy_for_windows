@@ -728,7 +728,7 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_aHighlight, L"斜体");
     AddComboItem(m_aHighlight, L"强调");
 
-    AddComboItem(m_aMenuIcon, L"Maccy");
+    AddComboItem(m_aMenuIcon, L"maccy");
     AddComboItem(m_aMenuIcon, L"剪贴板");
     AddComboItem(m_aMenuIcon, L"剪刀");
     AddComboItem(m_aMenuIcon, L"回形针");

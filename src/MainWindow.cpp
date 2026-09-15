@@ -43,7 +43,7 @@ constexpr int kHistorySectionGap = 6;
 constexpr int kHistoryFooterCount = 4;
 constexpr int kResizeBorder = 8;
 
-constexpr wchar_t kControlOwnerProperty[] = L"ClipboardMainWindow";
+constexpr wchar_t kControlOwnerProperty[] = L"maccyMainWindow";
 
 std::wstring ReadWindowText(HWND window) {
     if (window == nullptr) {
@@ -288,7 +288,7 @@ void MainWindow::LayoutHistoryControls() {
             const HFONT font = m_historyRenderer.GetSmallFont();
             const HGDIOBJ oldFont = font != nullptr ? ::SelectObject(dc, font) : nullptr;
             SIZE textSize{};
-            if (::GetTextExtentPoint32W(dc, L"Maccy", 5, &textSize)) {
+            if (::GetTextExtentPoint32W(dc, L"maccy", 5, &textSize)) {
                 titleWidth = textSize.cx + 8;
             }
             if (oldFont != nullptr) ::SelectObject(dc, oldFont);
@@ -889,8 +889,11 @@ void MainWindow::ClearHistory(bool all) {
 
 void MainWindow::OpenAbout() {
     m_modalShowing = true;
-    MessageBoxW(L"Clipboard 1.0\n\n轻量 Windows 剪贴板历史工具\n布局和交互参考 Maccy 2.7.1\n\n使用 C++、WTL 和 SQLite 构建。",
-        L"关于 Clipboard", MB_OK | MB_ICONINFORMATION);
+    std::wstring about = L"maccy ";
+    about += AppConstants::kAppVersion;
+    about += L"\n\n轻量 Windows 剪贴板历史工具\n布局和交互参考 Maccy 2.7.1\n\n使用 C++、WTL 和 SQLite 构建。";
+    const std::wstring caption = L"关于 maccy";
+    MessageBoxW(about.c_str(), caption.c_str(), MB_OK | MB_ICONINFORMATION);
     m_modalShowing = false;
 }
 
@@ -900,7 +903,7 @@ void MainWindow::OpenSettings() {
         m_settingsWindow = std::make_unique<SettingsWindow>(m_database, m_hWnd);
     }
     if (!m_settingsWindow->CreateOrShow()) {
-        ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"剪贴板", MB_OK | MB_ICONERROR);
+        ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"maccy", MB_OK | MB_ICONERROR);
     }
 }
 
