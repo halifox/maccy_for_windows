@@ -299,6 +299,36 @@ std::wstring ReadWindowText(HWND window) {
     return text;
 }
 
+void UpdateBehaviorHint(HWND window, bool paste_default, bool plain_default) {
+    std::wstring hint = ReadWindowText(window);
+    constexpr std::wstring_view marker = L"• 按住 ";
+    constexpr std::wstring_view suffix = L" 选择项目";
+    const std::array<std::wstring, 3> key_expressions = {
+        paste_default ? L"Alt+Enter" : L"Enter",
+        paste_default ? L"Enter" : L"Alt+Enter",
+        plain_default
+            ? (paste_default ? L"Enter" : L"Alt+Shift+Enter")
+            : (paste_default ? L"Ctrl+Shift+Enter" : L"Alt+Shift+Enter"),
+    };
+
+    size_t search_position = 0;
+    for (const std::wstring &key_expression : key_expressions) {
+        const size_t marker_position = hint.find(marker, search_position);
+        if (marker_position == std::wstring::npos) {
+            return;
+        }
+        const size_t key_start = marker_position + marker.size();
+        const size_t key_end = hint.find(suffix, key_start);
+        if (key_end == std::wstring::npos) {
+            return;
+        }
+        hint.replace(key_start, key_end - key_start, key_expression);
+        search_position = key_start + key_expression.size();
+    }
+
+    ::SetWindowTextW(window, hint.c_str());
+}
+
 int ReadValidatedInteger(HWND window, int fallback, int minimum, int maximum) {
     const int safe_fallback = std::clamp(fallback, minimum, maximum);
     const std::wstring text = ReadWindowText(window);
@@ -1080,10 +1110,11 @@ void SettingsWindow::LoadAppearanceControls() {
 }
 
 void SettingsWindow::UpdateDependencies() {
-    const std::wstring hint = std::wstring(L"Enter：") +
-        (!IsChecked(m_gPasteByDefault) ? L"复制" : IsChecked(m_gRemoveFormatting) ? L"纯文本粘贴" : L"粘贴") +
-        L"；Alt+Enter：切换复制/粘贴；Shift+Enter：切换粘贴格式";
-    ::SetWindowTextW(::GetDlgItem(m_pages[kPageGeneral], IDC_G_BEHAVIOR_HINT), hint.c_str());
+    UpdateBehaviorHint(
+        ::GetDlgItem(m_pages[kPageGeneral], IDC_G_BEHAVIOR_HINT),
+        IsChecked(m_gPasteByDefault),
+        IsChecked(m_gRemoveFormatting)
+    );
     ::EnableWindow(m_aSearchVisibility, IsChecked(m_aShowSearch));
     ::EnableWindow(m_aShowTitle, IsChecked(m_aShowSearch));
     ::EnableWindow(m_aPreviewDelay, IsChecked(m_aOpenPreview));
