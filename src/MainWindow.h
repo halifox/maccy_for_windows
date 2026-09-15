@@ -92,7 +92,6 @@ private:
     // Window positioning
     void PositionPopup();
     void PositionOnMonitor(HMONITOR monitor, bool center);
-    void ConstrainPopupToWorkArea();
     void PositionPreviewWindow();
     HMONITOR SelectedMonitor() const;
     int PopupWidth() const;

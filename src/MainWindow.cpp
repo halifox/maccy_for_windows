@@ -400,14 +400,6 @@ void MainWindow::SetHistorySearchVisible(bool visible) {
     if (m_search == nullptr || !::IsWindow(m_search)) return;
     ::ShowWindow(m_search, visible ? SW_SHOW : SW_HIDE);
     LayoutHistoryControls();
-    if (m_popupVisible && !m_inSizeMove) {
-        RECT rect{};
-        if (::GetWindowRect(m_hWnd, &rect)) {
-            ::SetWindowPos(m_hWnd, nullptr, rect.left, rect.top,
-                rect.right - rect.left, PopupHeight(),
-                SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-    }
 }
 
 void MainWindow::UpdateFooterControls() {
@@ -445,22 +437,7 @@ int MainWindow::PopupWidth() const {
 }
 
 int MainWindow::PopupHeight() const {
-    const int maximum = std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
-    const bool header = m_settings.show_search &&
-        (m_settings.search_visibility == SearchVisibility::Always || !m_searchQuery.empty());
-    int pinRows = 0;
-    for (const ClipboardItem& item : m_items) if (item.pinned) ++pinRows;
-    const int historyRows = static_cast<int>(m_items.size()) - pinRows;
-    const int sectionGap = pinRows > 0 && historyRows > 0 ? kHistorySectionGap : 0;
-    const int listRows = std::max(3, historyRows) + pinRows;
-    const int footerHeight = m_settings.show_footer
-        ? kHistoryFooterGap + kHistoryFooterHeight * kHistoryFooterCount
-        : 0;
-    const int content = 2 * kHistoryWindowMargin +
-        (header ? kHistorySearchHeight + kHistorySearchGap : 0) +
-        sectionGap + listRows * kHistoryItemHeight + footerHeight;
-    const int previewMinimum = m_previewWindow.IsVisible() ? m_previewWindow.MinimumHeight() : 0;
-    return std::clamp(std::max(content, previewMinimum), kMinimumPopupHeight, maximum);
+    return std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
 }
 
 void MainWindow::PositionOnMonitor(HMONITOR monitor, bool center) {
@@ -686,11 +663,6 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
         for (HWND list : {m_historyList, m_pinsList}) SendMessageW(list, WM_SETREDRAW, TRUE, 0);
         RedrawHistoryLists();
         ApplyHistoryVisibility();
-        if (m_popupVisible && !m_inSizeMove) {
-            RECT rect{}; ::GetWindowRect(m_hWnd, &rect);
-            ::SetWindowPos(m_hWnd, nullptr, 0, 0, rect.right - rect.left, PopupHeight(),
-                SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-        }
         if (previewOpen && m_keyboardHandler.GetActiveItemId()) {
             ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
         } else if (!m_keyboardHandler.GetActiveItemId()) {
@@ -744,13 +716,6 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
         m_previewItemId = item_id;
         m_previewCandidateId = 0;
         PositionPreviewWindow();
-        if (m_popupVisible && !m_inSizeMove) {
-            RECT rect{};
-            if (::GetWindowRect(m_hWnd, &rect)) {
-                ::SetWindowPos(m_hWnd, nullptr, rect.left, rect.top,
-                    rect.right - rect.left, PopupHeight(), SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        }
     } catch (...) {
         HidePreview();
     }
@@ -780,13 +745,6 @@ void MainWindow::HidePreview() {
     m_previewItemId = 0;
     m_previewSource = PreviewSource::None;
     m_previewWindow.Hide();
-    if (m_popupVisible && !m_inSizeMove) {
-        RECT rect{};
-        if (::GetWindowRect(m_hWnd, &rect)) {
-            ::SetWindowPos(m_hWnd, nullptr, rect.left, rect.top,
-                rect.right - rect.left, PopupHeight(), SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-    }
 }
 
 void MainWindow::TogglePreview() {
