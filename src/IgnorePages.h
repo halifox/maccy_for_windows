@@ -15,10 +15,10 @@ public:
     virtual void Show() = 0;
     virtual void Hide() = 0;
     virtual void Refresh() = 0;
-    virtual void AddValue() = 0;
-    virtual void EditValue() = 0;
-    virtual void RemoveValue() = 0;
-    virtual void ResetToDefaults() = 0;
+    virtual bool AddValue() = 0;
+    virtual bool EditValue() = 0;
+    virtual bool RemoveValue() = 0;
+    virtual bool ResetToDefaults() = 0;
     virtual bool SaveList() = 0;
 
     HWND GetPageWindow() const { return m_pageWindow; }
@@ -38,10 +38,10 @@ public:
     void Show() override;
     void Hide() override;
     void Refresh() override;
-    void AddValue() override;
-    void EditValue() override;
-    void RemoveValue() override;
-    void ResetToDefaults() override;
+    bool AddValue() override;
+    bool EditValue() override;
+    bool RemoveValue() override;
+    bool ResetToDefaults() override;
     bool SaveList() override;
 
 private:
@@ -56,10 +56,10 @@ public:
     void Show() override;
     void Hide() override;
     void Refresh() override;
-    void AddValue() override;
-    void EditValue() override;
-    void RemoveValue() override;
-    void ResetToDefaults() override;
+    bool AddValue() override;
+    bool EditValue() override;
+    bool RemoveValue() override;
+    bool ResetToDefaults() override;
     bool SaveList() override;
 
 private:
@@ -75,10 +75,10 @@ public:
     void Show() override;
     void Hide() override;
     void Refresh() override;
-    void AddValue() override;
-    void EditValue() override;
-    void RemoveValue() override;
-    void ResetToDefaults() override;
+    bool AddValue() override;
+    bool EditValue() override;
+    bool RemoveValue() override;
+    bool ResetToDefaults() override;
     bool SaveList() override;
 
 private:

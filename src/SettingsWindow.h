@@ -120,7 +120,7 @@ private:
     void RefreshPinsList();
 
     void SaveCurrentPage(bool notify = true);
-    void NotifyOwner();
+    void NotifyOwner(std::uint32_t updateMask = AppConstants::UiUpdate::kSettings);
     void EditSelectedPin();
     void DeleteSelectedPin();
     void OpenNotificationsSettings();

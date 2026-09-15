@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <regex>
 #include <string>
 #include <vector>
 #include <shellapi.h>
@@ -83,7 +84,7 @@ private:
 
     std::vector<std::wstring> m_ignoredApps;
     std::vector<std::wstring> m_ignoredFormats;
-    std::vector<std::wstring> m_ignoredRegexps;
+    std::vector<std::wregex> m_ignoredRegexpPatterns;
 
     HWND m_targetWindow = nullptr;
     HWND m_targetFocusWindow = nullptr;

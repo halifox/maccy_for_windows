@@ -15,9 +15,13 @@
 #include "ClipboardMonitor.h"
 #include "Database.h"
 #include "HistoryRenderer.h"
+#include "HistoryController.h"
+#include "HistoryView.h"
 #include "KeyboardHandler.h"
+#include "PopupLayout.h"
 #include "PreviewWindow.h"
 #include "Settings.h"
+#include "UiState.h"
 #include "resource.h"
 #include "SettingsWindow.h"
 
@@ -25,15 +29,8 @@ class SettingsWindow;
 
 // Main application window - coordinates all components
 class MainWindow : public CDialogImpl<MainWindow> {
-    friend struct MainWindowTests;
 public:
     enum { IDD = IDD_HISTORY };
-
-    enum class PreviewSource {
-        None,
-        Mouse,
-        Keyboard,
-    };
 
     explicit MainWindow(Database& database, bool isolated = false);
     ~MainWindow();
@@ -68,7 +65,7 @@ public:
         MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnImeEnd)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
-        MESSAGE_HANDLER(AppConstants::kSettingsChangedMessage, OnSettingsChanged)
+        MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
     END_MSG_MAP()
 
     bool AddTrayIcon();
@@ -105,7 +102,7 @@ private:
     void SetHistorySearchVisible(bool visible);
 
     // Preview window
-    void SchedulePreviewForItem(sqlite3_int64 item_id, PreviewSource source);
+    void SchedulePreviewForItem(sqlite3_int64 item_id);
     void ShowPreviewForItem(sqlite3_int64 item_id);
     void ShowPreviewForCandidate();
     void ShowPreviewForSelection();
@@ -128,9 +125,7 @@ private:
     void ScheduleSearchFromCurrentEdit();
     void SaveWindowGeometry(bool resized = false);
     void HideMainWindow();
-    bool HasHistoryItems() const;
     int SelectedHistoryIndex() const;
-    std::wstring NextPinKey() const;
     bool IsOurWindow(HWND window) const;
 
     // Tray icon
@@ -140,7 +135,9 @@ private:
     void RemoveTrayIcon();
 
     // Settings
-    void ApplySettings();
+    std::uint32_t ApplySettings(std::uint32_t requestedUpdates);
+    void RequestUiUpdate(std::uint32_t updateMask);
+    void ApplyPendingState();
 
     // Message handlers
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -168,7 +165,7 @@ private:
     LRESULT OnImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
-    LRESULT OnSettingsChanged(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
     // Callback handlers for KeyboardHandler
@@ -182,6 +179,7 @@ private:
     static void OnOpenSettingsCallback(void* context);
     static void OnExitCallback(void* context);
     static void OnHideWindowCallback(void* context);
+    static void OnHistoryRefreshRequested(void* context, std::wstring_view query);
 
     Database& m_database;
     AppSettings m_settings;
@@ -189,6 +187,7 @@ private:
     // Components
     ClipboardMonitor m_clipboardMonitor;
     HistoryRenderer m_historyRenderer;
+    HistoryController m_historyController;
     KeyboardHandler m_keyboardHandler;
     PreviewWindow m_previewWindow;
     std::unique_ptr<SettingsWindow> m_settingsWindow;
@@ -212,7 +211,17 @@ private:
 
     // History data
     std::vector<ClipboardItem> m_items;
-    std::wstring m_searchQuery;
+    HistoryView m_historyView;
+
+    // Cross-message state and coalesced update requests
+    UiState m_uiState;
+    // Compatibility aliases keep the existing message handlers readable;
+    // the storage is owned by UiState and is not duplicated.
+    std::wstring& m_searchQuery;
+    sqlite3_int64& m_previewCandidateId;
+    sqlite3_int64& m_previewItemId;
+    bool& m_previewSuppressed;
+    bool& m_popupVisible;
 
     // Layout
     RECT m_searchRect{};
@@ -222,10 +231,6 @@ private:
     int m_footerSeparatorY = -1;
 
     // Preview state
-    sqlite3_int64 m_previewCandidateId = 0;
-    sqlite3_int64 m_previewItemId = 0;
-    PreviewSource m_previewSource = PreviewSource::None;
-    bool m_previewSuppressed = false;
     std::wstring m_previewTip;
 
     // Tray icon
@@ -233,8 +238,6 @@ private:
     bool m_trayIconAdded = false;
 
     // State flags
-    bool m_popupVisible = false;
-    bool m_loadingList = false;
     bool m_modalShowing = false;
     bool m_exiting = false;
     bool m_trayMenuShowing = false;

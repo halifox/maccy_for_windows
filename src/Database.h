@@ -57,13 +57,30 @@ enum class DatabaseList {
 
 class Database {
 public:
+    class Transaction {
+    public:
+        explicit Transaction(const Database& database);
+        ~Transaction();
+
+        Transaction(const Transaction&) = delete;
+        Transaction& operator=(const Transaction&) = delete;
+        Transaction(Transaction&& other) noexcept;
+        Transaction& operator=(Transaction&& other) noexcept;
+
+        void Commit();
+
+    private:
+        const Database* m_database = nullptr;
+        bool m_committed = false;
+    };
+
     explicit Database(const std::filesystem::path &path);
     ~Database();
 
     Database(const Database &) = delete;
     Database &operator=(const Database &) = delete;
 
-    void Exec(std::string_view sql) const;
+    Transaction BeginTransaction() const { return Transaction(*this); }
 
     std::optional<std::wstring> GetSetting(std::wstring_view key) const;
     void SetSetting(std::wstring_view key, std::wstring_view value) const;
@@ -81,7 +98,7 @@ public:
         bool pins_at_bottom
     ) const;
     std::optional<ClipboardItem> GetItem(sqlite3_int64 id, bool load_data = true) const;
-    std::vector<ClipboardItem> GetPinnedItems() const;
+    std::vector<ClipboardItem> GetPinnedItems(bool load_data = false) const;
 
     void MarkCopied(sqlite3_int64 id) const;
     void DeleteItem(sqlite3_int64 id) const;
@@ -106,6 +123,10 @@ public:
     const std::filesystem::path &Path() const noexcept { return m_path; }
 
 private:
+    friend class SchemaMigrationManager;
+
+    void Exec(std::string_view sql) const;
+    void RunSchemaMigrations() const;
     sqlite3_int64 CountRows(const char *table) const;
     const char *ListTable(DatabaseList list) const;
     void LoadData(ClipboardItem &item) const;

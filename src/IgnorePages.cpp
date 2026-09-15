@@ -80,7 +80,7 @@ void IgnoreApplicationsPage::Refresh() {
     SetListViewColumnWidth(m_list, list_rect.right - list_rect.left);
 }
 
-void IgnoreApplicationsPage::AddValue() {
+bool IgnoreApplicationsPage::AddValue() {
     std::array<wchar_t, MAX_PATH> path{};
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
@@ -91,23 +91,24 @@ void IgnoreApplicationsPage::AddValue() {
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 
     if (!GetOpenFileNameW(&dialog)) {
-        return;
+        return false;
     }
 
     std::wstring value = path.data();
     if (value.empty() || std::find(m_values.begin(), m_values.end(), value) != m_values.end()) {
-        return;
+        return false;
     }
 
     m_values.push_back(std::move(value));
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreApplicationsPage::EditValue() {
+bool IgnoreApplicationsPage::EditValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return;
+        return false;
     }
 
     // 应用程序页面可以使用文件选择对话框来编辑路径
@@ -123,40 +124,43 @@ void IgnoreApplicationsPage::EditValue() {
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 
     if (!GetOpenFileNameW(&dialog)) {
-        return;
+        return false;
     }
 
     std::wstring value = path.data();
     if (value.empty()) {
-        return;
+        return false;
     }
 
     // 检查重复
     for (size_t index = 0; index < m_values.size(); ++index) {
         if (static_cast<int>(index) != selected && m_values[index] == value) {
             MessageBoxW(m_pageWindow, L"该应用程序已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return;
+            return false;
         }
     }
 
     m_values[selected] = value;
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreApplicationsPage::RemoveValue() {
+bool IgnoreApplicationsPage::RemoveValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return;
+        return false;
     }
 
     m_values.erase(m_values.begin() + selected);
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreApplicationsPage::ResetToDefaults() {
+bool IgnoreApplicationsPage::ResetToDefaults() {
     // 应用程序页面没有默认值
+    return false;
 }
 
 bool IgnoreApplicationsPage::SaveList() {
@@ -241,7 +245,7 @@ void IgnoreFormatsPage::Refresh() {
     SetListViewColumnWidth(m_list, list_rect.right - list_rect.left);
 }
 
-void IgnoreFormatsPage::AddValue() {
+bool IgnoreFormatsPage::AddValue() {
     EditIgnoreDialog dialog(
         L"",
         L"输入要忽略的 pasteboard 类型（例如：com.example.custom）。",
@@ -249,16 +253,16 @@ void IgnoreFormatsPage::AddValue() {
     );
 
     if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return;
+        return false;
     }
 
     std::wstring value = dialog.GetValue();
     if (value.empty() || std::find(m_values.begin(), m_values.end(), value) != m_values.end()) {
-        return;
+        return false;
     }
 
     m_values.push_back(std::move(value));
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
 
     // 选中新添加的项
@@ -266,12 +270,13 @@ void IgnoreFormatsPage::AddValue() {
     if (m_list != nullptr && inserted >= 0) {
         ListView_SetItemState(m_list, inserted, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
     }
+    return saved;
 }
 
-void IgnoreFormatsPage::EditValue() {
+bool IgnoreFormatsPage::EditValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return;
+        return false;
     }
 
     EditIgnoreDialog dialog(
@@ -281,43 +286,50 @@ void IgnoreFormatsPage::EditValue() {
     );
 
     if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return;
+        return false;
     }
 
     std::wstring value = dialog.GetValue();
     if (value.empty()) {
-        return;
+        return false;
     }
 
     // 检查重复
     for (size_t index = 0; index < m_values.size(); ++index) {
         if (static_cast<int>(index) != selected && m_values[index] == value) {
             MessageBoxW(m_pageWindow, L"该值已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return;
+            return false;
         }
     }
 
     m_values[selected] = value;
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreFormatsPage::RemoveValue() {
+bool IgnoreFormatsPage::RemoveValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return;
+        return false;
     }
 
     m_values.erase(m_values.begin() + selected);
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreFormatsPage::ResetToDefaults() {
+bool IgnoreFormatsPage::ResetToDefaults() {
     if (m_database != nullptr) {
-        m_database->ResetIgnoredFormats();
-        Refresh();
+        try {
+            m_database->ResetIgnoredFormats();
+            Refresh();
+            return true;
+        } catch (...) {
+        }
     }
+    return false;
 }
 
 bool IgnoreFormatsPage::SaveList() {
@@ -401,7 +413,7 @@ void IgnoreRegexpsPage::Refresh() {
     SetListViewColumnWidth(m_list, list_rect.right - list_rect.left);
 }
 
-void IgnoreRegexpsPage::AddValue() {
+bool IgnoreRegexpsPage::AddValue() {
     EditIgnoreDialog dialog(
         L"",
         L"输入正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
@@ -409,16 +421,16 @@ void IgnoreRegexpsPage::AddValue() {
     );
 
     if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return;
+        return false;
     }
 
     std::wstring value = dialog.GetValue();
     if (value.empty() || std::find(m_values.begin(), m_values.end(), value) != m_values.end()) {
-        return;
+        return false;
     }
 
     m_values.push_back(std::move(value));
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
 
     // 选中新添加的项
@@ -426,12 +438,13 @@ void IgnoreRegexpsPage::AddValue() {
     if (m_list != nullptr && inserted >= 0) {
         ListView_SetItemState(m_list, inserted, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
     }
+    return saved;
 }
 
-void IgnoreRegexpsPage::EditValue() {
+bool IgnoreRegexpsPage::EditValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return;
+        return false;
     }
 
     EditIgnoreDialog dialog(
@@ -441,40 +454,43 @@ void IgnoreRegexpsPage::EditValue() {
     );
 
     if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return;
+        return false;
     }
 
     std::wstring value = dialog.GetValue();
     if (value.empty()) {
-        return;
+        return false;
     }
 
     // 检查重复
     for (size_t index = 0; index < m_values.size(); ++index) {
         if (static_cast<int>(index) != selected && m_values[index] == value) {
             MessageBoxW(m_pageWindow, L"该值已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return;
+            return false;
         }
     }
 
     m_values[selected] = value;
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreRegexpsPage::RemoveValue() {
+bool IgnoreRegexpsPage::RemoveValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return;
+        return false;
     }
 
     m_values.erase(m_values.begin() + selected);
-    SaveList();
+    const bool saved = SaveList();
     Refresh();
+    return saved;
 }
 
-void IgnoreRegexpsPage::ResetToDefaults() {
+bool IgnoreRegexpsPage::ResetToDefaults() {
     // 正则表达式页面没有默认值
+    return false;
 }
 
 bool IgnoreRegexpsPage::SaveList() {

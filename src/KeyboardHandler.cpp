@@ -1,15 +1,10 @@
 #include "KeyboardHandler.h"
+#include "Constants.h"
+#include "HistoryView.h"
 
 #include <array>
 #include <imm.h>
 #include <windowsx.h>
-
-namespace {
-
-constexpr UINT_PTR kSearchTimerId = 1;
-constexpr UINT_PTR kPreviewTimerId = 2;
-
-} // namespace
 
 KeyboardHandler::KeyboardHandler(AppSettings& settings)
     : m_settings(settings) {}
@@ -30,7 +25,7 @@ bool KeyboardHandler::Initialize(HWND owner, HWND search, HWND historyList, HWND
 
 void KeyboardHandler::Shutdown() {
     if (m_hotkeyRegistered && m_owner != nullptr) {
-        UnregisterHotKey(m_owner, 1006); // kHotkeyId
+        UnregisterHotKey(m_owner, AppConstants::HotKey::kOpenPopup);
         m_hotkeyRegistered = false;
     }
 }
@@ -97,28 +92,16 @@ void KeyboardHandler::SetActiveFooter(int index, const std::vector<ClipboardItem
     InvalidateFooterButtons();
 }
 
-int KeyboardHandler::ItemIndex(HWND list, int row, const std::vector<ClipboardItem>& items) const {
-    if (row < 0) return -1;
-    const LRESULT value = SendMessageW(list, LB_GETITEMDATA, row, 0);
-    return value == LB_ERR ? -1 : static_cast<int>(value);
-}
-
 HWND KeyboardHandler::ListForItem(int index, const std::vector<ClipboardItem>& items,
                                   HWND historyList, HWND pinsList) const {
-    if (index < 0 || static_cast<size_t>(index) >= items.size()) return nullptr;
-    return items[index].pinned ? pinsList : historyList;
+    if (m_historyView == nullptr) return nullptr;
+    return m_historyView->ListForItem(index);
 }
 
 int KeyboardHandler::RowForItem(int index, const std::vector<ClipboardItem>& items,
                                HWND historyList, HWND pinsList) const {
-    if (index < 0 || static_cast<size_t>(index) >= items.size()) return -1;
-    HWND list = ListForItem(index, items, historyList, pinsList);
-    if (list == nullptr) return -1;
-    const int count = static_cast<int>(SendMessageW(list, LB_GETCOUNT, 0, 0));
-    for (int row = 0; row < count; ++row) {
-        if (ItemIndex(list, row, items) == index) return row;
-    }
-    return -1;
+    if (m_historyView == nullptr) return -1;
+    return m_historyView->RowForItem(index);
 }
 
 void KeyboardHandler::InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
@@ -171,14 +154,6 @@ void KeyboardHandler::SetActiveHistoryItem(int index, const std::vector<Clipboar
     }
 }
 
-int KeyboardHandler::HistoryItemAtPoint(HWND window, POINT point,
-                                       HWND historyList, HWND pinsList,
-                                       const std::vector<ClipboardItem>& items) const {
-    if (window != historyList && window != pinsList) return -1;
-    const LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0, MAKELPARAM(point.x, point.y));
-    return HIWORD(hit) ? -1 : ItemIndex(window, LOWORD(hit), items);
-}
-
 void KeyboardHandler::BeginHistoryMouseTracking() {
     TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, m_hoverList, 0};
     ::TrackMouseEvent(&tracking);
@@ -187,7 +162,7 @@ void KeyboardHandler::BeginHistoryMouseTracking() {
 void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
                                         const std::vector<ClipboardItem>& items,
                                         HWND historyList, HWND pinsList,
-                                        bool popupVisible, bool showSearch) {
+                                        bool popupVisible) {
     if (!MouseCanSelect()) return;
     if (!popupVisible || (window != historyList && window != pinsList)) {
         return;
@@ -196,7 +171,9 @@ void KeyboardHandler::OnHistoryMouseMove(HWND window, POINT point,
     m_hoverList = window;
     BeginHistoryMouseTracking();
 
-    const int index = HistoryItemAtPoint(window, point, historyList, pinsList, items);
+    const int index = m_historyView != nullptr
+        ? m_historyView->ItemIndexAtPoint(window, point)
+        : -1;
     if (index < 0) {
         ClearHistoryHover();
         return;
@@ -243,7 +220,7 @@ void KeyboardHandler::UpdateHistoryHoverFromCursor(const std::vector<ClipboardIt
         RECT rect{};
         ::GetClientRect(list, &rect);
         if (::PtInRect(&rect, point)) {
-            OnHistoryMouseMove(list, point, items, historyList, pinsList, popupVisible, true);
+            OnHistoryMouseMove(list, point, items, historyList, pinsList, popupVisible);
             return;
         }
     }
@@ -254,7 +231,7 @@ void KeyboardHandler::ClearHistoryHover() {
     m_hoveredItemIndex = -1;
     m_hoveredItemId = 0;
     if (m_owner) {
-        KillTimer(m_owner, kPreviewTimerId);
+        KillTimer(m_owner, AppConstants::Timer::kPreview);
     }
 }
 
@@ -400,10 +377,6 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
         }
     }
     return false;
-}
-
-void KeyboardHandler::OnKeyUp() {
-    // Can be used to update UI state
 }
 
 bool KeyboardHandler::OnChar(WPARAM character) {

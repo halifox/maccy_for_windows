@@ -10,6 +10,8 @@
 #include "Database.h"
 #include "Settings.h"
 
+class HistoryView;
+
 // Keyboard navigation and input handling component
 class KeyboardHandler {
 public:
@@ -22,6 +24,7 @@ public:
     // Lifecycle
     bool Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
                     const std::array<HWND, 4>& footerButtons);
+    void SetHistoryView(HistoryView& view) noexcept { m_historyView = &view; }
     void Shutdown();
 
     // Hotkey management
@@ -32,7 +35,6 @@ public:
     // Input handling
     bool HandlePopupKey(WPARAM key, HWND search, const std::vector<ClipboardItem>& items);
     bool HandlePopupShortcut(WPARAM key, const std::vector<ClipboardItem>& items);
-    void OnKeyUp();
     bool OnChar(WPARAM character);
 
     // Navigation
@@ -49,7 +51,7 @@ public:
     void OnHistoryMouseMove(HWND window, POINT point,
                             const std::vector<ClipboardItem>& items,
                             HWND historyList, HWND pinsList,
-                            bool popupVisible, bool showSearch);
+                            bool popupVisible);
     void OnHistoryMouseLeave();
     void UpdateHistoryHoverFromCursor(const std::vector<ClipboardItem>& items,
                                      HWND historyList, HWND pinsList,
@@ -74,9 +76,6 @@ public:
     void SetImeComposing(bool composing) { m_imeComposing = composing; }
 
     // Helper for list operations
-    int HistoryItemAtPoint(HWND window, POINT point,
-                          HWND historyList, HWND pinsList,
-                          const std::vector<ClipboardItem>& items) const;
     void InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
                               HWND historyList, HWND pinsList);
 
@@ -106,7 +105,6 @@ public:
 
 private:
     // Helper methods
-    int ItemIndex(HWND list, int row, const std::vector<ClipboardItem>& items) const;
     HWND ListForItem(int index, const std::vector<ClipboardItem>& items,
                     HWND historyList, HWND pinsList) const;
     int RowForItem(int index, const std::vector<ClipboardItem>& items,
@@ -116,6 +114,7 @@ private:
     void BeginHistoryMouseTracking();
 
     AppSettings& m_settings;
+    HistoryView* m_historyView = nullptr;
     HWND m_owner = nullptr;
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;

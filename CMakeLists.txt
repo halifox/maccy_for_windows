@@ -36,6 +36,9 @@ target_compile_definitions(sqlite3 PRIVATE
 add_executable(maccy WIN32
         src/main.cpp
         src/MainWindow.cpp
+        src/HistoryView.cpp
+        src/HistoryController.cpp
+        src/PopupLayout.cpp
         src/ClipboardMonitor.cpp
         src/HistoryRenderer.cpp
         src/KeyboardHandler.cpp

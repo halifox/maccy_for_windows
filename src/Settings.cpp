@@ -247,8 +247,7 @@ AppSettings AppSettings::Load(const Database &database) {
 }
 
 void AppSettings::Save(const Database &database) const {
-    database.Exec("BEGIN IMMEDIATE;");
-    try {
+    auto transaction = database.BeginTransaction();
         WriteBool(database, L"general.launchAtLogin", launch_at_login);
         WriteBool(database, L"general.checkForUpdates", check_for_updates);
 
@@ -296,14 +295,7 @@ void AppSettings::Save(const Database &database) const {
 
         WriteInt(database, L"appearance.windowX", popup_x);
         WriteInt(database, L"appearance.windowY", popup_y);
-        database.Exec("COMMIT;");
-    } catch (...) {
-        try {
-            database.Exec("ROLLBACK;");
-        } catch (...) {
-        }
-        throw;
-    }
+    transaction.Commit();
 
     SetLaunchAtLogin(launch_at_login);
 }

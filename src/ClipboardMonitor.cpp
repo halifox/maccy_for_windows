@@ -1,4 +1,5 @@
 #include "ClipboardMonitor.h"
+#include "Constants.h"
 
 #include <algorithm>
 #include <array>
@@ -12,7 +13,6 @@
 
 namespace {
 
-constexpr UINT_PTR kPasteTimerId = 3;
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
 
@@ -163,7 +163,14 @@ void ClipboardMonitor::Shutdown() {
 void ClipboardMonitor::ReloadIgnoreLists() {
     m_ignoredApps = m_database.GetList(DatabaseList::IgnoredApplications);
     m_ignoredFormats = m_database.GetList(DatabaseList::IgnoredFormats);
-    m_ignoredRegexps = m_database.GetList(DatabaseList::IgnoredRegexps);
+    m_ignoredRegexpPatterns.clear();
+    for (const std::wstring& pattern : m_database.GetList(DatabaseList::IgnoredRegexps)) {
+        try {
+            m_ignoredRegexpPatterns.emplace_back(pattern);
+        } catch (const std::regex_error&) {
+            // Keep invalid user rules inert without disabling monitoring.
+        }
+    }
 }
 
 bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) const {
@@ -199,15 +206,9 @@ bool ClipboardMonitor::ShouldIgnoreFormat(std::wstring_view format) const {
 }
 
 bool ClipboardMonitor::ShouldIgnoreText(std::wstring_view text) const {
-    for (const std::wstring& pattern : m_ignoredRegexps) {
-        try {
-            const std::wregex expression{pattern};
-            if (std::regex_search(text.begin(), text.end(), expression)) {
-                return true;
-            }
-        } catch (const std::regex_error&) {
-            // Match Maccy's behavior: an invalid rule is not allowed to
-            // disable all clipboard monitoring.
+    for (const std::wregex& expression : m_ignoredRegexpPatterns) {
+        if (std::regex_search(text.begin(), text.end(), expression)) {
+            return true;
         }
     }
     return false;
@@ -620,7 +621,7 @@ void ClipboardMonitor::RestoreTargetFocusAndPaste(HWND target, HWND target_focus
         m_pendingPasteTarget = target;
         m_pendingPasteFocus = target_focus;
         m_pendingPasteDeadline = GetTickCount64() + 3000;
-        ::SetTimer(m_owner, kPasteTimerId, 15, nullptr);
+        ::SetTimer(m_owner, AppConstants::Timer::kPaste, 15, nullptr);
         return;
     }
     INPUT inputs[4]{};
@@ -646,7 +647,7 @@ void ClipboardMonitor::StartPasteTimer(HWND target, HWND focus) {
     m_pendingPasteTarget = target;
     m_pendingPasteFocus = focus;
     m_pendingPasteDeadline = GetTickCount64() + 3000;
-    ::SetTimer(m_owner, kPasteTimerId, 15, nullptr);
+    ::SetTimer(m_owner, AppConstants::Timer::kPaste, 15, nullptr);
 }
 
 void ClipboardMonitor::OnPasteTimer(HWND mainWindow) {
@@ -663,7 +664,7 @@ void ClipboardMonitor::OnPasteTimer(HWND mainWindow) {
 }
 
 void ClipboardMonitor::StopPasteTimer(HWND mainWindow) {
-    KillTimer(mainWindow, kPasteTimerId);
+    KillTimer(mainWindow, AppConstants::Timer::kPaste);
     m_pendingPasteTarget = nullptr;
 }
 

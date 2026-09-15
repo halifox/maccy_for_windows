@@ -107,7 +107,14 @@ bool TableExists(sqlite3 *db, const char *table) {
         sqlite3_bind_text(statement.get(), 1, table, -1, SQLITE_TRANSIENT),
         "Unable to bind table name"
     );
-    return sqlite3_step(statement.get()) == SQLITE_ROW;
+    const int result = sqlite3_step(statement.get());
+    if (result == SQLITE_ROW) {
+        return true;
+    }
+    if (result == SQLITE_DONE) {
+        return false;
+    }
+    throw MakeSqliteError(db, "Unable to inspect SQLite schema");
 }
 
 std::wstring Lower(std::wstring_view value) {
@@ -192,16 +199,6 @@ bool ContainsExact(std::wstring_view haystack, std::wstring_view needle) {
     return Lower(haystack).find(Lower(needle)) != std::wstring::npos;
 }
 
-bool MatchRegex(std::wstring_view text, std::wstring_view pattern) {
-    try {
-        const std::wregex expression{std::wstring(pattern)};
-        const std::wstring value(text);
-        return std::regex_search(value, expression);
-    } catch (const std::regex_error &) {
-        return false;
-    }
-}
-
 std::optional<double> FuzzyScore(std::wstring_view text, std::wstring_view pattern) {
     if (pattern.empty()) {
         return 0.0;
@@ -230,6 +227,90 @@ std::optional<double> FuzzyScore(std::wstring_view text, std::wstring_view patte
 }
 
 } // namespace
+
+class SchemaMigrationManager {
+public:
+    static void Run(const Database& database) {
+        int version = 0;
+        if (const auto stored = database.GetSetting(L"schema.version")) {
+            try {
+                version = std::stoi(*stored);
+            } catch (...) {
+                version = 0;
+            }
+        }
+        const int stored_version = version;
+
+        if (version < 1) {
+            database.MigrateLegacyHistory();
+            version = 1;
+        }
+        if (version < 2) {
+            if (!database.GetSetting(L"schema.compactPreview_v1")) {
+                database.Exec(
+                    "UPDATE history_items SET content = substr(content, 1, 4096) "
+                    "WHERE length(content) > 4096;"
+                );
+                database.SetSetting(L"schema.compactPreview_v1", L"1");
+            }
+            version = 2;
+        }
+        if (version < 3) {
+            if (!database.GetSetting(L"defaults.ignoredFormatsInitialized")) {
+                database.ReplaceList(DatabaseList::IgnoredFormats, DefaultIgnoredFormats());
+                database.SetSetting(L"defaults.ignoredFormatsInitialized", L"1");
+            }
+            version = 3;
+        }
+        if (stored_version != 3) {
+            database.SetSetting(L"schema.version", L"3");
+        }
+    }
+};
+
+Database::Transaction::Transaction(const Database& database)
+    : m_database(&database) {
+    m_database->Exec("BEGIN IMMEDIATE;");
+}
+
+Database::Transaction::~Transaction() {
+    if (m_database != nullptr && !m_committed) {
+        try {
+            m_database->Exec("ROLLBACK;");
+        } catch (...) {
+        }
+    }
+}
+
+Database::Transaction::Transaction(Transaction&& other) noexcept
+    : m_database(other.m_database), m_committed(other.m_committed) {
+    other.m_database = nullptr;
+    other.m_committed = true;
+}
+
+Database::Transaction& Database::Transaction::operator=(Transaction&& other) noexcept {
+    if (this != &other) {
+        if (m_database != nullptr && !m_committed) {
+            try {
+                m_database->Exec("ROLLBACK;");
+            } catch (...) {
+            }
+        }
+        m_database = other.m_database;
+        m_committed = other.m_committed;
+        other.m_database = nullptr;
+        other.m_committed = true;
+    }
+    return *this;
+}
+
+void Database::Transaction::Commit() {
+    if (m_database == nullptr || m_committed) {
+        return;
+    }
+    m_database->Exec("COMMIT;");
+    m_committed = true;
+}
 
 Database::Database(const std::filesystem::path &path) : m_path(path) {
     const auto parent = path.parent_path();
@@ -304,15 +385,7 @@ Database::Database(const std::filesystem::path &path) : m_path(path) {
             "FOREIGN KEY(item_id) REFERENCES history_items(id) ON DELETE CASCADE"
             ");"
         );
-        MigrateLegacyHistory();
-        if (!GetSetting(L"schema.compactPreview_v1")) {
-            Exec("UPDATE history_items SET content = substr(content, 1, 4096) WHERE length(content) > 4096;");
-            SetSetting(L"schema.compactPreview_v1", L"1");
-        }
-        if (!GetSetting(L"defaults.ignoredFormatsInitialized")) {
-            ReplaceList(DatabaseList::IgnoredFormats, DefaultIgnoredFormats());
-            SetSetting(L"defaults.ignoredFormatsInitialized", L"1");
-        }
+        RunSchemaMigrations();
     } catch (...) {
         sqlite3_close(m_db);
         m_db = nullptr;
@@ -324,6 +397,10 @@ Database::~Database() {
     if (m_db != nullptr) {
         sqlite3_close(m_db);
     }
+}
+
+void Database::RunSchemaMigrations() const {
+    SchemaMigrationManager::Run(*this);
 }
 
 void Database::Exec(const std::string_view sql) const {
@@ -411,29 +488,21 @@ void Database::ReplaceList(DatabaseList list, const std::vector<std::wstring> &v
     const std::string insert_sql =
         "INSERT OR IGNORE INTO " + std::string(ListTable(list)) + "(value) VALUES(?1);";
 
-    Exec("BEGIN IMMEDIATE;");
-    try {
-        Exec(delete_sql);
-        Statement statement(m_db, insert_sql.c_str());
-        for (const std::wstring &value : values) {
-            if (value.empty()) {
-                continue;
-            }
-            sqlite3_reset(statement.get());
-            sqlite3_clear_bindings(statement.get());
-            BindText16(m_db, statement.get(), 1, value);
-            if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-                throw MakeSqliteError(m_db, "Unable to write settings list");
-            }
+    auto transaction = BeginTransaction();
+    Exec(delete_sql);
+    Statement statement(m_db, insert_sql.c_str());
+    for (const std::wstring &value : values) {
+        if (value.empty()) {
+            continue;
         }
-        Exec("COMMIT;");
-    } catch (...) {
-        try {
-            Exec("ROLLBACK;");
-        } catch (...) {
+        sqlite3_reset(statement.get());
+        sqlite3_clear_bindings(statement.get());
+        BindText16(m_db, statement.get(), 1, value);
+        if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+            throw MakeSqliteError(m_db, "Unable to write settings list");
         }
-        throw;
     }
+    transaction.Commit();
 }
 
 void Database::ResetIgnoredFormats() const {
@@ -448,16 +517,19 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
     const int bounded_size = std::clamp(max_unpinned, 1, 999);
     const std::wstring stored_preview = StoredPreview(capture.preview);
     const sqlite3_int64 now = CurrentUnixMilliseconds();
-    Exec("BEGIN IMMEDIATE;");
-    try {
+    auto transaction = BeginTransaction();
+    {
         sqlite3_int64 existing_id = 0;
         bool existing = false;
         {
             Statement find(m_db, "SELECT id FROM history_items WHERE fingerprint = ?1 LIMIT 1;");
             BindText16(m_db, find.get(), 1, capture.fingerprint);
-            if (sqlite3_step(find.get()) == SQLITE_ROW) {
+            const int result = sqlite3_step(find.get());
+            if (result == SQLITE_ROW) {
                 existing_id = sqlite3_column_int64(find.get(), 0);
                 existing = true;
+            } else if (result != SQLITE_DONE) {
+                throw MakeSqliteError(m_db, "Unable to find clipboard history");
             }
         }
 
@@ -528,13 +600,7 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
 
         TrimUnpinned(bounded_size);
 
-        Exec("COMMIT;");
-    } catch (...) {
-        try {
-            Exec("ROLLBACK;");
-        } catch (...) {
-        }
-        throw;
+        transaction.Commit();
     }
 }
 
@@ -599,6 +665,21 @@ std::vector<ClipboardItem> Database::SearchHistory(
     };
 
     bool fuzzyResults = false;
+    std::optional<std::wregex> regex;
+    if (!query.empty() && (search_mode == 2 || search_mode == 3)) {
+        try {
+            regex.emplace(std::wstring(query));
+        } catch (const std::regex_error&) {
+            regex.reset();
+        }
+    }
+    const auto matchesRegex = [&regex](std::wstring_view text) {
+        if (!regex) {
+            return false;
+        }
+        const std::wstring value(text);
+        return std::regex_search(value, *regex);
+    };
     std::vector<ClipboardItem> filtered;
     filtered.reserve(all.size());
     if (query.empty()) {
@@ -625,7 +706,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         }
     } else if (search_mode == 2) {
         for (auto &item : all) {
-            if (MatchRegex(searchable(item), query)) {
+            if (matchesRegex(searchable(item))) {
                 filtered.push_back(std::move(item));
             }
         }
@@ -637,7 +718,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         }
         if (filtered.empty()) {
             for (auto &item : all) {
-                if (MatchRegex(searchable(item), query)) {
+                if (matchesRegex(searchable(item))) {
                     filtered.push_back(std::move(item));
                 }
             }
@@ -686,8 +767,12 @@ std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_data)
         "FROM history_items WHERE id = ?1 LIMIT 1;"
     );
     CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, id), "Unable to bind item id");
-    if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+    const int result = sqlite3_step(statement.get());
+    if (result == SQLITE_DONE) {
         return std::nullopt;
+    }
+    if (result != SQLITE_ROW) {
+        throw MakeSqliteError(m_db, "Unable to read clipboard item");
     }
 
     ClipboardItem item;
@@ -709,13 +794,15 @@ std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_data)
     return item;
 }
 
-std::vector<ClipboardItem> Database::GetPinnedItems() const {
+std::vector<ClipboardItem> Database::GetPinnedItems(bool load_data) const {
     std::vector<ClipboardItem> pinned;
     for (ClipboardItem &metadata : SearchHistory({}, 0, 0, false)) {
         if (!metadata.pinned) {
             continue;
         }
-        if (auto item = GetItem(metadata.id, true)) {
+        if (!load_data) {
+            pinned.push_back(std::move(metadata));
+        } else if (auto item = GetItem(metadata.id, true)) {
             pinned.push_back(std::move(*item));
         }
     }
@@ -795,8 +882,8 @@ void Database::UpdatePinnedItem(
         reinterpret_cast<const unsigned char *>(content.data()) + (content.size() + 1) * sizeof(wchar_t)
     );
 
-    Exec("BEGIN IMMEDIATE;");
-    try {
+    auto transaction = BeginTransaction();
+    {
         Statement update(
             m_db,
             "UPDATE history_items SET pin = ?1, pinned = 1, title = ?2, content = ?3, "
@@ -828,13 +915,7 @@ void Database::UpdatePinnedItem(
         if (sqlite3_step(insert_data.get()) != SQLITE_DONE) {
             throw MakeSqliteError(m_db, "Unable to save pinned text");
         }
-        Exec("COMMIT;");
-    } catch (...) {
-        try {
-            Exec("ROLLBACK;");
-        } catch (...) {
-        }
-        throw;
+        transaction.Commit();
     }
 }
 
@@ -859,7 +940,14 @@ void Database::UpdatePinnedMetadata(
 void Database::RegenerateTitles(bool show_special_symbols) const {
     Statement select(m_db, "SELECT id, content FROM history_items WHERE title_custom = 0;");
     std::vector<std::pair<sqlite3_int64, std::wstring>> values;
-    while (sqlite3_step(select.get()) == SQLITE_ROW) {
+    while (true) {
+        const int result = sqlite3_step(select.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw MakeSqliteError(m_db, "Unable to read history titles");
+        }
         values.emplace_back(
             sqlite3_column_int64(select.get(), 0),
             MakeTitle(ColumnText16(select.get(), 1), show_special_symbols)
@@ -909,8 +997,8 @@ void Database::MigrateLegacyHistory() const {
     }
 
     if (TableExists(m_db, "clipboard_history")) {
-        Exec("BEGIN IMMEDIATE;");
-        try {
+        auto transaction = BeginTransaction();
+        {
             Statement select(m_db, "SELECT id, content, copied_at FROM clipboard_history ORDER BY copied_at ASC, id ASC;");
             Statement insert_item(
                 m_db,
@@ -922,7 +1010,14 @@ void Database::MigrateLegacyHistory() const {
                 m_db,
                 "INSERT OR IGNORE INTO history_data(item_id, format_name, format_id, data) VALUES(?1, ?2, ?3, ?4);"
             );
-            while (sqlite3_step(select.get()) == SQLITE_ROW) {
+            while (true) {
+                const int result = sqlite3_step(select.get());
+                if (result == SQLITE_DONE) {
+                    break;
+                }
+                if (result != SQLITE_ROW) {
+                    throw MakeSqliteError(m_db, "Unable to read legacy history");
+                }
                 const sqlite3_int64 old_id = sqlite3_column_int64(select.get(), 0);
                 const std::wstring content = ColumnText16(select.get(), 1);
                 const sqlite3_int64 copied_at = sqlite3_column_int64(select.get(), 2);
@@ -955,13 +1050,7 @@ void Database::MigrateLegacyHistory() const {
                     throw MakeSqliteError(m_db, "Unable to migrate legacy clipboard data");
                 }
             }
-            Exec("COMMIT;");
-        } catch (...) {
-            try {
-                Exec("ROLLBACK;");
-            } catch (...) {
-            }
-            throw;
+            transaction.Commit();
         }
     }
     SetSetting(L"schema.history_v2", L"1");

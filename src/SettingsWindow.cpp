@@ -1143,7 +1143,7 @@ void SettingsWindow::RefreshPinsList() {
         previous_selection = m_pins[current_selected].id;
     }
 
-    m_pins = m_database.GetPinnedItems();
+    m_pins = m_database.GetPinnedItems(false);
     std::stable_sort(m_pins.begin(), m_pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
         if (lhs.first_copied_at != rhs.first_copied_at) {
             return lhs.first_copied_at < rhs.first_copied_at;
@@ -1311,9 +1311,9 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
     }
 }
 
-void SettingsWindow::NotifyOwner() {
+void SettingsWindow::NotifyOwner(std::uint32_t updateMask) {
     if (m_owner != nullptr && ::IsWindow(m_owner)) {
-        SendMessageW(m_owner, AppConstants::kSettingsChangedMessage, 0, 0);
+        ::PostMessageW(m_owner, AppConstants::kUiUpdateMessage, updateMask, 0);
     }
 }
 
@@ -1471,19 +1471,25 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     }
     if (id == kIAdd && notification == BN_CLICKED) {
         if (m_ignorePageObjects[m_ignorePage] != nullptr) {
-            m_ignorePageObjects[m_ignorePage]->AddValue();
+            if (m_ignorePageObjects[m_ignorePage]->AddValue()) {
+                NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
+            }
         }
         return 0;
     }
     if (id == kIRemove && notification == BN_CLICKED) {
         if (m_ignorePageObjects[m_ignorePage] != nullptr) {
-            m_ignorePageObjects[m_ignorePage]->RemoveValue();
+            if (m_ignorePageObjects[m_ignorePage]->RemoveValue()) {
+                NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
+            }
         }
         return 0;
     }
     if (id == kIReset && notification == BN_CLICKED) {
         if (m_ignorePageObjects[m_ignorePage] != nullptr) {
-            m_ignorePageObjects[m_ignorePage]->ResetToDefaults();
+            if (m_ignorePageObjects[m_ignorePage]->ResetToDefaults()) {
+                NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
+            }
         }
         return 0;
     }
@@ -1541,13 +1547,17 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         HWND currentIgnoreList = ::GetDlgItem(m_ignorePageObjects[m_ignorePage]->GetPageWindow(), IDC_I_LIST);
         if (header->hwndFrom == currentIgnoreList) {
             if (header->code == NM_DBLCLK) {
-                m_ignorePageObjects[m_ignorePage]->EditValue();
+                if (m_ignorePageObjects[m_ignorePage]->EditValue()) {
+                    NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
+                }
                 return 0;
             }
             if (header->code == LVN_KEYDOWN) {
                 const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(lParam);
                 if (key != nullptr && key->wVKey == VK_DELETE) {
-                    m_ignorePageObjects[m_ignorePage]->RemoveValue();
+                    if (m_ignorePageObjects[m_ignorePage]->RemoveValue()) {
+                        NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
+                    }
                     return 0;
                 }
             }
