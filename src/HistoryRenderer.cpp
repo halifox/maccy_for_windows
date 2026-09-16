@@ -176,8 +176,8 @@ std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
     if (!item.title.empty()) {
         return item.title;
     }
-    if (!item.content.empty()) {
-        return PreviewText(item.content);
+    if (!item.preview.empty()) {
+        return PreviewText(item.preview);
     }
     if (item.has_image) {
         return L"[图片]";

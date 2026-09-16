@@ -8,7 +8,7 @@
 - 文本、HTML、RTF、文件（`CF_HDROP`）和 DIB/DIBV5 图片的剪贴板历史保存与恢复。
 - 精确、模糊、正则和混合搜索；置顶、删除、预览、复制/粘贴、去除格式。
 - maccy 2.7.1 设置页对应的通用、外观、存储、忽略、置顶和高级功能。
-- SQLite WAL 存储；历史元数据常驻内存，原始剪贴板 BLOB 在实际恢复时按需加载。
+- SQLite WAL 保存历史元数据和短预览；完整剪贴板格式保存在数据库旁的 payload 文件中，仅在预览或粘贴时按需加载。
 
 完整实现范围、构建结果以及 Windows 平台差异见 [TASK_REPORT.md](TASK_REPORT.md)。
 
@@ -26,3 +26,5 @@ cmake --build .\cmake-build-release --config Release --parallel 2
 ```text
 %LOCALAPPDATA%\maccy\maccy.db
 ```
+
+完整剪贴板数据保存在同目录下的 `maccy.db.payloads` 文件夹中。

@@ -88,7 +88,7 @@ std::wstring FullText(const ClipboardItem &item) {
         return result;
     }
 
-    return item.content;
+    return item.preview;
 }
 
 HBITMAP CreateBitmapFromDib(const std::vector<unsigned char> &bytes) {

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -12,10 +13,11 @@
 #include <windows.h>
 #include <sqlite3.h>
 
+class ClipboardPayloadStore;
+
 // A clipboard item is represented as a small metadata record until it is
-// pasted. The actual clipboard formats stay in SQLite and are loaded on
-// demand, which keeps the resident process from retaining image and file
-// payloads for the whole history in memory.
+// previewed or pasted. The complete clipboard formats are kept in the
+// filesystem and loaded on demand.
 struct ClipboardFormatData {
     std::wstring name;
     UINT format = 0;
@@ -36,7 +38,7 @@ struct ClipboardCapture {
 struct ClipboardItem {
     sqlite3_int64 id = 0;
     std::wstring title;
-    std::wstring content;
+    std::wstring preview;
     std::wstring application;
     std::wstring pin;
     sqlite3_int64 first_copied_at = 0;
@@ -97,8 +99,8 @@ public:
         int sort_by,
         bool pins_at_bottom
     ) const;
-    std::optional<ClipboardItem> GetItem(sqlite3_int64 id, bool load_data = true) const;
-    std::vector<ClipboardItem> GetPinnedItems(bool load_data = false) const;
+    std::optional<ClipboardItem> GetItem(sqlite3_int64 id, bool load_payload = false) const;
+    std::vector<ClipboardItem> GetPinnedItems(bool load_payload = false) const;
 
     void MarkCopied(sqlite3_int64 id) const;
     void DeleteItem(sqlite3_int64 id) const;
@@ -109,7 +111,7 @@ public:
         sqlite3_int64 id,
         std::wstring_view pin_key,
         std::wstring_view title,
-        std::wstring_view content
+        std::wstring_view text
     ) const;
     void UpdatePinnedMetadata(
         sqlite3_int64 id,
@@ -123,15 +125,15 @@ public:
     const std::filesystem::path &Path() const noexcept { return m_path; }
 
 private:
-    friend class SchemaMigrationManager;
-
     void Exec(std::string_view sql) const;
-    void RunSchemaMigrations() const;
+    void InitializeHistorySchema();
     sqlite3_int64 CountRows(const char *table) const;
     const char *ListTable(DatabaseList list) const;
-    void LoadData(ClipboardItem &item) const;
-    void MigrateLegacyHistory() const;
+    std::vector<sqlite3_int64> SelectItemIds(std::string_view condition) const;
+    void RemovePayloads(const std::vector<sqlite3_int64>& ids) const;
+    void LoadPayload(ClipboardItem &item) const;
 
     sqlite3 *m_db = nullptr;
     std::filesystem::path m_path;
+    std::unique_ptr<ClipboardPayloadStore> m_payloadStore;
 };

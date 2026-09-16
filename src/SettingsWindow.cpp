@@ -15,6 +15,24 @@
 
 #include "PinKeys.h"
 
+std::wstring PinTextContent(const ClipboardItem &item) {
+    for (const ClipboardFormatData &data : item.data) {
+        if (data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT") {
+            if (data.bytes.size() < sizeof(wchar_t)) {
+                return {};
+            }
+            const auto *text = reinterpret_cast<const wchar_t *>(data.bytes.data());
+            size_t length = 0;
+            const size_t capacity = data.bytes.size() / sizeof(wchar_t);
+            while (length < capacity && text[length] != L'\0') {
+                ++length;
+            }
+            return std::wstring(text, length);
+        }
+    }
+    return {};
+}
+
 // EditPinDialog 实现
 EditPinDialog::EditPinDialog(Database &database, const AppSettings &settings, sqlite3_int64 item_id, const std::vector<ClipboardItem> &pins)
     : m_database(database), m_settings(settings), m_itemId(item_id), m_pins(pins) {
@@ -30,7 +48,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     HWND hintLabel = GetDlgItem(IDC_P_CONTENT_HINT);
 
     // 加载当前项目数据
-    std::optional<ClipboardItem> itemOpt = m_database.GetItem(m_itemId);
+    std::optional<ClipboardItem> itemOpt = m_database.GetItem(m_itemId, true);
     if (!itemOpt) {
         EndDialog(IDCANCEL);
         return TRUE;
@@ -39,7 +57,10 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     ClipboardItem item = std::move(*itemOpt);
     m_key = item.pin;
     m_title = item.title;
-    m_originalContent = item.content;
+    m_originalContent = PinTextContent(item);
+    if (m_originalContent.empty()) {
+        m_originalContent = item.preview;
+    }
 
     // 填充键位下拉框
     for (wchar_t ch = L'a'; ch <= L'z'; ++ch) {
@@ -378,24 +399,6 @@ void SetControlFont(HWND window) {
     if (window != nullptr) {
         SendMessageW(window, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
     }
-}
-
-std::wstring PinTextContent(const ClipboardItem &item) {
-    for (const ClipboardFormatData &data : item.data) {
-        if (data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT") {
-            if (data.bytes.size() < sizeof(wchar_t)) {
-                return {};
-            }
-            const auto *text = reinterpret_cast<const wchar_t *>(data.bytes.data());
-            size_t length = 0;
-            const size_t capacity = data.bytes.size() / sizeof(wchar_t);
-            while (length < capacity && text[length] != L'\0') {
-                ++length;
-            }
-            return std::wstring(text, length);
-        }
-    }
-    return {};
 }
 
 int SelectedListViewItem(HWND list) {
@@ -1171,7 +1174,7 @@ void SettingsWindow::RefreshPinsList() {
         if (item.has_text) {
             content = PinTextContent(item);
             if (content.empty()) {
-                content = item.content;
+                content = item.preview;
             }
         } else {
             content = L"不可编辑的内容（图像或文件）";

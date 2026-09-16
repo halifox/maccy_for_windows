@@ -40,6 +40,7 @@ add_executable(maccy WIN32
         src/HistoryRenderer.cpp
         src/KeyboardHandler.cpp
         src/Database.cpp
+        src/ClipboardPayloadStore.cpp
         src/PinKeys.cpp
         src/Settings.cpp
         src/SettingsWindow.cpp

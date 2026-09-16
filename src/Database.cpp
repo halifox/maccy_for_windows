@@ -1,4 +1,5 @@
 #include "Database.h"
+#include "ClipboardPayloadStore.h"
 
 #include <algorithm>
 #include <chrono>
@@ -65,24 +66,6 @@ void BindText16(sqlite3 *db, sqlite3_stmt *statement, int index, std::wstring_vi
     );
 }
 
-void BindBlob(sqlite3 *db, sqlite3_stmt *statement, int index, const std::vector<unsigned char> &bytes) {
-    if (bytes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
-        throw std::runtime_error("Clipboard format is too large");
-    }
-
-    CheckSqliteResult(
-        db,
-        sqlite3_bind_blob(
-            statement,
-            index,
-            bytes.empty() ? nullptr : bytes.data(),
-            static_cast<int>(bytes.size()),
-            SQLITE_TRANSIENT
-        ),
-        "Unable to bind SQLite blob"
-    );
-}
-
 std::wstring ColumnText16(sqlite3_stmt *statement, int column) {
     const auto *text = static_cast<const wchar_t *>(sqlite3_column_text16(statement, column));
     const int bytes = sqlite3_column_bytes16(statement, column);
@@ -95,26 +78,6 @@ std::wstring ColumnText16(sqlite3_stmt *statement, int column) {
 sqlite3_int64 CurrentUnixMilliseconds() {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-}
-
-bool TableExists(sqlite3 *db, const char *table) {
-    Statement statement(
-        db,
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1 LIMIT 1;"
-    );
-    CheckSqliteResult(
-        db,
-        sqlite3_bind_text(statement.get(), 1, table, -1, SQLITE_TRANSIENT),
-        "Unable to bind table name"
-    );
-    const int result = sqlite3_step(statement.get());
-    if (result == SQLITE_ROW) {
-        return true;
-    }
-    if (result == SQLITE_DONE) {
-        return false;
-    }
-    throw MakeSqliteError(db, "Unable to inspect SQLite schema");
 }
 
 std::wstring Lower(std::wstring_view value) {
@@ -228,46 +191,6 @@ std::optional<double> FuzzyScore(std::wstring_view text, std::wstring_view patte
 
 } // namespace
 
-class SchemaMigrationManager {
-public:
-    static void Run(const Database& database) {
-        int version = 0;
-        if (const auto stored = database.GetSetting(L"schema.version")) {
-            try {
-                version = std::stoi(*stored);
-            } catch (...) {
-                version = 0;
-            }
-        }
-        const int stored_version = version;
-
-        if (version < 1) {
-            database.MigrateLegacyHistory();
-            version = 1;
-        }
-        if (version < 2) {
-            if (!database.GetSetting(L"schema.compactPreview_v1")) {
-                database.Exec(
-                    "UPDATE history_items SET content = substr(content, 1, 4096) "
-                    "WHERE length(content) > 4096;"
-                );
-                database.SetSetting(L"schema.compactPreview_v1", L"1");
-            }
-            version = 2;
-        }
-        if (version < 3) {
-            if (!database.GetSetting(L"defaults.ignoredFormatsInitialized")) {
-                database.ReplaceList(DatabaseList::IgnoredFormats, DefaultIgnoredFormats());
-                database.SetSetting(L"defaults.ignoredFormatsInitialized", L"1");
-            }
-            version = 3;
-        }
-        if (stored_version != 3) {
-            database.SetSetting(L"schema.version", L"3");
-        }
-    }
-};
-
 Database::Transaction::Transaction(const Database& database)
     : m_database(&database) {
     m_database->Exec("BEGIN IMMEDIATE;");
@@ -312,7 +235,11 @@ void Database::Transaction::Commit() {
     m_committed = true;
 }
 
-Database::Database(const std::filesystem::path &path) : m_path(path) {
+Database::Database(const std::filesystem::path &path)
+    : m_path(path),
+      m_payloadStore(std::make_unique<ClipboardPayloadStore>(
+          path.parent_path() / (path.filename().wstring() + L".payloads")
+      )) {
     const auto parent = path.parent_path();
     if (!parent.empty()) {
         std::filesystem::create_directories(parent);
@@ -353,39 +280,11 @@ Database::Database(const std::filesystem::path &path) : m_path(path) {
             "value TEXT PRIMARY KEY"
             ");"
         );
-        Exec(
-            "CREATE TABLE IF NOT EXISTS history_items ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "fingerprint TEXT NOT NULL UNIQUE,"
-            "title TEXT NOT NULL DEFAULT '',"
-            "content TEXT NOT NULL DEFAULT '',"
-            "application TEXT NOT NULL DEFAULT '',"
-            "pin TEXT,"
-            "pinned INTEGER NOT NULL DEFAULT 0,"
-            "first_copied_at INTEGER NOT NULL,"
-            "copied_at INTEGER NOT NULL,"
-            "copy_count INTEGER NOT NULL DEFAULT 1,"
-            "title_custom INTEGER NOT NULL DEFAULT 0,"
-            "has_text INTEGER NOT NULL DEFAULT 0,"
-            "has_image INTEGER NOT NULL DEFAULT 0,"
-            "has_files INTEGER NOT NULL DEFAULT 0"
-            ");"
-        );
-        Exec(
-            "CREATE INDEX IF NOT EXISTS idx_history_items_copied_at "
-            "ON history_items(copied_at DESC);"
-        );
-        Exec(
-            "CREATE TABLE IF NOT EXISTS history_data ("
-            "item_id INTEGER NOT NULL,"
-            "format_name TEXT NOT NULL,"
-            "format_id INTEGER NOT NULL,"
-            "data BLOB NOT NULL,"
-            "PRIMARY KEY(item_id, format_name),"
-            "FOREIGN KEY(item_id) REFERENCES history_items(id) ON DELETE CASCADE"
-            ");"
-        );
-        RunSchemaMigrations();
+        InitializeHistorySchema();
+        if (!GetSetting(L"defaults.ignoredFormatsInitialized")) {
+            ReplaceList(DatabaseList::IgnoredFormats, DefaultIgnoredFormats());
+            SetSetting(L"defaults.ignoredFormatsInitialized", L"1");
+        }
     } catch (...) {
         sqlite3_close(m_db);
         m_db = nullptr;
@@ -399,8 +298,43 @@ Database::~Database() {
     }
 }
 
-void Database::RunSchemaMigrations() const {
-    SchemaMigrationManager::Run(*this);
+void Database::InitializeHistorySchema() {
+    constexpr std::wstring_view kSchemaVersion = L"4";
+    const bool reset_history = GetSetting(L"schema.version") !=
+        std::optional<std::wstring>(kSchemaVersion);
+    if (reset_history) {
+        m_payloadStore->Clear();
+        Exec("DROP TABLE IF EXISTS history_data;");
+        Exec("DROP TABLE IF EXISTS history_items;");
+        Exec("DROP TABLE IF EXISTS clipboard_history;");
+        Exec("PRAGMA wal_checkpoint(TRUNCATE);");
+        Exec("VACUUM;");
+        Exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    }
+
+    Exec(
+        "CREATE TABLE IF NOT EXISTS history_items ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "fingerprint TEXT NOT NULL UNIQUE,"
+        "title TEXT NOT NULL DEFAULT '',"
+        "preview TEXT NOT NULL DEFAULT '',"
+        "application TEXT NOT NULL DEFAULT '',"
+        "pin TEXT,"
+        "pinned INTEGER NOT NULL DEFAULT 0,"
+        "first_copied_at INTEGER NOT NULL,"
+        "copied_at INTEGER NOT NULL,"
+        "copy_count INTEGER NOT NULL DEFAULT 1,"
+        "title_custom INTEGER NOT NULL DEFAULT 0,"
+        "has_text INTEGER NOT NULL DEFAULT 0,"
+        "has_image INTEGER NOT NULL DEFAULT 0,"
+        "has_files INTEGER NOT NULL DEFAULT 0"
+        ");"
+    );
+    Exec(
+        "CREATE INDEX IF NOT EXISTS idx_history_items_copied_at "
+        "ON history_items(copied_at DESC);"
+    );
+    SetSetting(L"schema.version", kSchemaVersion);
 }
 
 void Database::Exec(const std::string_view sql) const {
@@ -517,28 +451,23 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
     const int bounded_size = std::clamp(max_unpinned, 1, 999);
     const std::wstring stored_preview = StoredPreview(capture.preview);
     const sqlite3_int64 now = CurrentUnixMilliseconds();
-    auto transaction = BeginTransaction();
+    sqlite3_int64 item_id = 0;
     {
-        sqlite3_int64 existing_id = 0;
-        bool existing = false;
-        {
-            Statement find(m_db, "SELECT id FROM history_items WHERE fingerprint = ?1 LIMIT 1;");
-            BindText16(m_db, find.get(), 1, capture.fingerprint);
-            const int result = sqlite3_step(find.get());
-            if (result == SQLITE_ROW) {
-                existing_id = sqlite3_column_int64(find.get(), 0);
-                existing = true;
-            } else if (result != SQLITE_DONE) {
-                throw MakeSqliteError(m_db, "Unable to find clipboard history");
-            }
+        auto transaction = BeginTransaction();
+        Statement find(m_db, "SELECT id FROM history_items WHERE fingerprint = ?1 LIMIT 1;");
+        BindText16(m_db, find.get(), 1, capture.fingerprint);
+        const int result = sqlite3_step(find.get());
+        const bool existing = result == SQLITE_ROW;
+        if (result != SQLITE_ROW && result != SQLITE_DONE) {
+            throw MakeSqliteError(m_db, "Unable to find clipboard history");
         }
-
         if (existing) {
+            item_id = sqlite3_column_int64(find.get(), 0);
             Statement update(
                 m_db,
                 "UPDATE history_items SET "
                 "title = CASE WHEN title_custom = 0 THEN ?1 ELSE title END, "
-                "content = ?2, application = ?3, copied_at = ?4, "
+                "preview = ?2, application = ?3, copied_at = ?4, "
                 "copy_count = copy_count + 1, has_text = ?5, has_image = ?6, has_files = ?7 "
                 "WHERE id = ?8;"
             );
@@ -549,7 +478,7 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
             CheckSqliteResult(m_db, sqlite3_bind_int(update.get(), 5, capture.has_text ? 1 : 0), "Unable to bind text flag");
             CheckSqliteResult(m_db, sqlite3_bind_int(update.get(), 6, capture.has_image ? 1 : 0), "Unable to bind image flag");
             CheckSqliteResult(m_db, sqlite3_bind_int(update.get(), 7, capture.has_files ? 1 : 0), "Unable to bind file flag");
-            CheckSqliteResult(m_db, sqlite3_bind_int64(update.get(), 8, existing_id), "Unable to bind item id");
+            CheckSqliteResult(m_db, sqlite3_bind_int64(update.get(), 8, item_id), "Unable to bind item id");
             if (sqlite3_step(update.get()) != SQLITE_DONE) {
                 throw MakeSqliteError(m_db, "Unable to update clipboard history");
             }
@@ -557,7 +486,7 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
             Statement insert(
                 m_db,
                 "INSERT INTO history_items("
-                "fingerprint, title, content, application, first_copied_at, copied_at, "
+                "fingerprint, title, preview, application, first_copied_at, copied_at, "
                 "copy_count, has_text, has_image, has_files"
                 ") VALUES(?1, ?2, ?3, ?4, ?5, ?5, 1, ?6, ?7, ?8);"
             );
@@ -572,40 +501,40 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
             if (sqlite3_step(insert.get()) != SQLITE_DONE) {
                 throw MakeSqliteError(m_db, "Unable to insert clipboard history");
             }
-            existing_id = sqlite3_last_insert_rowid(m_db);
+            item_id = sqlite3_last_insert_rowid(m_db);
         }
 
-        Statement delete_data(m_db, "DELETE FROM history_data WHERE item_id = ?1;");
-        CheckSqliteResult(m_db, sqlite3_bind_int64(delete_data.get(), 1, existing_id), "Unable to bind item id");
-        if (sqlite3_step(delete_data.get()) != SQLITE_DONE) {
-            throw MakeSqliteError(m_db, "Unable to replace clipboard data");
-        }
-
-        Statement insert_data(
-            m_db,
-            "INSERT INTO history_data(item_id, format_name, format_id, data) "
-            "VALUES(?1, ?2, ?3, ?4);"
-        );
-        for (const ClipboardFormatData &data : capture.data) {
-            sqlite3_reset(insert_data.get());
-            sqlite3_clear_bindings(insert_data.get());
-            CheckSqliteResult(m_db, sqlite3_bind_int64(insert_data.get(), 1, existing_id), "Unable to bind item id");
-            BindText16(m_db, insert_data.get(), 2, data.name);
-            CheckSqliteResult(m_db, sqlite3_bind_int(insert_data.get(), 3, static_cast<int>(data.format)), "Unable to bind format id");
-            BindBlob(m_db, insert_data.get(), 4, data.bytes);
-            if (sqlite3_step(insert_data.get()) != SQLITE_DONE) {
-                throw MakeSqliteError(m_db, "Unable to save clipboard data");
-            }
-        }
-
-        TrimUnpinned(bounded_size);
-
+        m_payloadStore->Save(item_id, capture.data);
         transaction.Commit();
     }
+    TrimUnpinned(bounded_size);
 }
 
 void Database::TrimUnpinned(int max_unpinned) const {
     const int bounded_size = std::clamp(max_unpinned, 1, 999);
+    Statement select(
+        m_db,
+        "SELECT id FROM history_items WHERE pinned = 0 AND id NOT IN ("
+        "SELECT id FROM history_items WHERE pinned = 0 "
+        "ORDER BY copied_at DESC, id DESC LIMIT ?1);"
+    );
+    CheckSqliteResult(m_db, sqlite3_bind_int(select.get(), 1, bounded_size), "Unable to bind history size");
+    std::vector<sqlite3_int64> removed_ids;
+    while (true) {
+        const int result = sqlite3_step(select.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw MakeSqliteError(m_db, "Unable to find expired clipboard history");
+        }
+        removed_ids.push_back(sqlite3_column_int64(select.get(), 0));
+    }
+    if (removed_ids.empty()) {
+        return;
+    }
+
+    auto transaction = BeginTransaction();
     Statement trim(
         m_db,
         "DELETE FROM history_items WHERE pinned = 0 AND id NOT IN ("
@@ -615,6 +544,10 @@ void Database::TrimUnpinned(int max_unpinned) const {
     CheckSqliteResult(m_db, sqlite3_bind_int(trim.get(), 1, bounded_size), "Unable to bind history size");
     if (sqlite3_step(trim.get()) != SQLITE_DONE) {
         throw MakeSqliteError(m_db, "Unable to trim clipboard history");
+    }
+    transaction.Commit();
+    for (const sqlite3_int64 id : removed_ids) {
+        m_payloadStore->Remove(id);
     }
 }
 
@@ -626,7 +559,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
 ) const {
     Statement statement(
         m_db,
-        "SELECT id, title, content, application, COALESCE(pin, ''), pinned, "
+        "SELECT id, title, preview, application, COALESCE(pin, ''), pinned, "
         "first_copied_at, copied_at, copy_count, has_text, has_image, has_files "
         "FROM history_items ORDER BY id DESC;"
     );
@@ -644,7 +577,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         ClipboardItem item;
         item.id = sqlite3_column_int64(statement.get(), 0);
         item.title = ColumnText16(statement.get(), 1);
-        item.content = ColumnText16(statement.get(), 2);
+        item.preview = ColumnText16(statement.get(), 2);
         item.application = ColumnText16(statement.get(), 3);
         item.pin = ColumnText16(statement.get(), 4);
         item.pinned = sqlite3_column_int(statement.get(), 5) != 0;
@@ -661,7 +594,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         if (!item.title.empty()) {
             return item.title;
         }
-        return item.content;
+        return item.preview;
     };
 
     bool fuzzyResults = false;
@@ -759,10 +692,10 @@ std::vector<ClipboardItem> Database::SearchHistory(
     return filtered;
 }
 
-std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_data) const {
+std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_payload) const {
     Statement statement(
         m_db,
-        "SELECT id, title, content, application, COALESCE(pin, ''), pinned, "
+        "SELECT id, title, preview, application, COALESCE(pin, ''), pinned, "
         "first_copied_at, copied_at, copy_count, has_text, has_image, has_files "
         "FROM history_items WHERE id = ?1 LIMIT 1;"
     );
@@ -778,7 +711,7 @@ std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_data)
     ClipboardItem item;
     item.id = sqlite3_column_int64(statement.get(), 0);
     item.title = ColumnText16(statement.get(), 1);
-    item.content = ColumnText16(statement.get(), 2);
+    item.preview = ColumnText16(statement.get(), 2);
     item.application = ColumnText16(statement.get(), 3);
     item.pin = ColumnText16(statement.get(), 4);
     item.pinned = sqlite3_column_int(statement.get(), 5) != 0;
@@ -788,19 +721,19 @@ std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_data)
     item.has_text = sqlite3_column_int(statement.get(), 9) != 0;
     item.has_image = sqlite3_column_int(statement.get(), 10) != 0;
     item.has_files = sqlite3_column_int(statement.get(), 11) != 0;
-    if (load_data) {
-        LoadData(item);
+    if (load_payload) {
+        LoadPayload(item);
     }
     return item;
 }
 
-std::vector<ClipboardItem> Database::GetPinnedItems(bool load_data) const {
+std::vector<ClipboardItem> Database::GetPinnedItems(bool load_payload) const {
     std::vector<ClipboardItem> pinned;
     for (ClipboardItem &metadata : SearchHistory({}, 0, 0, false)) {
         if (!metadata.pinned) {
             continue;
         }
-        if (!load_data) {
+        if (!load_payload) {
             pinned.push_back(std::move(metadata));
         } else if (auto item = GetItem(metadata.id, true)) {
             pinned.push_back(std::move(*item));
@@ -809,48 +742,70 @@ std::vector<ClipboardItem> Database::GetPinnedItems(bool load_data) const {
     return pinned;
 }
 
-void Database::LoadData(ClipboardItem &item) const {
-    Statement statement(
-        m_db,
-        "SELECT format_name, format_id, data FROM history_data "
-        "WHERE item_id = ?1 ORDER BY rowid ASC;"
-    );
-    CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, item.id), "Unable to bind item id");
+void Database::LoadPayload(ClipboardItem &item) const {
+    item.data = m_payloadStore->Load(item.id);
+}
+
+std::vector<sqlite3_int64> Database::SelectItemIds(std::string_view condition) const {
+    std::string sql = "SELECT id FROM history_items";
+    if (!condition.empty()) {
+        sql += " WHERE ";
+        sql += condition;
+    }
+    sql += ";";
+
+    Statement statement(m_db, sql.c_str());
+    std::vector<sqlite3_int64> ids;
     while (true) {
         const int result = sqlite3_step(statement.get());
         if (result == SQLITE_DONE) {
             break;
         }
         if (result != SQLITE_ROW) {
-            throw MakeSqliteError(m_db, "Unable to load clipboard data");
+            throw MakeSqliteError(m_db, "Unable to read clipboard item ids");
         }
+        ids.push_back(sqlite3_column_int64(statement.get(), 0));
+    }
+    return ids;
+}
 
-        ClipboardFormatData data;
-        data.name = ColumnText16(statement.get(), 0);
-        data.format = static_cast<UINT>(sqlite3_column_int(statement.get(), 1));
-        const auto *blob = static_cast<const unsigned char *>(sqlite3_column_blob(statement.get(), 2));
-        const int bytes = sqlite3_column_bytes(statement.get(), 2);
-        if (blob != nullptr && bytes > 0) {
-            data.bytes.assign(blob, blob + bytes);
-        }
-        item.data.push_back(std::move(data));
+void Database::RemovePayloads(const std::vector<sqlite3_int64>& ids) const {
+    for (const sqlite3_int64 id : ids) {
+        m_payloadStore->Remove(id);
     }
 }
 
 void Database::DeleteItem(sqlite3_int64 id) const {
-    Statement statement(m_db, "DELETE FROM history_items WHERE id = ?1;");
-    CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, id), "Unable to bind item id");
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw MakeSqliteError(m_db, "Unable to delete history item");
+    {
+        auto transaction = BeginTransaction();
+        Statement statement(m_db, "DELETE FROM history_items WHERE id = ?1;");
+        CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, id), "Unable to bind item id");
+        if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+            throw MakeSqliteError(m_db, "Unable to delete history item");
+        }
+        transaction.Commit();
     }
+    m_payloadStore->Remove(id);
 }
 
 void Database::DeleteUnpinned() const {
-    Exec("DELETE FROM history_items WHERE pinned = 0;");
+    const std::vector<sqlite3_int64> ids = SelectItemIds("pinned = 0");
+    {
+        auto transaction = BeginTransaction();
+        Exec("DELETE FROM history_items WHERE pinned = 0;");
+        transaction.Commit();
+    }
+    RemovePayloads(ids);
 }
 
 void Database::DeleteAll() const {
-    Exec("DELETE FROM history_items;");
+    const std::vector<sqlite3_int64> ids = SelectItemIds({});
+    {
+        auto transaction = BeginTransaction();
+        Exec("DELETE FROM history_items;");
+        transaction.Commit();
+    }
+    RemovePayloads(ids);
 }
 
 void Database::TogglePin(sqlite3_int64 id, std::wstring_view pin_key, bool pinned) const {
@@ -874,19 +829,21 @@ void Database::UpdatePinnedItem(
     sqlite3_int64 id,
     std::wstring_view pin_key,
     std::wstring_view title,
-    std::wstring_view content
+    std::wstring_view text
 ) const {
-    const std::wstring preview = MakeTitle(std::wstring(content), true);
-    const std::vector<unsigned char> bytes(
-        reinterpret_cast<const unsigned char *>(content.data()),
-        reinterpret_cast<const unsigned char *>(content.data()) + (content.size() + 1) * sizeof(wchar_t)
-    );
+    const std::wstring preview = StoredPreview(MakeTitle(std::wstring(text), true));
+    ClipboardFormatData data;
+    data.name = L"CF_UNICODETEXT";
+    data.format = CF_UNICODETEXT;
+    data.bytes.resize((text.size() + 1) * sizeof(wchar_t));
+    std::memcpy(data.bytes.data(), text.data(), text.size() * sizeof(wchar_t));
+    std::memset(data.bytes.data() + text.size() * sizeof(wchar_t), 0, sizeof(wchar_t));
 
-    auto transaction = BeginTransaction();
     {
+        auto transaction = BeginTransaction();
         Statement update(
             m_db,
-            "UPDATE history_items SET pin = ?1, pinned = 1, title = ?2, content = ?3, "
+            "UPDATE history_items SET pin = ?1, pinned = 1, title = ?2, preview = ?3, "
             "title_custom = 1, has_text = 1, has_image = 0, has_files = 0 "
             "WHERE id = ?4;"
         );
@@ -897,24 +854,7 @@ void Database::UpdatePinnedItem(
         if (sqlite3_step(update.get()) != SQLITE_DONE) {
             throw MakeSqliteError(m_db, "Unable to update pinned item");
         }
-
-        Statement delete_data(m_db, "DELETE FROM history_data WHERE item_id = ?1;");
-        CheckSqliteResult(m_db, sqlite3_bind_int64(delete_data.get(), 1, id), "Unable to bind item id");
-        if (sqlite3_step(delete_data.get()) != SQLITE_DONE) {
-            throw MakeSqliteError(m_db, "Unable to replace pinned data");
-        }
-
-        Statement insert_data(
-            m_db,
-            "INSERT INTO history_data(item_id, format_name, format_id, data) VALUES(?1, ?2, ?3, ?4);"
-        );
-        CheckSqliteResult(m_db, sqlite3_bind_int64(insert_data.get(), 1, id), "Unable to bind item id");
-        BindText16(m_db, insert_data.get(), 2, L"CF_UNICODETEXT");
-        CheckSqliteResult(m_db, sqlite3_bind_int(insert_data.get(), 3, CF_UNICODETEXT), "Unable to bind text format");
-        BindBlob(m_db, insert_data.get(), 4, bytes);
-        if (sqlite3_step(insert_data.get()) != SQLITE_DONE) {
-            throw MakeSqliteError(m_db, "Unable to save pinned text");
-        }
+        m_payloadStore->Save(id, {data});
         transaction.Commit();
     }
 }
@@ -938,7 +878,7 @@ void Database::UpdatePinnedMetadata(
 }
 
 void Database::RegenerateTitles(bool show_special_symbols) const {
-    Statement select(m_db, "SELECT id, content FROM history_items WHERE title_custom = 0;");
+    Statement select(m_db, "SELECT id, preview FROM history_items WHERE title_custom = 0;");
     std::vector<std::pair<sqlite3_int64, std::wstring>> values;
     while (true) {
         const int result = sqlite3_step(select.get());
@@ -988,72 +928,8 @@ std::uintmax_t Database::StorageBytes() const {
             total += std::filesystem::file_size(path, error);
         }
     }
+    total += m_payloadStore->StorageBytes();
     return total;
-}
-
-void Database::MigrateLegacyHistory() const {
-    if (GetSetting(L"schema.history_v2") == L"1") {
-        return;
-    }
-
-    if (TableExists(m_db, "clipboard_history")) {
-        auto transaction = BeginTransaction();
-        {
-            Statement select(m_db, "SELECT id, content, copied_at FROM clipboard_history ORDER BY copied_at ASC, id ASC;");
-            Statement insert_item(
-                m_db,
-                "INSERT OR IGNORE INTO history_items("
-                "fingerprint, title, content, first_copied_at, copied_at, copy_count, has_text"
-                ") VALUES(?1, ?2, ?3, ?4, ?4, 1, 1);"
-            );
-            Statement insert_data(
-                m_db,
-                "INSERT OR IGNORE INTO history_data(item_id, format_name, format_id, data) VALUES(?1, ?2, ?3, ?4);"
-            );
-            while (true) {
-                const int result = sqlite3_step(select.get());
-                if (result == SQLITE_DONE) {
-                    break;
-                }
-                if (result != SQLITE_ROW) {
-                    throw MakeSqliteError(m_db, "Unable to read legacy history");
-                }
-                const sqlite3_int64 old_id = sqlite3_column_int64(select.get(), 0);
-                const std::wstring content = ColumnText16(select.get(), 1);
-                const sqlite3_int64 copied_at = sqlite3_column_int64(select.get(), 2);
-                const std::wstring fingerprint = L"legacy:" + std::to_wstring(old_id);
-                const std::wstring title = MakeTitle(content, true);
-                const std::wstring stored_content = StoredPreview(content);
-
-                sqlite3_reset(insert_item.get());
-                sqlite3_clear_bindings(insert_item.get());
-                BindText16(m_db, insert_item.get(), 1, fingerprint);
-                BindText16(m_db, insert_item.get(), 2, title);
-                BindText16(m_db, insert_item.get(), 3, stored_content);
-                CheckSqliteResult(m_db, sqlite3_bind_int64(insert_item.get(), 4, copied_at), "Unable to bind legacy time");
-                if (sqlite3_step(insert_item.get()) != SQLITE_DONE) {
-                    throw MakeSqliteError(m_db, "Unable to migrate legacy history");
-                }
-                const sqlite3_int64 new_id = sqlite3_last_insert_rowid(m_db);
-
-                std::vector<unsigned char> bytes(
-                    reinterpret_cast<const unsigned char *>(content.data()),
-                    reinterpret_cast<const unsigned char *>(content.data()) + (content.size() + 1) * sizeof(wchar_t)
-                );
-                sqlite3_reset(insert_data.get());
-                sqlite3_clear_bindings(insert_data.get());
-                CheckSqliteResult(m_db, sqlite3_bind_int64(insert_data.get(), 1, new_id), "Unable to bind item id");
-                BindText16(m_db, insert_data.get(), 2, L"CF_UNICODETEXT");
-                CheckSqliteResult(m_db, sqlite3_bind_int(insert_data.get(), 3, CF_UNICODETEXT), "Unable to bind text format");
-                BindBlob(m_db, insert_data.get(), 4, bytes);
-                if (sqlite3_step(insert_data.get()) != SQLITE_DONE) {
-                    throw MakeSqliteError(m_db, "Unable to migrate legacy clipboard data");
-                }
-            }
-            transaction.Commit();
-        }
-    }
-    SetSetting(L"schema.history_v2", L"1");
 }
 
 void Database::MarkCopied(sqlite3_int64 id) const {
