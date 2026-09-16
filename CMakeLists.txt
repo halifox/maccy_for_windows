@@ -56,7 +56,7 @@ set_target_properties(maccy PROPERTIES
 )
 
 target_include_directories(maccy PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/WTL10_01_Release/Include"
+        "third_party/wtl"
 )
 
 target_link_libraries(maccy PRIVATE
