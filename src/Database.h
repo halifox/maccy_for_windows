@@ -13,8 +13,6 @@
 #include <windows.h>
 #include <sqlite3.h>
 
-class ClipboardPayloadStore;
-
 // A clipboard item is represented as a small metadata record until it is
 // previewed or pasted. The complete clipboard formats are kept in the
 // filesystem and loaded on demand.
@@ -125,6 +123,8 @@ public:
     const std::filesystem::path &Path() const noexcept { return m_path; }
 
 private:
+    class PayloadStore;
+
     void Exec(std::string_view sql) const;
     void CreateHistoryTables();
     sqlite3_int64 CountRows(const char *table) const;
@@ -135,5 +135,5 @@ private:
 
     sqlite3 *m_db = nullptr;
     std::filesystem::path m_path;
-    std::unique_ptr<ClipboardPayloadStore> m_payloadStore;
+    std::unique_ptr<PayloadStore> m_payloadStore;
 };
