@@ -548,6 +548,7 @@ SettingsWindow::SettingsWindow(Database &database, HWND owner)
 
 bool SettingsWindow::CreateOrShow() {
     if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+        LoadControlsFromSettings();
         ::SetWindowPos(
             m_hWnd,
             HWND_NOTOPMOST,
@@ -1225,6 +1226,7 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
     }
 
     const AppSettings previous = AppSettings::Load(m_database);
+    m_settings = previous;
     try {
         switch (m_currentPage) {
         case kPageGeneral:
@@ -1378,9 +1380,10 @@ void SettingsWindow::CheckForUpdatesNow() {
 }
 
 void SettingsWindow::ResetPopupPosition() {
-    m_settings.popup_x = 0;
-    m_settings.popup_y = 0;
     try {
+        m_settings = AppSettings::Load(m_database);
+        m_settings.popup_x = 0;
+        m_settings.popup_y = 0;
         m_settings.Save(m_database);
         NotifyOwner();
     } catch (const std::exception &error) {
