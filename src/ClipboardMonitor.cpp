@@ -124,6 +124,39 @@ std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
     return result;
 }
 
+bool IsKeyDown(int virtual_key) {
+    return (GetAsyncKeyState(virtual_key) & 0x8000) != 0;
+}
+
+bool IsControlOnlyDown() {
+    return IsKeyDown(VK_CONTROL) && !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT);
+}
+
+void SendControlVPaste() {
+    INPUT inputs[4]{};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = VK_CONTROL;
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = L'V';
+    inputs[2].type = INPUT_KEYBOARD;
+    inputs[2].ki.wVk = L'V';
+    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    inputs[3].type = INPUT_KEYBOARD;
+    inputs[3].ki.wVk = VK_CONTROL;
+    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+}
+
+void SendPasteWithHeldControl() {
+    INPUT inputs[2]{};
+    inputs[0].type = INPUT_KEYBOARD;
+    inputs[0].ki.wVk = L'V';
+    inputs[1].type = INPUT_KEYBOARD;
+    inputs[1].ki.wVk = L'V';
+    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+}
+
 } // namespace
 
 ClipboardMonitor::ClipboardMonitor(Database& database, AppSettings& settings)
@@ -603,26 +636,18 @@ void ClipboardMonitor::RestoreTargetFocusAndPaste(HWND target, HWND target_focus
         return;
     }
     if (PasteModifiersDown()) {
-        StartPasteTimer(target, target_focus);
+        if (IsControlOnlyDown()) {
+            SendPasteWithHeldControl();
+        } else {
+            StartPasteTimer(target, target_focus);
+        }
         return;
     }
-    INPUT inputs[4]{};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = VK_CONTROL;
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = L'V';
-    inputs[2].type = INPUT_KEYBOARD;
-    inputs[2].ki.wVk = L'V';
-    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[3].type = INPUT_KEYBOARD;
-    inputs[3].ki.wVk = VK_CONTROL;
-    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+    SendControlVPaste();
 }
 
 bool ClipboardMonitor::PasteModifiersDown() {
-    return (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
-           (GetAsyncKeyState(VK_MENU) & 0x8000) || (GetAsyncKeyState(VK_SHIFT) & 0x8000);
+    return IsKeyDown(VK_CONTROL) || IsKeyDown(VK_MENU) || IsKeyDown(VK_SHIFT);
 }
 
 void ClipboardMonitor::StartPasteTimer(HWND target, HWND focus) {
