@@ -603,10 +603,7 @@ void ClipboardMonitor::RestoreTargetFocusAndPaste(HWND target, HWND target_focus
         return;
     }
     if (PasteModifiersDown()) {
-        m_pendingPasteTarget = target;
-        m_pendingPasteFocus = target_focus;
-        m_pendingPasteDeadline = GetTickCount64() + 3000;
-        ::SetTimer(m_owner, AppConstants::Timer::kPaste, 15, nullptr);
+        StartPasteTimer(target, target_focus);
         return;
     }
     INPUT inputs[4]{};
@@ -636,14 +633,12 @@ void ClipboardMonitor::StartPasteTimer(HWND target, HWND focus) {
 }
 
 void ClipboardMonitor::OnPasteTimer(HWND mainWindow) {
-    if (GetForegroundWindow() != m_pendingPasteTarget || GetTickCount64() > m_pendingPasteDeadline) {
+    const HWND target = m_pendingPasteTarget;
+    const HWND focus = m_pendingPasteFocus;
+    if (GetForegroundWindow() != target || GetTickCount64() > m_pendingPasteDeadline) {
         StopPasteTimer(mainWindow);
     } else if (!PasteModifiersDown()) {
         StopPasteTimer(mainWindow);
-        const HWND target = m_pendingPasteTarget;
-        const HWND focus = m_pendingPasteFocus;
-        m_pendingPasteTarget = nullptr;
-        m_pendingPasteFocus = nullptr;
         RestoreTargetFocusAndPaste(target, focus, true);
     }
 }
@@ -651,6 +646,8 @@ void ClipboardMonitor::OnPasteTimer(HWND mainWindow) {
 void ClipboardMonitor::StopPasteTimer(HWND mainWindow) {
     KillTimer(mainWindow, AppConstants::Timer::kPaste);
     m_pendingPasteTarget = nullptr;
+    m_pendingPasteFocus = nullptr;
+    m_pendingPasteDeadline = 0;
 }
 
 void ClipboardMonitor::UpdateTrayTooltip(NOTIFYICONDATAW& notifyIcon, bool trayIconAdded) const {
