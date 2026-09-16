@@ -45,8 +45,10 @@ add_executable(maccy WIN32
         src/Settings.cpp
         src/SettingsWindow.cpp
         src/PreviewWindow.cpp
+        src/TrayIcon.cpp
         src/SettingsWindow.rc
         src/MainWindow.rc
+        src/TrayIcon.rc
 )
 
 set_target_properties(maccy PROPERTIES

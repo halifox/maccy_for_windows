@@ -232,6 +232,7 @@ private:
 
     // Tray icon
     NOTIFYICONDATAW m_notifyIcon{};
+    HICON m_trayIcon = nullptr;
     bool m_trayIconAdded = false;
 
     // State flags

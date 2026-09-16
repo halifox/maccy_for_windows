@@ -1,0 +1,24 @@
+#pragma code_page(65001)
+
+#include <winresrc.h>
+#include "resource.h"
+
+IDR_TRAY_MACCY_LIGHT_16 RCDATA "assets\\tray\\maccy_light_16.png"
+IDR_TRAY_MACCY_DARK_16 RCDATA "assets\\tray\\maccy_dark_16.png"
+IDR_TRAY_MACCY_LIGHT_32 RCDATA "assets\\tray\\maccy_light_32.png"
+IDR_TRAY_MACCY_DARK_32 RCDATA "assets\\tray\\maccy_dark_32.png"
+
+IDR_TRAY_CLIPBOARD_LIGHT_16 RCDATA "assets\\tray\\clipboard_light_16.png"
+IDR_TRAY_CLIPBOARD_DARK_16 RCDATA "assets\\tray\\clipboard_dark_16.png"
+IDR_TRAY_CLIPBOARD_LIGHT_32 RCDATA "assets\\tray\\clipboard_light_32.png"
+IDR_TRAY_CLIPBOARD_DARK_32 RCDATA "assets\\tray\\clipboard_dark_32.png"
+
+IDR_TRAY_SCISSORS_LIGHT_16 RCDATA "assets\\tray\\scissors_light_16.png"
+IDR_TRAY_SCISSORS_DARK_16 RCDATA "assets\\tray\\scissors_dark_16.png"
+IDR_TRAY_SCISSORS_LIGHT_32 RCDATA "assets\\tray\\scissors_light_32.png"
+IDR_TRAY_SCISSORS_DARK_32 RCDATA "assets\\tray\\scissors_dark_32.png"
+
+IDR_TRAY_PAPERCLIP_LIGHT_16 RCDATA "assets\\tray\\paperclip_light_16.png"
+IDR_TRAY_PAPERCLIP_DARK_16 RCDATA "assets\\tray\\paperclip_dark_16.png"
+IDR_TRAY_PAPERCLIP_LIGHT_32 RCDATA "assets\\tray\\paperclip_light_32.png"
+IDR_TRAY_PAPERCLIP_DARK_32 RCDATA "assets\\tray\\paperclip_dark_32.png"

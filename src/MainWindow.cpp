@@ -2,6 +2,7 @@
 #include "Constants.h"
 #include "PinKeys.h"
 #include "SettingsWindow.h"
+#include "TrayIcon.h"
 #include "UiFont.h"
 
 #include <algorithm>
@@ -49,19 +50,6 @@ std::wstring ReadWindowText(HWND window) {
     const int copied = GetWindowTextW(window, text.data(), length + 1);
     text.resize(static_cast<size_t>(std::max(copied, 0)));
     return text;
-}
-
-HICON TrayIconForName(std::wstring_view name) {
-    if (name == L"clipboard") {
-        return LoadIconW(nullptr, IDI_INFORMATION);
-    }
-    if (name == L"scissors") {
-        return LoadIconW(nullptr, IDI_WARNING);
-    }
-    if (name == L"paperclip") {
-        return LoadIconW(nullptr, IDI_QUESTION);
-    }
-    return LoadIconW(nullptr, IDI_APPLICATION);
 }
 
 bool IsShiftKey(WPARAM key) {
@@ -1083,9 +1071,18 @@ void MainWindow::UpdateTrayIcon() {
         AddTrayIcon();
         return;
     }
-    m_notifyIcon.hIcon = TrayIconForName(m_settings.menu_icon);
+    const HICON icon = LoadTrayIcon(m_settings.menu_icon);
+    if (icon == nullptr) {
+        return;
+    }
+    const HICON previous_icon = m_trayIcon;
+    m_trayIcon = icon;
+    m_notifyIcon.hIcon = m_trayIcon;
     m_notifyIcon.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
     UpdateTrayTooltip();
+    if (previous_icon != nullptr) {
+        DestroyIcon(previous_icon);
+    }
 }
 
 void MainWindow::ShowTrayMenu() {
@@ -1119,6 +1116,11 @@ void MainWindow::RemoveTrayIcon() {
         Shell_NotifyIconW(NIM_DELETE, &m_notifyIcon);
         m_trayIconAdded = false;
     }
+    if (m_trayIcon != nullptr) {
+        DestroyIcon(m_trayIcon);
+        m_trayIcon = nullptr;
+    }
+    m_notifyIcon.hIcon = nullptr;
 }
 
 void MainWindow::RequestUiUpdate(std::uint32_t updateMask) {
@@ -1752,15 +1754,24 @@ bool MainWindow::AddTrayIcon() {
         RemoveTrayIcon();
         return true;
     }
+    m_trayIcon = LoadTrayIcon(m_settings.menu_icon);
+    if (m_trayIcon == nullptr) {
+        return false;
+    }
     m_notifyIcon = {};
     m_notifyIcon.cbSize = sizeof(m_notifyIcon);
     m_notifyIcon.hWnd = m_hWnd;
     m_notifyIcon.uID = kTrayIconId;
     m_notifyIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
     m_notifyIcon.uCallbackMessage = AppConstants::kTrayIconMessage;
-    m_notifyIcon.hIcon = TrayIconForName(m_settings.menu_icon);
+    m_notifyIcon.hIcon = m_trayIcon;
     UpdateTrayTooltip();
     m_trayIconAdded = Shell_NotifyIconW(NIM_ADD, &m_notifyIcon) == TRUE;
+    if (!m_trayIconAdded) {
+        DestroyIcon(m_trayIcon);
+        m_trayIcon = nullptr;
+        m_notifyIcon.hIcon = nullptr;
+    }
     return m_trayIconAdded;
 }
 
