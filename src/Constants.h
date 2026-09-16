@@ -59,7 +59,6 @@ namespace AppConstants {
         constexpr int kMinWindowHeight = 400;
         constexpr int kDefaultWindowWidth = 450;
         constexpr int kDefaultWindowHeight = 500;
-        constexpr int kDefaultPreviewWidth = 450;
         constexpr int kDefaultImageMaxHeight = 40;
     }
 

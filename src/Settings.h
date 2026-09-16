@@ -68,7 +68,6 @@ struct AppSettings {
     int image_max_height = 40;
     bool open_preview_automatically = true;
     int preview_delay = 1500;
-    int preview_width = 450;
     HighlightMatch highlight_match = HighlightMatch::Bold;
     std::wstring menu_icon = L"maccy";
     bool show_in_status_bar = true;

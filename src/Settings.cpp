@@ -161,7 +161,6 @@ AppSettings AppSettings::Load(const Database &database) {
         settings.open_preview_automatically
     );
     settings.preview_delay = ReadInt(database, L"appearance.previewDelay", settings.preview_delay, 200, 100000);
-    settings.preview_width = ReadInt(database, L"appearance.previewWidth", settings.preview_width, 260, 1200);
     settings.highlight_match = static_cast<HighlightMatch>(ReadInt(
         database,
         L"appearance.highlightMatch",
@@ -266,7 +265,6 @@ void AppSettings::Save(const Database &database) const {
         WriteInt(database, L"appearance.imageMaxHeight", image_max_height);
         WriteBool(database, L"appearance.openPreviewAutomatically", open_preview_automatically);
         WriteInt(database, L"appearance.previewDelay", preview_delay);
-        WriteInt(database, L"appearance.previewWidth", preview_width);
         WriteInt(database, L"appearance.highlightMatch", static_cast<int>(highlight_match));
         database.SetSetting(L"appearance.menuIcon", menu_icon);
         WriteBool(database, L"appearance.showInStatusBar", show_in_status_bar);

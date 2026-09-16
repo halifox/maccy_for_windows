@@ -14,14 +14,6 @@
 
 namespace {
 
-constexpr int kPreviewWindowHeight = 390;
-constexpr int kMinimumPreviewWindowWidth = 260;
-constexpr int kMaximumPreviewWindowWidth = 1200;
-constexpr int kPreviewWindowMargin = 8;
-constexpr int kPreviewContentGap = 8;
-constexpr int kPreviewStatusHeight = 76;
-constexpr int kPreviewButtonHeight = 24;
-
 void ApplySystemRoundedCorners(HWND window) {
     const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
     ::DwmSetWindowAttribute(
@@ -295,52 +287,8 @@ std::wstring FormatApplication(std::wstring_view application) {
 
 } // namespace
 
-bool PreviewWindow::Initialize(HWND owner, int width) {
-    m_width = std::clamp(width, kMinimumPreviewWindowWidth, kMaximumPreviewWindowWidth);
-    const HWND window = Create(owner);
-    if (window == nullptr) {
-        return false;
-    }
-    ::SetWindowPos(
-        window,
-        nullptr,
-        0,
-        0,
-        m_width,
-        kPreviewWindowHeight,
-        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
-    );
-    LayoutControls();
-    return true;
-}
-
-void PreviewWindow::SetWidth(int width) {
-    m_width = std::clamp(width, kMinimumPreviewWindowWidth, kMaximumPreviewWindowWidth);
-    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
-        return;
-    }
-
-    RECT rect{};
-    if (!::GetWindowRect(m_hWnd, &rect)) {
-        return;
-    }
-    ::SetWindowPos(
-        m_hWnd,
-        nullptr,
-        0,
-        0,
-        m_width,
-        std::max(1L, rect.bottom - rect.top),
-        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE
-    );
-    LayoutControls();
-}
-
-int PreviewWindow::MinimumHeight() const noexcept {
-    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) return kPreviewWindowHeight;
-    RECT rect{};
-    if (!::GetWindowRect(m_hWnd, &rect)) return kPreviewWindowHeight;
-    return std::max(kPreviewWindowHeight, static_cast<int>(rect.bottom - rect.top));
+bool PreviewWindow::Initialize(HWND owner) {
+    return Create(owner) != nullptr;
 }
 
 void PreviewWindow::ClearBitmap() {
@@ -350,61 +298,6 @@ void PreviewWindow::ClearBitmap() {
     }
     m_bitmapWidth = 0;
     m_bitmapHeight = 0;
-}
-
-void PreviewWindow::LayoutControls() {
-    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
-        return;
-    }
-
-    RECT client{};
-    ::GetClientRect(m_hWnd, &client);
-    const int client_width = std::max(1L, client.right - client.left);
-    const int client_height = std::max(1L, client.bottom - client.top);
-    const int content_top = kPreviewWindowMargin + kPreviewButtonHeight + kPreviewContentGap;
-    for (int index = 0; index < 3; ++index) {
-        const int ids[] = {IDC_PREVIEW_PIN, IDC_PREVIEW_DELETE, IDC_PREVIEW_CLOSE};
-        ::SetWindowPos(::GetDlgItem(m_hWnd, ids[index]), nullptr,
-            std::max(0, client_width - 228) + index * 74, 4, 70, 24, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    const int content_width = std::max(1, client_width - 2 * kPreviewWindowMargin);
-    const int status_top = std::max(
-        kPreviewWindowMargin,
-        client_height - kPreviewWindowMargin - kPreviewStatusHeight
-    );
-    const int content_height = std::max(
-        1,
-        status_top - kPreviewContentGap - content_top
-    );
-    const int status_height = std::max(
-        1,
-        client_height - status_top - kPreviewWindowMargin
-    );
-
-    for (HWND control : {m_image, m_text}) {
-        if (control != nullptr) {
-            ::SetWindowPos(
-                control,
-                nullptr,
-                kPreviewWindowMargin,
-                content_top,
-                content_width,
-                content_height,
-                SWP_NOZORDER | SWP_NOACTIVATE
-            );
-        }
-    }
-    if (m_status != nullptr) {
-        ::SetWindowPos(
-            m_status,
-            nullptr,
-            kPreviewWindowMargin,
-            status_top,
-            content_width,
-            status_height,
-            SWP_NOZORDER | SWP_NOACTIVATE
-        );
-    }
 }
 
 bool PreviewWindow::LoadBitmapForItem(const ClipboardItem &item) {
@@ -475,7 +368,6 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     ::SendMessageW(m_text, EM_SETLIMITTEXT, 4 * 1024 * 1024, 0);
     ::ShowWindow(m_image, SW_HIDE);
     ::ShowWindow(m_text, SW_HIDE);
-    LayoutControls();
     return TRUE;
 }
 
@@ -483,7 +375,7 @@ bool PreviewWindow::UpdateFont(UINT dpi) {
     HFONT font = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
     if (font == nullptr) return false;
     for (HWND control : {m_image, m_text, m_status, ::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN),
-        ::GetDlgItem(m_hWnd, IDC_PREVIEW_DELETE), ::GetDlgItem(m_hWnd, IDC_PREVIEW_CLOSE)}) {
+        ::GetDlgItem(m_hWnd, IDC_PREVIEW_DELETE)}) {
         if (control != nullptr) {
             ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
@@ -493,34 +385,22 @@ bool PreviewWindow::UpdateFont(UINT dpi) {
     return true;
 }
 
-LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
-    handled = TRUE;
-    LayoutControls();
-    return 0;
-}
-
-LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
+LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     handled = TRUE;
     UpdateFont(HIWORD(wParam));
-    const auto *suggested = reinterpret_cast<const RECT *>(lParam);
-    if (suggested != nullptr) {
-        ::SetWindowPos(m_hWnd, nullptr, suggested->left, suggested->top,
-            suggested->right - suggested->left, suggested->bottom - suggested->top,
-            SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    LayoutControls();
     return 0;
 }
 
 LRESULT PreviewWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND, MAKEWPARAM(IDC_PREVIEW_CLOSE, BN_CLICKED), 0);
+    ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND,
+        MAKEWPARAM(IDC_HISTORY_PREVIEW, BN_CLICKED), 0);
     return 0;
 }
 
 LRESULT PreviewWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     const int id = LOWORD(wParam);
-    handled = id == IDC_PREVIEW_PIN || id == IDC_PREVIEW_DELETE || id == IDC_PREVIEW_CLOSE;
+    handled = id == IDC_PREVIEW_PIN || id == IDC_PREVIEW_DELETE;
     if (handled) ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND, wParam, 0);
     return 0;
 }

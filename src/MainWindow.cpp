@@ -1189,9 +1189,6 @@ std::uint32_t MainWindow::ApplySettings(std::uint32_t requestedUpdates) {
         info.lpszText = m_previewTip.data();
         SendMessageW(m_tooltips, TTM_UPDATETIPTEXTW, 0, reinterpret_cast<LPARAM>(&info));
     }
-    if (previous.preview_width != m_settings.preview_width) {
-        m_previewWindow.SetWidth(m_settings.preview_width);
-    }
     if (m_popupVisible &&
         (previous.window_width != m_settings.window_width ||
          previous.window_height != m_settings.window_height)) {
@@ -1307,7 +1304,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     if (!m_historyRenderer.Initialize(m_hWnd) ||
         !BindControls() ||
-        !m_previewWindow.Initialize(m_hWnd, m_settings.preview_width)) {
+        !m_previewWindow.Initialize(m_hWnd)) {
         handled = FALSE;
         return FALSE;
     }
@@ -1504,18 +1501,13 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
     const UINT command = LOWORD(wParam);
     const UINT notification = HIWORD(wParam);
 
-    if (notification == BN_CLICKED && command >= IDC_PREVIEW_PIN && command <= IDC_PREVIEW_CLOSE) {
+    if (notification == BN_CLICKED &&
+        (command == IDC_PREVIEW_PIN || command == IDC_PREVIEW_DELETE)) {
         handled = TRUE;
-        if (command == IDC_PREVIEW_CLOSE) {
-            m_previewSuppressed = true;
-            HidePreview();
-            m_keyboardHandler.FocusSearchOrPopup(m_search, m_hWnd, ::IsWindowVisible(m_search) != FALSE);
-        } else {
-            m_keyboardHandler.SetActiveHistoryItem(m_keyboardHandler.GetActiveItemIndex(),
-                m_items, m_historyList, m_pinsList);
-            if (command == IDC_PREVIEW_PIN) ToggleSelectedPin();
-            else DeleteSelectedItem();
-        }
+        m_keyboardHandler.SetActiveHistoryItem(m_keyboardHandler.GetActiveItemIndex(),
+            m_items, m_historyList, m_pinsList);
+        if (command == IDC_PREVIEW_PIN) ToggleSelectedPin();
+        else DeleteSelectedItem();
         return 0;
     }
 
