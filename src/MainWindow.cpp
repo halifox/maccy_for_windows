@@ -1128,7 +1128,9 @@ void MainWindow::ApplyPendingState() {
     if ((updates & AppConstants::UiUpdate::kHistory) != 0) {
         RefreshHistory(m_search != nullptr ? ReadWindowText(m_search) : m_searchQuery);
     }
-    if ((updates & AppConstants::UiUpdate::kLayout) != 0) {
+    // Rebuilding either history list can change the pinned/history section
+    // counts, so its geometry must be recalculated together with the data.
+    if ((updates & (AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout)) != 0) {
         ApplyHistoryVisibility();
     }
     if ((updates & AppConstants::UiUpdate::kTray) != 0) {
