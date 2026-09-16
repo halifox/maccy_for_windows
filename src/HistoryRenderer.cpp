@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cwctype>
+#include <optional>
 #include <regex>
 
 #include <shellapi.h>
@@ -61,6 +62,45 @@ std::wstring ReadWindowText(HWND window) {
     const int copied = GetWindowTextW(window, text.data(), length + 1);
     text.resize(static_cast<size_t>(std::max(copied, 0)));
     return text;
+}
+
+int HexDigit(wchar_t character) {
+    if (character >= L'0' && character <= L'9') {
+        return character - L'0';
+    }
+    if (character >= L'a' && character <= L'f') {
+        return character - L'a' + 10;
+    }
+    if (character >= L'A' && character <= L'F') {
+        return character - L'A' + 10;
+    }
+    return -1;
+}
+
+std::optional<COLORREF> ParseHexColor(std::wstring_view text) {
+    const size_t digit_start = !text.empty() && text.front() == L'#' ? 1 : 0;
+    const size_t digit_count = text.size() - digit_start;
+    if (digit_count != 3 && digit_count != 6) {
+        return std::nullopt;
+    }
+
+    unsigned int value = 0;
+    for (size_t index = digit_start; index < text.size(); ++index) {
+        const int digit = HexDigit(text[index]);
+        if (digit < 0) {
+            return std::nullopt;
+        }
+        value = (value << 4) | static_cast<unsigned int>(digit);
+    }
+
+    if (digit_count == 3) {
+        const unsigned int red = ((value >> 8) & 0x0F) * 0x11;
+        const unsigned int green = ((value >> 4) & 0x0F) * 0x11;
+        const unsigned int blue = (value & 0x0F) * 0x11;
+        return RGB(red, green, blue);
+    }
+
+    return RGB((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
 }
 
 } // namespace
@@ -188,7 +228,11 @@ std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
     return L"[剪贴板项目]";
 }
 
-HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(const RECT& row, const ClipboardItem& item) const {
+HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
+    const RECT& row,
+    const ClipboardItem& item,
+    bool has_color_swatch
+) const {
     HistoryItemLayout layout{};
     layout.background = row;
     layout.background.left += kHistoryItemInset;
@@ -204,6 +248,10 @@ HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(const RECT
     }
     if (item.has_image || item.has_files) {
         layout.attachment = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
+        x += kHistoryItemSlot + kHistoryItemSlotGap;
+    }
+    if (has_color_swatch) {
+        layout.swatch = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
         x += kHistoryItemSlot + kHistoryItemSlotGap;
     }
     layout.content = row;
@@ -432,7 +480,12 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     const int index = static_cast<int>(draw->itemData);
     const ClipboardItem& item = items[index];
     const bool selected = activeFooter < 0 && index == activeIndex;
-    const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item);
+    const std::wstring text = DisplayText(item);
+    std::optional<COLORREF> swatch_color;
+    if (m_settings.show_hex_color_swatch) {
+        swatch_color = ParseHexColor(text);
+    }
+    const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item, swatch_color.has_value());
     FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
     if (selected) {
         HGDIOBJ pen = SelectObject(draw->hDC, GetStockObject(NULL_PEN));
@@ -460,7 +513,6 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         : 16;
     const int row_height = std::max(1L, draw->rcItem.bottom - draw->rcItem.top);
     const int text_top = draw->rcItem.top + std::max(0, (row_height - text_height) / 2);
-    const int icon_top = draw->rcItem.top + std::max(0, (row_height - 16) / 2);
     RECT text_rect = layout.content;
     text_rect.top = text_top;
     text_rect.bottom = text_top + text_height;
@@ -493,6 +545,15 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         DeleteObject(marker_pen);
     }
 
+    if (!IsRectEmpty(&layout.swatch) && swatch_color.has_value()) {
+        HBRUSH brush = CreateSolidBrush(*swatch_color);
+        if (brush != nullptr) {
+            FillRect(draw->hDC, &layout.swatch, brush);
+            DeleteObject(brush);
+        }
+        FrameRect(draw->hDC, &layout.swatch, GetSysColorBrush(COLOR_GRAYTEXT));
+    }
+
     std::wstring shortcut;
     if (item.pinned) shortcut = L"Ctrl+" + item.pin;
     else {
@@ -505,24 +566,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
     DrawTextW(draw->hDC, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.right = layout.content.right;
-    const std::wstring text = DisplayText(item);
     DrawTextWithHighlights(draw->hDC, text_rect, text, selected, searchQuery);
-    if (m_settings.show_hex_color_swatch) {
-        const size_t hash = text.find(L'#');
-        if (hash != std::wstring::npos && hash + 7 == text.size() && hash == 0) {
-            const std::wstring hex = text.substr(hash + 1, 6);
-            wchar_t* end = nullptr;
-            const unsigned long value = wcstoul(hex.c_str(), &end, 16);
-            if (end == hex.c_str() + 6) {
-                const COLORREF color = RGB((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
-                RECT swatch{keyRect.left - 22, icon_top, keyRect.left - 6, icon_top + 16};
-                HBRUSH brush = CreateSolidBrush(color);
-                FillRect(draw->hDC, &swatch, brush);
-                DeleteObject(brush);
-                FrameRect(draw->hDC, &swatch, GetSysColorBrush(COLOR_GRAYTEXT));
-            }
-        }
-    }
 }
 
 void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
