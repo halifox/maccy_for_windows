@@ -87,7 +87,7 @@ struct AppSettings {
 
     HotKeyConfig open_hotkey{};
     HotKeyConfig pin_hotkey{MOD_CONTROL, 'P'};
-    HotKeyConfig delete_hotkey{MOD_CONTROL, VK_BACK};
+    HotKeyConfig delete_hotkey{MOD_CONTROL, 'D'};
     HotKeyConfig preview_hotkey{MOD_CONTROL, VK_SPACE};
 
     int popup_x = 0;
