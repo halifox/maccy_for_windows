@@ -571,6 +571,15 @@ void MainWindow::PositionPopup() {
     }
     case PopupPosition::Cursor:
     default:
+        // Anchor each axis to the cursor like a Windows context menu. The
+        // popup's top-left corner is the preferred anchor; flip only the
+        // axis whose preferred side has no room in the work area.
+        x = cursor.x <= work_area.right - PopupWidth()
+            ? cursor.x
+            : cursor.x - PopupWidth();
+        y = cursor.y <= work_area.bottom - PopupHeight()
+            ? cursor.y
+            : cursor.y - PopupHeight();
         break;
     }
 
