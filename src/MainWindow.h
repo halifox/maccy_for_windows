@@ -19,6 +19,7 @@
 #include "HistoryRenderer.h"
 #include "KeyboardHandler.h"
 #include "PreviewWindow.h"
+#include "SearchHeaderLayout.h"
 #include "Settings.h"
 #include "resource.h"
 
@@ -43,8 +44,7 @@ public:
         MESSAGE_HANDLER(WM_NCHITTEST, OnNcHitTest)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
-        MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnEditColor)
-        MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnEditColor)
+        MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
         MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
@@ -152,7 +152,7 @@ private:
     LRESULT OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&);
-    LRESULT OnEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
+    LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
@@ -223,8 +223,7 @@ private:
     bool m_updateMessagePosted = false;
 
     // Layout
-    RECT m_searchRect{};
-    RECT m_titleRect{};
+    SearchHeaderLayout::Geometry m_searchHeader{};
     int m_pinSeparatorY = -1;
     int m_footerSeparatorY = -1;
 

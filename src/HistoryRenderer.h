@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Database.h"
+#include "SearchHeaderLayout.h"
 #include "Settings.h"
 
 // History list rendering and drawing component
@@ -35,9 +36,7 @@ public:
     void OnPaint(HDC dc, const RECT& client,
                  int pinSeparatorY,
                  int footerSeparatorY,
-                 bool showSearch,
-                 const RECT& searchRect,
-                 const RECT& titleRect);
+                 const SearchHeaderLayout::Geometry& header);
 
     // Font access
     HFONT GetNormalFont() const { return m_normalFont; }

@@ -21,7 +21,6 @@ constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
-constexpr int kSearchIconVisualHeight = 13;
 
 std::wstring Lower(std::wstring_view value) {
     std::wstring result;
@@ -564,9 +563,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
 void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
                              int pinSeparatorY,
                              int footerSeparatorY,
-                             bool showSearch,
-                             const RECT& searchRect,
-                             const RECT& titleRect) {
+                             const SearchHeaderLayout::Geometry& header) {
     FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
     HPEN separator = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT));
     auto previousPen = SelectObject(dc, separator);
@@ -574,29 +571,33 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
         MoveToEx(dc, 16, y, nullptr); LineTo(dc, client.right - 16, y);
     }
     SelectObject(dc, previousPen); DeleteObject(separator);
-    if (showSearch) {
+    if (header.showSearch) {
         auto pen = SelectObject(dc, GetStockObject(NULL_PEN));
         auto brush = SelectObject(dc, GetSysColorBrush(COLOR_BTNFACE));
-        RoundRect(dc, searchRect.left, searchRect.top, searchRect.right, searchRect.bottom, 8, 8);
+        RoundRect(dc, header.search.left, header.search.top,
+                  header.search.right, header.search.bottom,
+                  header.metrics.cornerRadius, header.metrics.cornerRadius);
         SelectObject(dc, brush); SelectObject(dc, pen);
         HPEN iconPen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT));
         pen = SelectObject(dc, iconPen); brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        const int iconLeft = searchRect.left + 7;
-        const int searchHeight = std::max(1L, searchRect.bottom - searchRect.top);
-        const int iconTop = searchRect.top + std::max(0, (searchHeight - kSearchIconVisualHeight) / 2);
-        Ellipse(dc, iconLeft, iconTop, iconLeft + 9, iconTop + 9);
-        MoveToEx(dc, iconLeft + 7, iconTop + 7, nullptr);
-        LineTo(dc, iconLeft + 13, iconTop + 13);
+        const SearchHeaderLayout::IconGeometry icon = SearchHeaderLayout::IconFor(header);
+        Ellipse(dc, icon.left, icon.top,
+                icon.left + header.metrics.iconLensSize,
+                icon.top + header.metrics.iconLensSize);
+        MoveToEx(dc, icon.left + header.metrics.iconHandleStart,
+                 icon.top + header.metrics.iconHandleStart, nullptr);
+        LineTo(dc, icon.left + header.metrics.iconHandleEnd,
+               icon.top + header.metrics.iconHandleEnd);
         SelectObject(dc, brush); SelectObject(dc, pen); DeleteObject(iconPen);
     }
-    if (m_settings.show_title && !IsRectEmpty(&titleRect)) {
+    if (m_settings.show_title && header.showTitle && !IsRectEmpty(&header.title)) {
         const HFONT previous_font = static_cast<HFONT>(SelectObject(
             dc,
             m_smallFont != nullptr ? m_smallFont : m_normalFont
         ));
         const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
         const int previous_mode = SetBkMode(dc, TRANSPARENT);
-        RECT title = titleRect;
+        RECT title = header.title;
         DrawTextW(dc, L"maccy", -1, &title, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
         SetBkMode(dc, previous_mode);
         SetTextColor(dc, previous_color);

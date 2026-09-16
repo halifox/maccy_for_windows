@@ -2,6 +2,7 @@
 #include "Constants.h"
 #include "PinKeys.h"
 #include "SettingsWindow.h"
+#include "UiFont.h"
 
 #include <algorithm>
 #include <array>
@@ -26,14 +27,7 @@ constexpr int kMinimumPopupWidth = 320;
 constexpr int kMaximumPopupWidth = 1600;
 constexpr int kMinimumPopupHeight = 150;
 constexpr int kMaximumPopupHeight = 1200;
-constexpr int kHistorySearchHeight = 23;
 constexpr int kHistoryItemHeight = 22;
-constexpr int kHistoryWindowMargin = 5;
-constexpr int kHistorySearchGap = 6;
-constexpr int kHistorySearchIconWidth = 24;
-constexpr int kHistorySearchClearWidth = 20;
-constexpr int kHistoryPreviewWidth = 23;
-constexpr int kHistoryHeaderGap = 6;
 constexpr int kHistoryFooterHeight = 22;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
@@ -320,14 +314,14 @@ bool MainWindow::BindControls() {
     LONG_PTR search_style = ::GetWindowLongPtrW(m_search, GWL_STYLE);
     search_style &= ~static_cast<LONG_PTR>(ES_MULTILINE);
     search_style |= ES_AUTOHSCROLL;
+    // The empty-state cue is painted by SearchWindowProc so it shares the edit's
+    // actual client rectangle and vertical-centering rules.
     ::SetWindowLongPtrW(m_search, GWL_STYLE, search_style);
 
     return true;
 }
 
 void MainWindow::ApplyHistoryFonts() {
-    SendMessageW(::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE), WM_SETFONT,
-        reinterpret_cast<WPARAM>(m_historyRenderer.GetSmallFont()), TRUE);
     const HFONT font = m_historyRenderer.GetNormalFont();
     for (HWND control : {m_search, m_historyList, m_pinsList, m_footerClear, m_footerSettings,
                          m_footerAbout, m_footerExit, m_searchClear, m_previewToggle}) {
@@ -341,10 +335,11 @@ void MainWindow::LayoutHistoryControls() {
     if (!m_search || !m_historyList || !::IsWindow(m_hWnd)) return;
     RECT client{};
     ::GetClientRect(m_hWnd, &client);
-    const int margin = kHistoryWindowMargin;
+    const SearchHeaderLayout::Metrics headerMetrics =
+        SearchHeaderLayout::ForDpi(UiFont::DpiForWindow(m_hWnd));
+    const int margin = headerMetrics.windowMargin;
     const int width = std::max(1L, client.right - 2 * margin);
     const bool header = ::IsWindowVisible(m_search) != FALSE;
-    const int headerHeight = header ? kHistorySearchHeight : 0;
     int titleWidth = 0;
 
     if (header && m_settings.show_title) {
@@ -354,21 +349,17 @@ void MainWindow::LayoutHistoryControls() {
             const HGDIOBJ oldFont = font != nullptr ? ::SelectObject(dc, font) : nullptr;
             SIZE textSize{};
             if (::GetTextExtentPoint32W(dc, L"maccy", 5, &textSize)) {
-                titleWidth = textSize.cx + 8;
+                titleWidth = textSize.cx + headerMetrics.titlePadding;
             }
             if (oldFont != nullptr) ::SelectObject(dc, oldFont);
             ::ReleaseDC(m_hWnd, dc);
         }
     }
 
-    const bool showTitle = header && titleWidth > 0;
-    const RECT titleRect{margin, margin, margin + titleWidth, margin + headerHeight};
-    const int previewLeft = margin + width - kHistoryPreviewWidth;
-    const int searchLeft = margin + titleWidth + (titleWidth ? kHistoryHeaderGap : 0);
-    const int searchRight = previewLeft - kHistoryHeaderGap;
-    const RECT searchRect{searchLeft, margin, searchRight, margin + headerHeight};
+    const SearchHeaderLayout::Geometry headerLayout =
+        SearchHeaderLayout::Calculate(client, titleWidth, header, headerMetrics);
 
-    const int top = margin + (header ? headerHeight + kHistorySearchGap : 0);
+    const int top = margin + (header ? headerMetrics.height + headerMetrics.contentGap : 0);
     const int footerHeight = m_settings.show_footer
         ? kHistoryFooterGap + kHistoryFooterHeight * kHistoryFooterCount
         : 0;
@@ -393,27 +384,17 @@ void MainWindow::LayoutHistoryControls() {
     const int pinTop = pinsAtBottom && haveHistory ? top + historyHeight + gap : top;
     const int historyTop = !pinsAtBottom && havePins ? top + pinsHeight + gap : top;
 
-    m_titleRect = titleRect;
-    m_searchRect = searchRect;
-    const HWND title = ::GetDlgItem(m_hWnd, IDC_HISTORY_TITLE);
-    ::SetWindowPos(title, nullptr, titleRect.left, titleRect.top,
-        titleRect.right - titleRect.left, titleRect.bottom - titleRect.top,
-        SWP_NOZORDER | SWP_NOACTIVATE);
-    ::ShowWindow(title, showTitle ? SW_SHOW : SW_HIDE);
+    m_searchHeader = headerLayout;
 
     if (header) {
-        const int searchEditLeft = searchLeft + kHistorySearchIconWidth;
-        const int searchEditRight = std::max(
-            searchEditLeft + 1,
-            searchRight - kHistorySearchClearWidth
-        );
-        ::SetWindowPos(m_search, nullptr, searchEditLeft, margin,
-            searchEditRight - searchEditLeft, kHistorySearchHeight,
-            SWP_NOZORDER | SWP_NOACTIVATE);
-        ::SetWindowPos(m_searchClear, nullptr, searchRight - kHistorySearchClearWidth, margin,
-            kHistorySearchClearWidth, kHistorySearchHeight, SWP_NOZORDER | SWP_NOACTIVATE);
-        ::SetWindowPos(m_previewToggle, nullptr, previewLeft, margin,
-            kHistoryPreviewWidth, kHistorySearchHeight, SWP_NOZORDER | SWP_NOACTIVATE);
+        const auto place = [](HWND control, const RECT& rect) {
+            ::SetWindowPos(control, nullptr, rect.left, rect.top,
+                rect.right - rect.left, rect.bottom - rect.top,
+                SWP_NOZORDER | SWP_NOACTIVATE);
+        };
+        place(m_search, headerLayout.searchEdit);
+        place(m_searchClear, headerLayout.searchClear);
+        place(m_previewToggle, headerLayout.preview);
     } else {
         for (HWND control : {m_search, m_searchClear, m_previewToggle}) {
             ::SetWindowPos(control, nullptr, 0, 0, 0, 0,
@@ -1450,7 +1431,7 @@ LRESULT MainWindow::OnPaint(UINT, WPARAM, LPARAM, BOOL&) {
     RECT client{};
     GetClientRect(&client);
     m_historyRenderer.OnPaint(dc, client, m_pinSeparatorY, m_footerSeparatorY,
-        ::IsWindowVisible(m_search) != FALSE, m_searchRect, m_titleRect);
+        m_searchHeader);
     EndPaint(&paint);
     return 0;
 }
@@ -1459,14 +1440,13 @@ LRESULT MainWindow::OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&) {
     return 1;
 }
 
-LRESULT MainWindow::OnEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
-    const bool title = ::GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_HISTORY_TITLE;
-    handled = reinterpret_cast<HWND>(lParam) == m_search || title;
+LRESULT MainWindow::OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
+    handled = reinterpret_cast<HWND>(lParam) == m_search;
     if (!handled) return 0;
     HDC dc = reinterpret_cast<HDC>(wParam);
-    SetTextColor(dc, GetSysColor(title ? COLOR_GRAYTEXT : COLOR_WINDOWTEXT));
-    SetBkColor(dc, GetSysColor(title ? COLOR_WINDOW : COLOR_BTNFACE));
-    return reinterpret_cast<LRESULT>(GetSysColorBrush(title ? COLOR_WINDOW : COLOR_BTNFACE));
+    SetTextColor(dc, GetSysColor(COLOR_WINDOWTEXT));
+    SetBkColor(dc, GetSysColor(COLOR_BTNFACE));
+    return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
 }
 
 LRESULT MainWindow::OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
