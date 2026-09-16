@@ -16,7 +16,6 @@ public:
     void Save(sqlite3_int64 item_id, const std::vector<ClipboardFormatData>& data) const;
     std::vector<ClipboardFormatData> Load(sqlite3_int64 item_id) const;
     void Remove(sqlite3_int64 item_id) const;
-    void Clear() const;
     std::uintmax_t StorageBytes() const;
 
 private:

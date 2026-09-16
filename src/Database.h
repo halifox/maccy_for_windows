@@ -126,7 +126,7 @@ public:
 
 private:
     void Exec(std::string_view sql) const;
-    void InitializeHistorySchema();
+    void CreateHistoryTables();
     sqlite3_int64 CountRows(const char *table) const;
     const char *ListTable(DatabaseList list) const;
     std::vector<sqlite3_int64> SelectItemIds(std::string_view condition) const;

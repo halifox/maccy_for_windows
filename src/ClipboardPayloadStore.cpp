@@ -199,18 +199,6 @@ void ClipboardPayloadStore::Remove(sqlite3_int64 item_id) const {
     }
 }
 
-void ClipboardPayloadStore::Clear() const {
-    std::error_code error;
-    std::filesystem::remove_all(m_root, error);
-    if (error) {
-        throw std::system_error(error, "Unable to clear clipboard payload directory");
-    }
-    std::filesystem::create_directories(m_root, error);
-    if (error) {
-        throw std::system_error(error, "Unable to recreate clipboard payload directory");
-    }
-}
-
 std::uintmax_t ClipboardPayloadStore::StorageBytes() const {
     std::uintmax_t total = 0;
     std::error_code error;

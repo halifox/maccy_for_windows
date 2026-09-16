@@ -280,7 +280,7 @@ Database::Database(const std::filesystem::path &path)
             "value TEXT PRIMARY KEY"
             ");"
         );
-        InitializeHistorySchema();
+        CreateHistoryTables();
         if (!GetSetting(L"defaults.ignoredFormatsInitialized")) {
             ReplaceList(DatabaseList::IgnoredFormats, DefaultIgnoredFormats());
             SetSetting(L"defaults.ignoredFormatsInitialized", L"1");
@@ -298,20 +298,7 @@ Database::~Database() {
     }
 }
 
-void Database::InitializeHistorySchema() {
-    constexpr std::wstring_view kSchemaVersion = L"4";
-    const bool reset_history = GetSetting(L"schema.version") !=
-        std::optional<std::wstring>(kSchemaVersion);
-    if (reset_history) {
-        m_payloadStore->Clear();
-        Exec("DROP TABLE IF EXISTS history_data;");
-        Exec("DROP TABLE IF EXISTS history_items;");
-        Exec("DROP TABLE IF EXISTS clipboard_history;");
-        Exec("PRAGMA wal_checkpoint(TRUNCATE);");
-        Exec("VACUUM;");
-        Exec("PRAGMA wal_checkpoint(TRUNCATE);");
-    }
-
+void Database::CreateHistoryTables() {
     Exec(
         "CREATE TABLE IF NOT EXISTS history_items ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -334,7 +321,6 @@ void Database::InitializeHistorySchema() {
         "CREATE INDEX IF NOT EXISTS idx_history_items_copied_at "
         "ON history_items(copied_at DESC);"
     );
-    SetSetting(L"schema.version", kSchemaVersion);
 }
 
 void Database::Exec(const std::string_view sql) const {
