@@ -119,6 +119,11 @@ AppSettings AppSettings::Load(const Database &database) {
 
     settings.clear_on_quit = ReadBool(database, L"advanced.clearOnQuit", settings.clear_on_quit);
     settings.clear_system_clipboard = ReadBool(database, L"advanced.clearSystemClipboard", settings.clear_system_clipboard);
+    settings.respect_windows_clipboard_history_markers = ReadBool(
+        database,
+        L"advanced.respectWindowsClipboardHistoryMarkers",
+        settings.respect_windows_clipboard_history_markers
+    );
     settings.ignore_all_apps_except_listed = ReadBool(
         database,
         L"ignore.allAppsExceptListed",
@@ -247,6 +252,11 @@ void AppSettings::Save(const Database &database) const {
 
         WriteBool(database, L"advanced.clearOnQuit", clear_on_quit);
         WriteBool(database, L"advanced.clearSystemClipboard", clear_system_clipboard);
+        WriteBool(
+            database,
+            L"advanced.respectWindowsClipboardHistoryMarkers",
+            respect_windows_clipboard_history_markers
+        );
         WriteBool(database, L"ignore.allAppsExceptListed", ignore_all_apps_except_listed);
         WriteBool(database, L"advanced.ignoreEvents", ignore_events);
         WriteBool(database, L"advanced.ignoreOnlyNextEvent", ignore_only_next_event);

@@ -15,6 +15,9 @@ namespace {
 
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
+constexpr wchar_t kExcludeClipboardContentFromMonitorProcessing[] =
+    L"ExcludeClipboardContentFromMonitorProcessing";
+constexpr wchar_t kCanIncludeInClipboardHistory[] = L"CanIncludeInClipboardHistory";
 
 std::wstring Lower(std::wstring_view value) {
     std::wstring result;
@@ -71,6 +74,38 @@ std::wstring FormatName(UINT format) {
         return std::wstring(name.data(), static_cast<size_t>(length));
     }
     return L"FORMAT_" + std::to_wstring(format);
+}
+
+std::optional<DWORD> ReadClipboardDword(const wchar_t *format_name) {
+    const UINT format = RegisterClipboardFormatW(format_name);
+    if (format == 0) {
+        return std::nullopt;
+    }
+
+    const HGLOBAL data = static_cast<HGLOBAL>(GetClipboardData(format));
+    if (data == nullptr || GlobalSize(data) < sizeof(DWORD)) {
+        return std::nullopt;
+    }
+
+    const auto *source = static_cast<const unsigned char *>(GlobalLock(data));
+    if (source == nullptr) {
+        return std::nullopt;
+    }
+
+    DWORD value = 0;
+    std::memcpy(&value, source, sizeof(value));
+    GlobalUnlock(data);
+    return value;
+}
+
+bool IsExcludedByWindowsClipboardHistoryMarker() {
+    const UINT exclude_format = RegisterClipboardFormatW(kExcludeClipboardContentFromMonitorProcessing);
+    if (exclude_format != 0 && IsClipboardFormatAvailable(exclude_format)) {
+        return true;
+    }
+
+    const auto can_include = ReadClipboardDword(kCanIncludeInClipboardHistory);
+    return can_include.has_value() && *can_include == 0;
 }
 
 bool IsHtmlOrRtf(std::wstring_view name) {
@@ -380,6 +415,11 @@ std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData
 }
 
 std::optional<ClipboardCapture> ClipboardMonitor::CaptureClipboard() const {
+    if (m_settings.respect_windows_clipboard_history_markers &&
+        IsExcludedByWindowsClipboardHistoryMarker()) {
+        return std::nullopt;
+    }
+
     const std::wstring application = GetSourceApplication();
     if (ShouldIgnoreApplication(application)) {
         return std::nullopt;

@@ -280,6 +280,7 @@ enum SettingsControlId : int {
     kXIgnoreNext = IDC_X_IGNORE_NEXT,
     kXClearOnQuit = IDC_X_CLEAR_ON_QUIT,
     kXClearClipboard = IDC_X_CLEAR_CLIPBOARD,
+    kXRespectWindowsClipboardHistory = IDC_X_RESPECT_WINDOWS_CLIPBOARD_HISTORY,
 };
 
 constexpr int kPageGeneral = 0;
@@ -710,6 +711,7 @@ void SettingsWindow::BindControls() {
     m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
     m_xClearOnQuit = get(kPageAdvanced, kXClearOnQuit);
     m_xClearClipboard = get(kPageAdvanced, kXClearClipboard);
+    m_xRespectWindowsClipboardHistory = get(kPageAdvanced, kXRespectWindowsClipboardHistory);
 
     AddComboItem(m_gSearchMode, L"精确");
     AddComboItem(m_gSearchMode, L"模糊");
@@ -1111,6 +1113,10 @@ void SettingsWindow::LoadAdvancedControls() {
     SetCheck(m_xIgnoreNext, m_settings.ignore_only_next_event);
     SetCheck(m_xClearOnQuit, m_settings.clear_on_quit);
     SetCheck(m_xClearClipboard, m_settings.clear_system_clipboard);
+    SetCheck(
+        m_xRespectWindowsClipboardHistory,
+        m_settings.respect_windows_clipboard_history_markers
+    );
     ::EnableWindow(m_xIgnoreNext, m_settings.ignore_events);
 }
 
@@ -1290,6 +1296,9 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             m_settings.ignore_only_next_event = IsChecked(m_xIgnoreNext);
             m_settings.clear_on_quit = IsChecked(m_xClearOnQuit);
             m_settings.clear_system_clipboard = IsChecked(m_xClearClipboard);
+            m_settings.respect_windows_clipboard_history_markers = IsChecked(
+                m_xRespectWindowsClipboardHistory
+            );
             break;
         default:
             break;
@@ -1506,7 +1515,8 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     const bool storage_change =
         id == kSSaveFiles || id == kSSaveImages || id == kSSaveText || id == kSHistorySize || id == kSSortBy;
     const bool advanced_change =
-        id == kXIgnoreEvents || id == kXIgnoreNext || id == kXClearOnQuit || id == kXClearClipboard;
+        id == kXIgnoreEvents || id == kXIgnoreNext || id == kXClearOnQuit || id == kXClearClipboard ||
+        id == kXRespectWindowsClipboardHistory;
 
     const bool combo_changed = notification == CBN_SELCHANGE;
     const bool checkbox_changed = notification == BN_CLICKED;

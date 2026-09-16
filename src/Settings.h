@@ -50,6 +50,7 @@ struct AppSettings {
 
     bool clear_on_quit = false;
     bool clear_system_clipboard = false;
+    bool respect_windows_clipboard_history_markers = true;
     bool ignore_all_apps_except_listed = false;
     bool ignore_events = false;
     bool ignore_only_next_event = false;

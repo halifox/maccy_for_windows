@@ -267,4 +267,5 @@ private:
     HWND m_xIgnoreNext = nullptr;
     HWND m_xClearOnQuit = nullptr;
     HWND m_xClearClipboard = nullptr;
+    HWND m_xRespectWindowsClipboardHistory = nullptr;
 };
