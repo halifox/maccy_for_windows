@@ -119,6 +119,7 @@ private:
 
     // Utilities
     void UpdateFooterControls();
+    void RequestFooterUpdateForKeyMessage(UINT message, WPARAM key);
     void ScheduleSearch();
     void ScheduleSearchFromCurrentEdit();
     void SaveWindowGeometry(bool resized = false);

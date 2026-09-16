@@ -69,6 +69,10 @@ HICON TrayIconForName(std::wstring_view name) {
     return LoadIconW(nullptr, IDI_APPLICATION);
 }
 
+bool IsShiftKey(WPARAM key) {
+    return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
+}
+
 // Resolve paste action based on modifier keys
 std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
                                          bool ctrl, bool alt, bool shift) {
@@ -110,6 +114,7 @@ MainWindow::~MainWindow() = default;
 LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
     if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
+    owner->RequestFooterUpdateForKeyMessage(message, wParam);
     if (message == WM_IME_STARTCOMPOSITION) owner->m_keyboardHandler.SetImeComposing(true);
     if (message == WM_IME_ENDCOMPOSITION) owner->m_keyboardHandler.SetImeComposing(false);
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
@@ -117,15 +122,13 @@ LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM 
         owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
         return 0;
     }
-    if (message == WM_KEYUP || message == WM_SYSKEYUP) {
-        owner->RequestUiUpdate(AppConstants::UiUpdate::kFooter);
-    }
     return CallWindowProcW(owner->m_originalSearchProc, window, message, wParam, lParam);
 }
 
 LRESULT CALLBACK MainWindow::HistoryListWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
     if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
+    owner->RequestFooterUpdateForKeyMessage(message, wParam);
     if (message == WM_MOUSEMOVE) {
         owner->m_keyboardHandler.OnHistoryMouseMove(
             window,
@@ -139,9 +142,6 @@ LRESULT CALLBACK MainWindow::HistoryListWindowProc(HWND window, UINT message, WP
     if (message == WM_MOUSELEAVE) owner->m_keyboardHandler.OnHistoryMouseLeave();
     if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
         if (owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) return 0;
-    }
-    if (message == WM_KEYUP || message == WM_SYSKEYUP) {
-        owner->RequestUiUpdate(AppConstants::UiUpdate::kFooter);
     }
     if (message == WM_CHAR && wParam >= 0x20 && wParam != 0x7f) {
         owner->m_keyboardHandler.TypeToSearch(wParam, owner->m_search);
@@ -168,6 +168,7 @@ LRESULT CALLBACK MainWindow::HistoryListWindowProc(HWND window, UINT message, WP
 LRESULT CALLBACK MainWindow::MenuControlProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
                                             UINT_PTR, DWORD_PTR data) {
     auto* owner = reinterpret_cast<MainWindow*>(data);
+    owner->RequestFooterUpdateForKeyMessage(message, wParam);
     if (message == WM_MOUSEMOVE) {
         if (!owner->m_keyboardHandler.MouseCanSelect()) return DefSubclassProc(window, message, wParam, lParam);
         const auto buttons = owner->FooterButtons();
@@ -186,9 +187,6 @@ LRESULT CALLBACK MainWindow::MenuControlProc(HWND window, UINT message, WPARAM w
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
         owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
         return 0;
-    }
-    if (message == WM_KEYUP || message == WM_SYSKEYUP) {
-        owner->RequestUiUpdate(AppConstants::UiUpdate::kFooter);
     }
     if (message == WM_CHAR && wParam >= 0x20 && wParam != 0x7f) {
         owner->m_keyboardHandler.TypeToSearch(wParam, owner->m_search);
@@ -435,6 +433,14 @@ void MainWindow::UpdateFooterControls() {
     const std::wstring caption = all ? L"清空全部历史" : L"清空历史";
     if (ReadWindowText(m_footerClear) != caption) {
         ::SetWindowTextW(m_footerClear, caption.c_str());
+    }
+}
+
+void MainWindow::RequestFooterUpdateForKeyMessage(UINT message, WPARAM key) {
+    const bool key_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+    const bool key_up = message == WM_KEYUP || message == WM_SYSKEYUP;
+    if (key_up || (key_down && IsShiftKey(key))) {
+        RequestUiUpdate(AppConstants::UiUpdate::kFooter);
     }
 }
 
@@ -1138,6 +1144,7 @@ void MainWindow::ApplyPendingState() {
     }
     if ((updates & AppConstants::UiUpdate::kFooter) != 0) {
         UpdateFooterControls();
+        RedrawFooterButtons();
     }
 }
 
@@ -1646,13 +1653,14 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
 }
 
 LRESULT MainWindow::OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    RequestFooterUpdateForKeyMessage(WM_KEYDOWN, wParam);
     handled = !m_keyboardHandler.IsComposing(m_hWnd) &&
               m_keyboardHandler.HandlePopupKey(wParam, m_search, m_items);
     return 0;
 }
 
-LRESULT MainWindow::OnKeyUp(UINT, WPARAM, LPARAM, BOOL& handled) {
-    RequestUiUpdate(AppConstants::UiUpdate::kFooter);
+LRESULT MainWindow::OnKeyUp(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    RequestFooterUpdateForKeyMessage(WM_KEYUP, wParam);
     handled = FALSE;
     return 0;
 }
