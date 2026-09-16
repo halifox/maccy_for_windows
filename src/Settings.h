@@ -72,7 +72,6 @@ struct AppSettings {
     HighlightMatch highlight_match = HighlightMatch::Bold;
     std::wstring menu_icon = L"maccy";
     bool show_in_status_bar = true;
-    bool show_recent_copy_in_menu_bar = false;
     bool show_search = true;
     SearchVisibility search_visibility = SearchVisibility::Always;
     bool show_title = true;

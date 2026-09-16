@@ -239,7 +239,6 @@ private:
     HWND m_aHighlight = nullptr;
     HWND m_aMenuIcon = nullptr;
     HWND m_aShowStatus = nullptr;
-    HWND m_aShowRecent = nullptr;
     HWND m_aShowSearch = nullptr;
     HWND m_aSearchVisibility = nullptr;
     HWND m_aShowTitle = nullptr;

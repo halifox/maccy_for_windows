@@ -41,7 +41,6 @@ public:
     void SetPasting(bool pasting) { m_pasting = pasting; }
     bool IsPasting() const { return m_pasting; }
     void SetSkipNextEvent(bool skip) { m_skipNextClipboardEvent = skip; }
-    std::wstring GetLastCopyText() const { return m_lastCopyText; }
     void UpdateTrayTooltip(NOTIFYICONDATAW& notifyIcon, bool trayIconAdded) const;
 
     // Paste timer management
@@ -94,6 +93,4 @@ private:
     HWND m_pendingPasteTarget = nullptr;
     HWND m_pendingPasteFocus = nullptr;
     ULONGLONG m_pendingPasteDeadline = 0;
-
-    std::wstring m_lastCopyText;
 };

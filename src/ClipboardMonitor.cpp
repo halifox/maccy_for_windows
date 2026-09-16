@@ -124,20 +124,6 @@ std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
     return result;
 }
 
-std::wstring PreviewText(std::wstring_view text) {
-    constexpr size_t kPreviewCharacters = 180;
-    std::wstring preview;
-    preview.reserve(std::min(text.size(), kPreviewCharacters + 3));
-    for (const wchar_t character : text) {
-        if (preview.size() >= kPreviewCharacters) {
-            preview += L"...";
-            break;
-        }
-        preview += (character < L' ' && character != L'\t') ? L' ' : character;
-    }
-    return preview;
-}
-
 } // namespace
 
 ClipboardMonitor::ClipboardMonitor(Database& database, AppSettings& settings)
@@ -473,7 +459,6 @@ bool ClipboardMonitor::ReadClipboardAndSave() {
             return false;
         }
         m_database.SaveClipboard(*capture, m_settings.history_size);
-        m_lastCopyText = PreviewText(capture->preview);
         return true;
     }
     return false;
@@ -669,11 +654,7 @@ void ClipboardMonitor::StopPasteTimer(HWND mainWindow) {
 }
 
 void ClipboardMonitor::UpdateTrayTooltip(NOTIFYICONDATAW& notifyIcon, bool trayIconAdded) const {
-    std::wstring tooltip = L"剪贴板历史";
-    if (m_settings.show_recent_copy_in_menu_bar && !m_lastCopyText.empty()) {
-        tooltip += L" - " + m_lastCopyText;
-    }
-    lstrcpynW(notifyIcon.szTip, tooltip.c_str(), ARRAYSIZE(notifyIcon.szTip));
+    lstrcpynW(notifyIcon.szTip, L"剪贴板历史", ARRAYSIZE(notifyIcon.szTip));
     if (trayIconAdded) {
         notifyIcon.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
         Shell_NotifyIconW(NIM_MODIFY, &notifyIcon);

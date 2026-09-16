@@ -1229,8 +1229,7 @@ std::uint32_t MainWindow::ApplySettings(std::uint32_t requestedUpdates) {
         updates |= AppConstants::UiUpdate::kLayout;
     }
     if (previewTipChanged || previous.menu_icon != m_settings.menu_icon ||
-        previous.show_in_status_bar != m_settings.show_in_status_bar ||
-        previous.show_recent_copy_in_menu_bar != m_settings.show_recent_copy_in_menu_bar) {
+        previous.show_in_status_bar != m_settings.show_in_status_bar) {
         updates |= AppConstants::UiUpdate::kTray;
     }
     if (!m_settings.show_search) {

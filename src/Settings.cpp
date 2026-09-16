@@ -171,11 +171,6 @@ AppSettings AppSettings::Load(const Database &database) {
     ));
     settings.menu_icon = Read(database, L"appearance.menuIcon", settings.menu_icon);
     settings.show_in_status_bar = ReadBool(database, L"appearance.showInStatusBar", settings.show_in_status_bar);
-    settings.show_recent_copy_in_menu_bar = ReadBool(
-        database,
-        L"appearance.showRecentCopyInMenuBar",
-        settings.show_recent_copy_in_menu_bar
-    );
     settings.show_search = ReadBool(database, L"appearance.showSearch", settings.show_search);
     settings.search_visibility = static_cast<SearchVisibility>(ReadInt(
         database,
@@ -275,7 +270,6 @@ void AppSettings::Save(const Database &database) const {
         WriteInt(database, L"appearance.highlightMatch", static_cast<int>(highlight_match));
         database.SetSetting(L"appearance.menuIcon", menu_icon);
         WriteBool(database, L"appearance.showInStatusBar", show_in_status_bar);
-        WriteBool(database, L"appearance.showRecentCopyInMenuBar", show_recent_copy_in_menu_bar);
         WriteBool(database, L"appearance.showSearch", show_search);
         WriteInt(database, L"appearance.searchVisibility", static_cast<int>(search_visibility));
         WriteBool(database, L"appearance.showTitle", show_title);

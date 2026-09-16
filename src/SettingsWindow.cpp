@@ -245,7 +245,6 @@ enum SettingsControlId : int {
     kAHighlight = IDC_A_HIGHLIGHT,
     kAMenuIcon = IDC_A_MENU_ICON,
     kAShowStatus = IDC_A_SHOW_STATUS,
-    kAShowRecent = IDC_A_SHOW_RECENT,
     kAShowSearch = IDC_A_SHOW_SEARCH,
     kASearchVisibility = IDC_A_SEARCH_VISIBILITY,
     kAShowTitle = IDC_A_SHOW_TITLE,
@@ -689,7 +688,6 @@ void SettingsWindow::BindControls() {
     m_aHighlight = get(kPageAppearance, kAHighlight);
     m_aMenuIcon = get(kPageAppearance, kAMenuIcon);
     m_aShowStatus = get(kPageAppearance, kAShowStatus);
-    m_aShowRecent = get(kPageAppearance, kAShowRecent);
     m_aShowSearch = get(kPageAppearance, kAShowSearch);
     m_aSearchVisibility = get(kPageAppearance, kASearchVisibility);
     m_aShowTitle = get(kPageAppearance, kAShowTitle);
@@ -1070,7 +1068,6 @@ void SettingsWindow::LoadAppearanceControls() {
     }
     SelectCombo(m_aMenuIcon, icon_index);
     SetCheck(m_aShowStatus, m_settings.show_in_status_bar);
-    SetCheck(m_aShowRecent, m_settings.show_recent_copy_in_menu_bar);
     SetCheck(m_aShowSearch, m_settings.show_search);
     SelectCombo(m_aSearchVisibility, static_cast<int>(m_settings.search_visibility));
     SetCheck(m_aShowTitle, m_settings.show_title);
@@ -1092,7 +1089,6 @@ void SettingsWindow::UpdateDependencies() {
     ::EnableWindow(m_aShowTitle, IsChecked(m_aShowSearch));
     ::EnableWindow(m_aPreviewDelay, IsChecked(m_aOpenPreview));
     ::EnableWindow(m_aMenuIcon, IsChecked(m_aShowStatus));
-    ::EnableWindow(m_aShowRecent, IsChecked(m_aShowStatus));
     const auto position = static_cast<PopupPosition>(ComboSelection(m_aPopupPosition));
     ::EnableWindow(::GetDlgItem(m_pages[kPageAppearance], kAResetPosition), position == PopupPosition::LastPosition);
 }
@@ -1261,7 +1257,6 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             const std::array<const wchar_t *, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
             m_settings.menu_icon = icons[static_cast<size_t>(std::clamp(ComboSelection(m_aMenuIcon), 0, 3))];
             m_settings.show_in_status_bar = IsChecked(m_aShowStatus);
-            m_settings.show_recent_copy_in_menu_bar = IsChecked(m_aShowRecent);
             m_settings.show_search = IsChecked(m_aShowSearch);
             m_settings.search_visibility = static_cast<SearchVisibility>(ComboSelection(m_aSearchVisibility));
             m_settings.show_title = IsChecked(m_aShowTitle);
@@ -1506,7 +1501,7 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     const bool appearance_change =
         id == kAPopupPosition || id == kAPopupScreen || id == kAPinTo || id == kAImageHeight ||
         id == kAOpenPreview || id == kAPreviewDelay || id == kAHighlight || id == kAMenuIcon ||
-        id == kAShowStatus || id == kAShowRecent || id == kAShowSearch || id == kASearchVisibility ||
+        id == kAShowStatus || id == kAShowSearch || id == kASearchVisibility ||
         id == kAShowTitle || id == kAShowFooter || id == kAShowSpecial || id == kAShowIcons || id == kAShowSwatch;
     const bool storage_change =
         id == kSSaveFiles || id == kSSaveImages || id == kSSaveText || id == kSHistorySize || id == kSSortBy;
