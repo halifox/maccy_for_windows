@@ -75,6 +75,9 @@ private:
     static LRESULT CALLBACK MenuControlProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
                                            UINT_PTR, DWORD_PTR data);
 
+    // Search edit rendering
+    void DrawSearchCue(HWND window, HDC dc) const;
+
     // Control management
     bool BindControls();
     void ApplyHistoryFonts();

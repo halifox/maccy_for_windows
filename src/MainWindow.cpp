@@ -40,6 +40,7 @@ constexpr int kHistorySectionGap = 6;
 constexpr int kHistoryFooterCount = 4;
 constexpr int kResizeBorder = 8;
 
+constexpr wchar_t kHistorySearchCue[] = L"搜索剪贴板内容…";
 constexpr wchar_t kControlOwnerProperty[] = L"maccyMainWindow";
 
 std::wstring ReadWindowText(HWND window) {
@@ -111,6 +112,34 @@ MainWindow::MainWindow(Database& database, bool isolated)
 
 MainWindow::~MainWindow() = default;
 
+void MainWindow::DrawSearchCue(HWND window, HDC dc) const {
+    if (window == nullptr || dc == nullptr || window != m_search ||
+        !ReadWindowText(window).empty()) {
+        return;
+    }
+
+    RECT rect{};
+    ::GetClientRect(window, &rect);
+    const DWORD margins = static_cast<DWORD>(::SendMessageW(window, EM_GETMARGINS, 0, 0));
+    rect.left += LOWORD(margins);
+    rect.right -= HIWORD(margins);
+    if (rect.right <= rect.left || rect.bottom <= rect.top) {
+        return;
+    }
+
+    const HFONT font = m_historyRenderer.GetNormalFont();
+    const HGDIOBJ previous_font = font != nullptr ? ::SelectObject(dc, font) : nullptr;
+    const int previous_mode = ::SetBkMode(dc, TRANSPARENT);
+    const COLORREF previous_color = ::SetTextColor(dc, ::GetSysColor(COLOR_GRAYTEXT));
+    ::DrawTextW(dc, kHistorySearchCue, -1, &rect,
+        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    ::SetTextColor(dc, previous_color);
+    ::SetBkMode(dc, previous_mode);
+    if (previous_font != nullptr) {
+        ::SelectObject(dc, previous_font);
+    }
+}
+
 LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
     if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
@@ -122,7 +151,15 @@ LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM 
         owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
         return 0;
     }
-    return CallWindowProcW(owner->m_originalSearchProc, window, message, wParam, lParam);
+    const LRESULT result = CallWindowProcW(owner->m_originalSearchProc, window, message, wParam, lParam);
+    if (message == WM_PAINT && owner->m_search == window && ReadWindowText(window).empty()) {
+        HDC dc = ::GetDC(window);
+        if (dc != nullptr) {
+            owner->DrawSearchCue(window, dc);
+            ::ReleaseDC(window, dc);
+        }
+    }
+    return result;
 }
 
 LRESULT CALLBACK MainWindow::HistoryListWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -284,7 +321,6 @@ bool MainWindow::BindControls() {
     search_style &= ~static_cast<LONG_PTR>(ES_MULTILINE);
     search_style |= ES_AUTOHSCROLL;
     ::SetWindowLongPtrW(m_search, GWL_STYLE, search_style);
-    SendMessageW(m_search, EM_SETCUEBANNER, TRUE, reinterpret_cast<LPARAM>(L"搜索剪贴板内容…"));
 
     return true;
 }

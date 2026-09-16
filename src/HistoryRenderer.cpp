@@ -21,6 +21,7 @@ constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
+constexpr int kSearchIconVisualHeight = 13;
 
 std::wstring Lower(std::wstring_view value) {
     std::wstring result;
@@ -581,7 +582,8 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
         HPEN iconPen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT));
         pen = SelectObject(dc, iconPen); brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
         const int iconLeft = searchRect.left + 7;
-        const int iconTop = searchRect.top + 7;
+        const int searchHeight = std::max(1L, searchRect.bottom - searchRect.top);
+        const int iconTop = searchRect.top + std::max(0, (searchHeight - kSearchIconVisualHeight) / 2);
         Ellipse(dc, iconLeft, iconTop, iconLeft + 9, iconTop + 9);
         MoveToEx(dc, iconLeft + 7, iconTop + 7, nullptr);
         LineTo(dc, iconLeft + 13, iconTop + 13);
