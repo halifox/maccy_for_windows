@@ -213,6 +213,7 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
+    PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;

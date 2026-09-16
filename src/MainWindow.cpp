@@ -1010,13 +1010,18 @@ void MainWindow::SaveWindowGeometry(bool resized) {
         kMinimumPopupHeight,
         kMaximumPopupHeight
     );
-    m_settings.popup_x = rect.left;
-    m_settings.popup_y = rect.top;
+    const bool persist_popup_position = m_activePopupPosition != PopupPosition::StatusItem;
+    if (persist_popup_position) {
+        m_settings.popup_x = rect.left;
+        m_settings.popup_y = rect.top;
+    }
     m_settings.window_width = width;
     m_settings.window_height = height;
     try {
-        m_database.SetSetting(L"appearance.windowX", std::to_wstring(m_settings.popup_x));
-        m_database.SetSetting(L"appearance.windowY", std::to_wstring(m_settings.popup_y));
+        if (persist_popup_position) {
+            m_database.SetSetting(L"appearance.windowX", std::to_wstring(m_settings.popup_x));
+            m_database.SetSetting(L"appearance.windowY", std::to_wstring(m_settings.popup_y));
+        }
         m_database.SetSetting(L"appearance.windowWidth", std::to_wstring(width));
         m_database.SetSetting(L"appearance.windowHeight", std::to_wstring(height));
     } catch (...) {
@@ -1739,6 +1744,7 @@ void MainWindow::ShowMainWindow() {
 }
 
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
+    m_activePopupPosition = popup_position;
     m_keyboardHandler.ClearHistoryHover();
     m_clipboardMonitor.CaptureTargetWindow();
     m_previewSuppressed = false;
