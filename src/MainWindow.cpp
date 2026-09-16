@@ -1091,14 +1091,14 @@ void MainWindow::ShowTrayMenu() {
         return;
     }
     m_trayMenuShowing = true;
-    AppendMenuW(menu, MF_STRING, kTrayCommandShow, L"打开剪贴板历史");
-    AppendMenuW(menu, MF_STRING, kTrayCommandSettings, L"设置…");
-    AppendMenuW(menu, MF_STRING, kTrayCommandClear, L"清除未置顶历史");
+    AppendMenuW(menu, MF_STRING, kTrayCommandShow, L"打开");
+    AppendMenuW(menu, MF_STRING, kTrayCommandSettings, L"设置");
+    AppendMenuW(menu, MF_STRING, kTrayCommandClear, L"清空");
     AppendMenuW(
         menu,
         MF_STRING | (m_settings.ignore_events ? MF_CHECKED : MF_UNCHECKED),
         kTrayCommandIgnore,
-        L"暂时忽略复制"
+        L"暂停"
     );
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kTrayCommandExit, L"退出");
