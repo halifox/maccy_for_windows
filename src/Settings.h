@@ -64,7 +64,7 @@ struct AppSettings {
     int popup_screen = 0; // 0 = active screen, otherwise monitor index + 1
     PinPosition pin_to = PinPosition::Top;
     int window_width = 450;
-    int window_height = 800;
+    int window_height = 500;
     int image_max_height = 40;
     bool open_preview_automatically = true;
     int preview_delay = 1500;
