@@ -626,7 +626,7 @@ void MainWindow::PositionPreviewWindow() {
     }
 
     const RECT& work_area = monitor_info.rcWork;
-    constexpr int gap = 8;
+    constexpr int gap = 0;
     int x = main_rect.right + gap;
     int y = main_rect.top;
     const bool fits_right = main_rect.right + gap + width <= work_area.right;
