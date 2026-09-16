@@ -472,7 +472,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     }
     if (!IsRectEmpty(&layout.attachment)) {
         // Keep this marker cheap, but make its meaning visible instead of
-        // using an opaque color block. Full payloads remain on disk and
+        // using an opaque color block. Full payloads remain in SQLite and
         // are still loaded only by the preview/copy path.
         const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
         HPEN marker_pen = CreatePen(PS_SOLID, 1, marker);

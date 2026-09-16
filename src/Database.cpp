@@ -4,70 +4,35 @@
 #include <chrono>
 #include <cwctype>
 #include <cstring>
-#include <fstream>
 #include <limits>
 #include <regex>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
+
+#include <shellapi.h>
+#include <shlobj.h>
 
 namespace {
 
-constexpr std::uint32_t kPayloadMagic = 0x4D435059; // MCPY
-constexpr std::uint32_t kPayloadVersion = 1;
 constexpr std::uint32_t kMaximumPayloadRecords = 4096;
 constexpr std::uint32_t kMaximumFormatNameBytes = 1024 * 1024;
 constexpr std::uint64_t kMaximumPayloadBytes = 256ULL * 1024ULL * 1024ULL;
 
-template <typename T>
-void WritePayloadValue(std::ofstream& stream, T value) {
-    stream.write(reinterpret_cast<const char*>(&value), sizeof(value));
-    if (!stream) {
-        throw std::runtime_error("Unable to write clipboard payload");
-    }
-}
+struct SearchParts {
+    std::wstring body;
+    std::wstring paths;
+};
 
-template <typename T>
-T ReadPayloadValue(std::ifstream& stream) {
-    T value{};
-    stream.read(reinterpret_cast<char*>(&value), sizeof(value));
-    if (!stream) {
-        throw std::runtime_error("Unable to read clipboard payload");
-    }
-    return value;
-}
-
-void WritePayloadBytes(std::ofstream& stream, const void* bytes, std::size_t size) {
-    if (size == 0) {
-        return;
-    }
-    stream.write(static_cast<const char*>(bytes), static_cast<std::streamsize>(size));
-    if (!stream) {
-        throw std::runtime_error("Unable to write clipboard payload");
-    }
-}
-
-void ReadPayloadBytes(std::ifstream& stream, void* bytes, std::size_t size) {
-    if (size == 0) {
-        return;
-    }
-    stream.read(static_cast<char*>(bytes), static_cast<std::streamsize>(size));
-    if (!stream) {
-        throw std::runtime_error("Unable to read clipboard payload");
-    }
-}
-
-std::uint32_t PayloadNameByteCount(const std::wstring& name) {
-    if (name.size() > std::numeric_limits<std::uint32_t>::max() / sizeof(wchar_t)) {
-        throw std::runtime_error("Clipboard format name is too large");
-    }
-    return static_cast<std::uint32_t>(name.size() * sizeof(wchar_t));
-}
-
-std::filesystem::path TemporaryPayloadPath(const std::filesystem::path& path) {
-    return path.wstring() + L".tmp";
-}
+struct SearchAccumulator {
+    std::wstring unicode_text;
+    std::wstring ansi_text;
+    std::wstring rich_text;
+    std::wstring paths;
+};
 
 std::runtime_error MakeSqliteError(sqlite3 *db, const char *operation) {
     std::string message = operation;
@@ -143,6 +108,10 @@ std::wstring Lower(std::wstring_view value) {
         result.push_back(static_cast<wchar_t>(std::towlower(character)));
     }
     return result;
+}
+
+bool EqualInsensitive(std::wstring_view lhs, std::wstring_view rhs) {
+    return Lower(lhs) == Lower(rhs);
 }
 
 std::wstring TrimWhitespace(std::wstring value) {
@@ -245,183 +214,348 @@ std::optional<double> FuzzyScore(std::wstring_view text, std::wstring_view patte
         static_cast<double>(std::max<size_t>(1, lower_text.size()));
 }
 
-} // namespace
-
-class Database::PayloadStore {
-public:
-    explicit PayloadStore(std::filesystem::path root);
-
-    void Save(sqlite3_int64 item_id, const std::vector<ClipboardFormatData>& data) const;
-    std::vector<ClipboardFormatData> Load(sqlite3_int64 item_id) const;
-    void Remove(sqlite3_int64 item_id) const;
-    std::uintmax_t StorageBytes() const;
-
-private:
-    std::filesystem::path PathFor(sqlite3_int64 item_id) const;
-
-    std::filesystem::path m_root;
-};
-
-Database::PayloadStore::PayloadStore(std::filesystem::path root)
-    : m_root(std::move(root)) {
-    std::error_code error;
-    std::filesystem::create_directories(m_root, error);
-    if (error) {
-        throw std::system_error(error, "Unable to create clipboard payload directory");
-    }
+void BindBlob(
+    sqlite3 *db,
+    sqlite3_stmt *statement,
+    int index,
+    const std::vector<unsigned char> &bytes
+) {
+    CheckSqliteResult(
+        db,
+        sqlite3_bind_blob64(
+            statement,
+            index,
+            bytes.data(),
+            static_cast<sqlite3_uint64>(bytes.size()),
+            SQLITE_TRANSIENT
+        ),
+        "Unable to bind SQLite blob"
+    );
 }
 
-std::filesystem::path Database::PayloadStore::PathFor(sqlite3_int64 item_id) const {
-    if (item_id <= 0) {
-        throw std::runtime_error("Invalid clipboard item id");
+std::vector<unsigned char> ColumnBlob(sqlite3_stmt *statement, int column) {
+    const int byte_count = sqlite3_column_bytes(statement, column);
+    if (byte_count <= 0) {
+        return {};
     }
-    return m_root / (std::to_wstring(item_id) + L".payload");
+    const auto *bytes = static_cast<const unsigned char *>(sqlite3_column_blob(statement, column));
+    if (bytes == nullptr) {
+        return {};
+    }
+    return {bytes, bytes + byte_count};
 }
 
-void Database::PayloadStore::Save(
-    sqlite3_int64 item_id,
-    const std::vector<ClipboardFormatData>& data
-) const {
-    if (data.size() > kMaximumPayloadRecords) {
-        throw std::runtime_error("Too many clipboard formats");
-    }
-
-    std::uint64_t total_bytes = 0;
-    for (const ClipboardFormatData& item : data) {
-        const std::uint32_t name_bytes = PayloadNameByteCount(item.name);
-        if (name_bytes > kMaximumFormatNameBytes ||
-            item.bytes.size() > kMaximumPayloadBytes ||
-            total_bytes > kMaximumPayloadBytes - item.bytes.size()) {
-            throw std::runtime_error("Clipboard payload is too large");
-        }
-        total_bytes += item.bytes.size();
-    }
-
-    const std::filesystem::path path = PathFor(item_id);
-    const std::filesystem::path temporary = TemporaryPayloadPath(path);
-    std::ofstream stream(temporary, std::ios::binary | std::ios::trunc);
-    if (!stream) {
-        throw std::runtime_error("Unable to open clipboard payload file");
-    }
-
-    try {
-        WritePayloadValue(stream, kPayloadMagic);
-        WritePayloadValue(stream, kPayloadVersion);
-        WritePayloadValue(stream, static_cast<std::uint32_t>(data.size()));
-        for (const ClipboardFormatData& item : data) {
-            const std::uint32_t name_bytes = PayloadNameByteCount(item.name);
-            WritePayloadValue(stream, static_cast<std::uint32_t>(item.format));
-            WritePayloadValue(stream, name_bytes);
-            WritePayloadValue(stream, static_cast<std::uint64_t>(item.bytes.size()));
-            WritePayloadBytes(stream, item.name.data(), name_bytes);
-            WritePayloadBytes(stream, item.bytes.data(), item.bytes.size());
-        }
-        stream.flush();
-        if (!stream) {
-            throw std::runtime_error("Unable to flush clipboard payload file");
-        }
-        stream.close();
-
-        if (!MoveFileExW(
-            temporary.c_str(),
-            path.c_str(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
-        )) {
-            throw std::system_error(
-                static_cast<int>(GetLastError()),
-                std::system_category(),
-                "Unable to replace clipboard payload file"
-            );
-        }
-    } catch (...) {
-        stream.close();
-        std::error_code error;
-        std::filesystem::remove(temporary, error);
-        throw;
-    }
+bool IsUnicodeTextFormat(const ClipboardFormatData &data) {
+    return data.format == CF_UNICODETEXT || EqualInsensitive(data.name, L"CF_UNICODETEXT");
 }
 
-std::vector<ClipboardFormatData> Database::PayloadStore::Load(sqlite3_int64 item_id) const {
-    const std::filesystem::path path = PathFor(item_id);
-    std::ifstream stream(path, std::ios::binary);
-    if (!stream) {
-        throw std::runtime_error("Unable to open clipboard payload file");
-    }
-
-    const std::uint32_t magic = ReadPayloadValue<std::uint32_t>(stream);
-    const std::uint32_t version = ReadPayloadValue<std::uint32_t>(stream);
-    const std::uint32_t count = ReadPayloadValue<std::uint32_t>(stream);
-    if (magic != kPayloadMagic || version != kPayloadVersion || count > kMaximumPayloadRecords) {
-        throw std::runtime_error("Invalid clipboard payload file");
-    }
-
-    std::vector<ClipboardFormatData> data;
-    data.reserve(count);
-    std::uint64_t total_bytes = 0;
-    for (std::uint32_t index = 0; index < count; ++index) {
-        ClipboardFormatData item;
-        item.format = static_cast<UINT>(ReadPayloadValue<std::uint32_t>(stream));
-        const std::uint32_t name_bytes = ReadPayloadValue<std::uint32_t>(stream);
-        const std::uint64_t payload_bytes = ReadPayloadValue<std::uint64_t>(stream);
-        if (name_bytes > kMaximumFormatNameBytes ||
-            name_bytes % sizeof(wchar_t) != 0 ||
-            payload_bytes > kMaximumPayloadBytes ||
-            total_bytes > kMaximumPayloadBytes - payload_bytes ||
-            payload_bytes > std::numeric_limits<std::size_t>::max() ||
-            name_bytes > std::numeric_limits<std::size_t>::max()) {
-            throw std::runtime_error("Invalid clipboard payload size");
-        }
-
-        item.name.resize(name_bytes / sizeof(wchar_t));
-        item.bytes.resize(static_cast<std::size_t>(payload_bytes));
-        ReadPayloadBytes(stream, item.name.data(), name_bytes);
-        ReadPayloadBytes(stream, item.bytes.data(), item.bytes.size());
-        total_bytes += payload_bytes;
-        data.push_back(std::move(item));
-    }
-    return data;
+bool IsAnsiTextFormat(const ClipboardFormatData &data) {
+    return data.format == CF_TEXT || EqualInsensitive(data.name, L"CF_TEXT");
 }
 
-void Database::PayloadStore::Remove(sqlite3_int64 item_id) const {
-    const std::filesystem::path path = PathFor(item_id);
-    std::error_code error;
-    std::filesystem::remove(path, error);
-    if (error) {
-        throw std::system_error(error, "Unable to remove clipboard payload file");
-    }
-    std::filesystem::remove(TemporaryPayloadPath(path), error);
-    if (error) {
-        throw std::system_error(error, "Unable to remove temporary clipboard payload file");
-    }
+bool IsRichTextFormat(const ClipboardFormatData &data) {
+    return EqualInsensitive(data.name, L"HTML Format") ||
+        EqualInsensitive(data.name, L"Rich Text Format");
 }
 
-std::uintmax_t Database::PayloadStore::StorageBytes() const {
-    std::uintmax_t total = 0;
-    std::error_code error;
-    for (std::filesystem::recursive_directory_iterator it(m_root, error), end; it != end; it.increment(error)) {
-        if (error) {
-            throw std::system_error(error, "Unable to inspect clipboard payload directory");
+bool IsFilesFormat(const ClipboardFormatData &data) {
+    return data.format == CF_HDROP || EqualInsensitive(data.name, L"CF_HDROP");
+}
+
+std::wstring DecodeUnicodeText(const std::vector<unsigned char> &bytes) {
+    if (bytes.size() < sizeof(wchar_t)) {
+        return {};
+    }
+
+    const size_t count = bytes.size() / sizeof(wchar_t);
+    std::wstring result(count, L'\0');
+    std::memcpy(result.data(), bytes.data(), count * sizeof(wchar_t));
+    const size_t nul = result.find(L'\0');
+    if (nul != std::wstring::npos) {
+        result.resize(nul);
+    }
+    return result;
+}
+
+std::wstring DecodeAnsiText(const std::vector<unsigned char> &bytes) {
+    if (bytes.empty()) {
+        return {};
+    }
+
+    const size_t nul = std::find(bytes.begin(), bytes.end(), 0) - bytes.begin();
+    if (nul == 0 || nul > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+    const int source_length = static_cast<int>(nul);
+    const auto *source = reinterpret_cast<const char *>(bytes.data());
+    const int length = MultiByteToWideChar(
+        CP_ACP,
+        MB_PRECOMPOSED,
+        source,
+        source_length,
+        nullptr,
+        0
+    );
+    if (length <= 0) {
+        return {};
+    }
+    std::wstring result(static_cast<size_t>(length), L'\0');
+    MultiByteToWideChar(
+        CP_ACP,
+        MB_PRECOMPOSED,
+        source,
+        source_length,
+        result.data(),
+        length
+    );
+    return result;
+}
+
+std::wstring DecodeByteText(const std::vector<unsigned char> &bytes) {
+    if (bytes.empty()) {
+        return {};
+    }
+
+    const size_t nul = std::find(bytes.begin(), bytes.end(), 0) - bytes.begin();
+    if (nul == 0 || nul > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        return {};
+    }
+    const int source_length = static_cast<int>(nul);
+    const auto *source = reinterpret_cast<const char *>(bytes.data());
+
+    UINT code_page = CP_UTF8;
+    DWORD flags = MB_ERR_INVALID_CHARS;
+    int length = MultiByteToWideChar(
+        code_page,
+        flags,
+        source,
+        source_length,
+        nullptr,
+        0
+    );
+    if (length <= 0) {
+        code_page = CP_ACP;
+        flags = MB_PRECOMPOSED;
+        length = MultiByteToWideChar(
+            code_page,
+            flags,
+            source,
+            source_length,
+            nullptr,
+            0
+        );
+    }
+    if (length <= 0) {
+        return {};
+    }
+
+    std::wstring result(static_cast<size_t>(length), L'\0');
+    MultiByteToWideChar(
+        code_page,
+        flags,
+        source,
+        source_length,
+        result.data(),
+        length
+    );
+    return result;
+}
+
+std::wstring StripHtml(std::wstring value) {
+    const size_t header_end = value.find(L"\r\n\r\n");
+    if (header_end != std::wstring::npos) {
+        value.erase(0, header_end + 4);
+    }
+
+    std::wstring result;
+    result.reserve(value.size());
+    bool in_tag = false;
+    for (size_t index = 0; index < value.size(); ++index) {
+        const wchar_t character = value[index];
+        if (character == L'<') {
+            in_tag = true;
+            result.push_back(L' ');
+            continue;
         }
-        if (!it->is_regular_file(error)) {
-            if (error) {
-                throw std::system_error(error, "Unable to inspect clipboard payload file");
+        if (in_tag) {
+            if (character == L'>') {
+                in_tag = false;
             }
             continue;
         }
-        const std::uintmax_t size = it->file_size(error);
-        if (error) {
-            throw std::system_error(error, "Unable to inspect clipboard payload size");
+        if (character == L'&') {
+            const size_t end = value.find(L';', index + 1);
+            if (end != std::wstring::npos && end - index <= 16) {
+                const std::wstring_view entity(value.data() + index + 1, end - index - 1);
+                if (entity == L"nbsp") result += L' ';
+                else if (entity == L"amp") result += L'&';
+                else if (entity == L"lt") result += L'<';
+                else if (entity == L"gt") result += L'>';
+                else if (entity == L"quot") result += L'\"';
+                else result.append(value, index, end - index + 1);
+                index = end;
+                continue;
+            }
         }
-        if (total > std::numeric_limits<std::uintmax_t>::max() - size) {
-            return std::numeric_limits<std::uintmax_t>::max();
-        }
-        total += size;
+        result.push_back(character);
     }
-    if (error) {
-        throw std::system_error(error, "Unable to inspect clipboard payload directory");
-    }
-    return total;
+    return TrimWhitespace(std::move(result));
 }
+
+std::wstring StripRtf(std::wstring_view value) {
+    std::wstring result;
+    result.reserve(value.size());
+    for (size_t index = 0; index < value.size();) {
+        const wchar_t character = value[index++];
+        if (character == L'{' || character == L'}') {
+            continue;
+        }
+        if (character != L'\\') {
+            result.push_back(character);
+            continue;
+        }
+
+        if (index >= value.size()) {
+            break;
+        }
+        if (value[index] == L'\'') {
+            index = std::min(index + 3, value.size());
+            continue;
+        }
+        const size_t word_begin = index;
+        while (index < value.size() && std::iswalpha(value[index])) {
+            ++index;
+        }
+        const std::wstring_view word(value.data() + word_begin, index - word_begin);
+        if (word == L"par" || word == L"line") {
+            result.push_back(L'\n');
+        }
+        if (index < value.size() && (value[index] == L'-' || std::iswdigit(value[index]))) {
+            ++index;
+            while (index < value.size() && std::iswdigit(value[index])) {
+                ++index;
+            }
+        }
+        if (index < value.size() && value[index] == L' ') {
+            ++index;
+        }
+    }
+    return TrimWhitespace(std::move(result));
+}
+
+std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes) {
+    if (bytes.size() < sizeof(DROPFILES)) {
+        return {};
+    }
+
+    DROPFILES header{};
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.pFiles < sizeof(DROPFILES) || header.pFiles >= bytes.size()) {
+        return {};
+    }
+
+    std::wstring result;
+    size_t offset = header.pFiles;
+    while (offset < bytes.size()) {
+        std::wstring path;
+        if (header.fWide) {
+            while (offset + sizeof(wchar_t) <= bytes.size()) {
+                wchar_t character = L'\0';
+                std::memcpy(&character, bytes.data() + offset, sizeof(character));
+                offset += sizeof(character);
+                if (character == L'\0') {
+                    break;
+                }
+                path.push_back(character);
+            }
+        } else {
+            std::string ansi;
+            while (offset < bytes.size() && bytes[offset] != 0) {
+                ansi.push_back(static_cast<char>(bytes[offset++]));
+            }
+            if (offset < bytes.size()) {
+                ++offset;
+            }
+            if (!ansi.empty()) {
+                const int length = MultiByteToWideChar(
+                    CP_ACP,
+                    MB_PRECOMPOSED,
+                    ansi.data(),
+                    static_cast<int>(ansi.size()),
+                    nullptr,
+                    0
+                );
+                if (length > 0) {
+                    path.resize(static_cast<size_t>(length));
+                    MultiByteToWideChar(
+                        CP_ACP,
+                        MB_PRECOMPOSED,
+                        ansi.data(),
+                        static_cast<int>(ansi.size()),
+                        path.data(),
+                        length
+                    );
+                }
+            }
+        }
+        if (path.empty()) {
+            break;
+        }
+        if (!result.empty()) {
+            result += L"; ";
+        }
+        result += path;
+    }
+    return result;
+}
+
+void AccumulateSearchFormat(SearchAccumulator &accumulator, const ClipboardFormatData &format) {
+    if (IsUnicodeTextFormat(format) && accumulator.unicode_text.empty()) {
+        accumulator.unicode_text = DecodeUnicodeText(format.bytes);
+    } else if (IsAnsiTextFormat(format) && accumulator.ansi_text.empty()) {
+        accumulator.ansi_text = DecodeAnsiText(format.bytes);
+    } else if (IsRichTextFormat(format) && accumulator.rich_text.empty()) {
+        const std::wstring decoded = DecodeByteText(format.bytes);
+        accumulator.rich_text = EqualInsensitive(format.name, L"HTML Format")
+            ? StripHtml(decoded)
+            : StripRtf(decoded);
+    } else if (IsFilesFormat(format) && accumulator.paths.empty()) {
+        accumulator.paths = ExtractDropPaths(format.bytes);
+    }
+}
+
+SearchParts SearchPartsFromAccumulator(SearchAccumulator accumulator) {
+    SearchParts result;
+    result.body = !accumulator.unicode_text.empty()
+        ? std::move(accumulator.unicode_text)
+        : (!accumulator.ansi_text.empty()
+            ? std::move(accumulator.ansi_text)
+            : std::move(accumulator.rich_text));
+    result.paths = std::move(accumulator.paths);
+    return result;
+}
+
+SearchParts SearchPartsFromFormats(const std::vector<ClipboardFormatData> &data) {
+    SearchAccumulator accumulator;
+    for (const ClipboardFormatData &format : data) {
+        AccumulateSearchFormat(accumulator, format);
+    }
+    return SearchPartsFromAccumulator(std::move(accumulator));
+}
+
+std::wstring MakeFtsPhrase(std::wstring_view query) {
+    std::wstring result = L"\"";
+    for (const wchar_t character : query) {
+        result += character;
+        if (character == L'\"') {
+            result += L'\"';
+        }
+    }
+    result += L"\"";
+    return result;
+}
+
+} // namespace
 
 Database::Transaction::Transaction(const Database& database)
     : m_database(&database) {
@@ -468,10 +602,7 @@ void Database::Transaction::Commit() {
 }
 
 Database::Database(const std::filesystem::path &path)
-    : m_path(path),
-      m_payloadStore(std::make_unique<PayloadStore>(
-          path.parent_path() / (path.filename().wstring() + L".payloads")
-      )) {
+    : m_path(path) {
     const auto parent = path.parent_path();
     if (!parent.empty()) {
         std::filesystem::create_directories(parent);
@@ -553,6 +684,169 @@ void Database::CreateHistoryTables() {
         "CREATE INDEX IF NOT EXISTS idx_history_items_copied_at "
         "ON history_items(copied_at DESC);"
     );
+    Exec(
+        "CREATE TABLE IF NOT EXISTS clipboard_formats ("
+        "item_id INTEGER NOT NULL REFERENCES history_items(id) ON DELETE CASCADE,"
+        "sequence INTEGER NOT NULL,"
+        "format INTEGER NOT NULL,"
+        "name TEXT NOT NULL,"
+        "data BLOB NOT NULL,"
+        "PRIMARY KEY(item_id, sequence)"
+        ");"
+    );
+    Exec(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5("
+        "body, paths, content='', contentless_delete=1, "
+        "tokenize='trigram'"
+        ");"
+    );
+}
+
+void Database::ReplaceFormats(
+    sqlite3_int64 item_id,
+    const std::vector<ClipboardFormatData> &data
+) const {
+    if (item_id <= 0) {
+        throw std::runtime_error("Invalid clipboard item id");
+    }
+    if (data.size() > kMaximumPayloadRecords) {
+        throw std::runtime_error("Too many clipboard formats");
+    }
+
+    std::uint64_t total_bytes = 0;
+    for (const ClipboardFormatData &format : data) {
+        if (format.name.size() > kMaximumFormatNameBytes / sizeof(wchar_t) ||
+            format.bytes.size() > kMaximumPayloadBytes ||
+            total_bytes > kMaximumPayloadBytes - format.bytes.size()) {
+            throw std::runtime_error("Clipboard payload is too large");
+        }
+        total_bytes += format.bytes.size();
+    }
+
+    Statement remove(m_db, "DELETE FROM clipboard_formats WHERE item_id = ?1;");
+    CheckSqliteResult(m_db, sqlite3_bind_int64(remove.get(), 1, item_id), "Unable to bind item id");
+    if (sqlite3_step(remove.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to replace clipboard formats");
+    }
+
+    Statement insert(
+        m_db,
+        "INSERT INTO clipboard_formats(item_id, sequence, format, name, data) "
+        "VALUES(?1, ?2, ?3, ?4, ?5);"
+    );
+    for (size_t index = 0; index < data.size(); ++index) {
+        sqlite3_reset(insert.get());
+        sqlite3_clear_bindings(insert.get());
+        CheckSqliteResult(m_db, sqlite3_bind_int64(insert.get(), 1, item_id), "Unable to bind item id");
+        CheckSqliteResult(
+            m_db,
+            sqlite3_bind_int64(insert.get(), 2, static_cast<sqlite3_int64>(index)),
+            "Unable to bind clipboard format sequence"
+        );
+        CheckSqliteResult(
+            m_db,
+            sqlite3_bind_int64(insert.get(), 3, static_cast<sqlite3_int64>(data[index].format)),
+            "Unable to bind clipboard format id"
+        );
+        BindText16(m_db, insert.get(), 4, data[index].name);
+        BindBlob(m_db, insert.get(), 5, data[index].bytes);
+        if (sqlite3_step(insert.get()) != SQLITE_DONE) {
+            throw MakeSqliteError(m_db, "Unable to insert clipboard format");
+        }
+    }
+}
+
+void Database::ReplaceSearchIndex(
+    sqlite3_int64 item_id,
+    std::wstring_view body,
+    std::wstring_view paths
+) const {
+    Statement remove(m_db, "DELETE FROM history_fts WHERE rowid = ?1;");
+    CheckSqliteResult(m_db, sqlite3_bind_int64(remove.get(), 1, item_id), "Unable to bind search item id");
+    if (sqlite3_step(remove.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to replace clipboard search index");
+    }
+    if (body.empty() && paths.empty()) {
+        return;
+    }
+
+    Statement insert(
+        m_db,
+        "INSERT INTO history_fts(rowid, body, paths) VALUES(?1, ?2, ?3);"
+    );
+    CheckSqliteResult(m_db, sqlite3_bind_int64(insert.get(), 1, item_id), "Unable to bind search item id");
+    BindText16(m_db, insert.get(), 2, body);
+    BindText16(m_db, insert.get(), 3, paths);
+    if (sqlite3_step(insert.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to insert clipboard search index");
+    }
+}
+
+std::vector<sqlite3_int64> Database::SearchIndexIds(std::wstring_view query) const {
+    if (query.size() < 3) {
+        return {};
+    }
+
+    Statement statement(
+        m_db,
+        "SELECT rowid FROM history_fts WHERE history_fts MATCH ?1;"
+    );
+    const std::wstring phrase = MakeFtsPhrase(query);
+    BindText16(m_db, statement.get(), 1, phrase);
+    std::vector<sqlite3_int64> ids;
+    while (true) {
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw MakeSqliteError(m_db, "Unable to search clipboard text");
+        }
+        ids.push_back(sqlite3_column_int64(statement.get(), 0));
+    }
+    return ids;
+}
+
+std::vector<Database::SearchDocument> Database::LoadSearchDocuments() const {
+    Statement statement(
+        m_db,
+        "SELECT item_id, format, name, data FROM clipboard_formats "
+        "WHERE format IN (1, 13, 15) "
+        "OR name COLLATE NOCASE IN ("
+        "'CF_TEXT', 'CF_UNICODETEXT', 'CF_HDROP', 'HTML Format', 'Rich Text Format'"
+        ") ORDER BY item_id ASC, sequence ASC;"
+    );
+    std::unordered_map<sqlite3_int64, SearchAccumulator> accumulators;
+    while (true) {
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw MakeSqliteError(m_db, "Unable to load clipboard search text");
+        }
+
+        ClipboardFormatData format;
+        format.format = static_cast<UINT>(sqlite3_column_int64(statement.get(), 1));
+        format.name = ColumnText16(statement.get(), 2);
+        format.bytes = ColumnBlob(statement.get(), 3);
+        AccumulateSearchFormat(accumulators[sqlite3_column_int64(statement.get(), 0)], format);
+    }
+
+    std::vector<SearchDocument> documents;
+    documents.reserve(accumulators.size());
+    for (auto &[id, accumulator] : accumulators) {
+        SearchParts parts = SearchPartsFromAccumulator(std::move(accumulator));
+        if (parts.body.empty() && parts.paths.empty()) {
+            continue;
+        }
+        documents.push_back(SearchDocument{
+            id,
+            std::move(parts.body),
+            std::move(parts.paths)
+        });
+    }
+    return documents;
 }
 
 void Database::Exec(const std::string_view sql) const {
@@ -668,6 +962,7 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
 
     const int bounded_size = std::clamp(max_unpinned, 1, 999);
     const std::wstring stored_preview = StoredPreview(capture.preview);
+    const SearchParts search = SearchPartsFromFormats(capture.data);
     const sqlite3_int64 now = CurrentUnixMilliseconds();
     sqlite3_int64 item_id = 0;
     {
@@ -679,8 +974,24 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
         if (result != SQLITE_ROW && result != SQLITE_DONE) {
             throw MakeSqliteError(m_db, "Unable to find clipboard history");
         }
+        bool formats_present = false;
         if (existing) {
             item_id = sqlite3_column_int64(find.get(), 0);
+            Statement format_check(
+                m_db,
+                "SELECT 1 FROM clipboard_formats WHERE item_id = ?1 LIMIT 1;"
+            );
+            CheckSqliteResult(
+                m_db,
+                sqlite3_bind_int64(format_check.get(), 1, item_id),
+                "Unable to bind clipboard format item id"
+            );
+            const int format_result = sqlite3_step(format_check.get());
+            if (format_result == SQLITE_ROW) {
+                formats_present = true;
+            } else if (format_result != SQLITE_DONE) {
+                throw MakeSqliteError(m_db, "Unable to inspect clipboard formats");
+            }
             Statement update(
                 m_db,
                 "UPDATE history_items SET "
@@ -722,7 +1033,10 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
             item_id = sqlite3_last_insert_rowid(m_db);
         }
 
-        m_payloadStore->Save(item_id, capture.data);
+        if (!existing || !formats_present) {
+            ReplaceFormats(item_id, capture.data);
+            ReplaceSearchIndex(item_id, search.body, search.paths);
+        }
         transaction.Commit();
     }
     TrimUnpinned(bounded_size);
@@ -730,29 +1044,42 @@ void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) 
 
 void Database::TrimUnpinned(int max_unpinned) const {
     const int bounded_size = std::clamp(max_unpinned, 1, 999);
-    Statement select(
-        m_db,
-        "SELECT id FROM history_items WHERE pinned = 0 AND id NOT IN ("
-        "SELECT id FROM history_items WHERE pinned = 0 "
-        "ORDER BY copied_at DESC, id DESC LIMIT ?1);"
-    );
-    CheckSqliteResult(m_db, sqlite3_bind_int(select.get(), 1, bounded_size), "Unable to bind history size");
     std::vector<sqlite3_int64> removed_ids;
-    while (true) {
-        const int result = sqlite3_step(select.get());
-        if (result == SQLITE_DONE) {
-            break;
+    {
+        Statement select(
+            m_db,
+            "SELECT id FROM history_items WHERE pinned = 0 AND id NOT IN ("
+            "SELECT id FROM history_items WHERE pinned = 0 "
+            "ORDER BY copied_at DESC, id DESC LIMIT ?1);"
+        );
+        CheckSqliteResult(m_db, sqlite3_bind_int(select.get(), 1, bounded_size), "Unable to bind history size");
+        while (true) {
+            const int result = sqlite3_step(select.get());
+            if (result == SQLITE_DONE) {
+                break;
+            }
+            if (result != SQLITE_ROW) {
+                throw MakeSqliteError(m_db, "Unable to find expired clipboard history");
+            }
+            removed_ids.push_back(sqlite3_column_int64(select.get(), 0));
         }
-        if (result != SQLITE_ROW) {
-            throw MakeSqliteError(m_db, "Unable to find expired clipboard history");
-        }
-        removed_ids.push_back(sqlite3_column_int64(select.get(), 0));
     }
     if (removed_ids.empty()) {
         return;
     }
 
     auto transaction = BeginTransaction();
+    Statement remove_index(
+        m_db,
+        "DELETE FROM history_fts WHERE rowid IN ("
+        "SELECT id FROM history_items WHERE pinned = 0 AND id NOT IN ("
+        "SELECT id FROM history_items WHERE pinned = 0 "
+        "ORDER BY copied_at DESC, id DESC LIMIT ?1));"
+    );
+    CheckSqliteResult(m_db, sqlite3_bind_int(remove_index.get(), 1, bounded_size), "Unable to bind history size");
+    if (sqlite3_step(remove_index.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to trim clipboard search index");
+    }
     Statement trim(
         m_db,
         "DELETE FROM history_items WHERE pinned = 0 AND id NOT IN ("
@@ -764,9 +1091,6 @@ void Database::TrimUnpinned(int max_unpinned) const {
         throw MakeSqliteError(m_db, "Unable to trim clipboard history");
     }
     transaction.Commit();
-    for (const sqlite3_int64 id : removed_ids) {
-        m_payloadStore->Remove(id);
-    }
 }
 
 std::vector<ClipboardItem> Database::SearchHistory(
@@ -808,13 +1132,6 @@ std::vector<ClipboardItem> Database::SearchHistory(
         all.push_back(std::move(item));
     }
 
-    auto searchable = [](const ClipboardItem &item) -> std::wstring {
-        if (!item.title.empty()) {
-            return item.title;
-        }
-        return item.preview;
-    };
-
     bool fuzzyResults = false;
     std::optional<std::wregex> regex;
     if (!query.empty() && (search_mode == 2 || search_mode == 3)) {
@@ -824,6 +1141,42 @@ std::vector<ClipboardItem> Database::SearchHistory(
             regex.reset();
         }
     }
+    std::unordered_set<sqlite3_int64> indexed_ids;
+    if (!query.empty() && query.size() >= 3 && (search_mode == 0 || search_mode == 3)) {
+        for (const sqlite3_int64 id : SearchIndexIds(query)) {
+            indexed_ids.insert(id);
+        }
+    }
+
+    std::unordered_map<sqlite3_int64, SearchDocument> documents;
+    bool documents_loaded = false;
+    const auto ensureDocuments = [&]() {
+        if (documents_loaded) {
+            return;
+        }
+        for (SearchDocument &document : LoadSearchDocuments()) {
+            documents.emplace(document.id, std::move(document));
+        }
+        documents_loaded = true;
+    };
+    const auto documentFor = [&documents](sqlite3_int64 id) -> const SearchDocument * {
+        const auto found = documents.find(id);
+        return found == documents.end() ? nullptr : &found->second;
+    };
+
+    const auto matchesExact = [&](const ClipboardItem &item) {
+        if (ContainsExact(item.title, query) || ContainsExact(item.preview, query)) {
+            return true;
+        }
+        if (query.size() >= 3) {
+            return indexed_ids.contains(item.id);
+        }
+        ensureDocuments();
+        const SearchDocument *document = documentFor(item.id);
+        return document != nullptr &&
+            (ContainsExact(document->body, query) || ContainsExact(document->paths, query));
+    };
+
     const auto matchesRegex = [&regex](std::wstring_view text) {
         if (!regex) {
             return false;
@@ -831,64 +1184,93 @@ std::vector<ClipboardItem> Database::SearchHistory(
         const std::wstring value(text);
         return std::regex_search(value, *regex);
     };
-    std::vector<ClipboardItem> filtered;
-    filtered.reserve(all.size());
-    if (query.empty()) {
-        filtered = std::move(all);
-    } else if (search_mode == 0) {
-        for (auto &item : all) {
-            if (ContainsExact(searchable(item), query)) {
-                filtered.push_back(std::move(item));
+    const auto matchesRegexInItem = [&](const ClipboardItem &item) {
+        if (matchesRegex(item.title) || matchesRegex(item.preview)) {
+            return true;
+        }
+        const SearchDocument *document = documentFor(item.id);
+        return document != nullptr &&
+            (matchesRegex(document->body) || matchesRegex(document->paths));
+    };
+
+    const auto fuzzyScoreInItem = [&](const ClipboardItem &item) -> std::optional<double> {
+        std::optional<double> best;
+        const auto consider = [&best, &query](std::wstring_view text) {
+            if (const auto score = FuzzyScore(text, query)) {
+                if (!best || *score < *best) {
+                    best = *score;
+                }
+            }
+        };
+        consider(item.title);
+        consider(item.preview);
+        const SearchDocument *document = documentFor(item.id);
+        if (document != nullptr) {
+            consider(document->body);
+            consider(document->paths);
+        }
+        return best;
+    };
+
+    std::vector<size_t> selected;
+    selected.reserve(all.size());
+    const auto selectExact = [&]() {
+        for (size_t index = 0; index < all.size(); ++index) {
+            if (matchesExact(all[index])) {
+                selected.push_back(index);
             }
         }
-    } else if (search_mode == 1) {
+    };
+    const auto selectRegex = [&]() {
+        ensureDocuments();
+        for (size_t index = 0; index < all.size(); ++index) {
+            if (matchesRegexInItem(all[index])) {
+                selected.push_back(index);
+            }
+        }
+    };
+    const auto selectFuzzy = [&]() {
+        ensureDocuments();
         fuzzyResults = true;
-        std::vector<std::pair<double, ClipboardItem>> fuzzy;
-        for (auto &item : all) {
-            if (const auto score = FuzzyScore(searchable(item), query)) {
-                fuzzy.emplace_back(*score, std::move(item));
+        std::vector<std::pair<double, size_t>> fuzzy;
+        fuzzy.reserve(all.size());
+        for (size_t index = 0; index < all.size(); ++index) {
+            if (const auto score = fuzzyScoreInItem(all[index])) {
+                fuzzy.emplace_back(*score, index);
             }
         }
         std::stable_sort(fuzzy.begin(), fuzzy.end(), [](const auto &lhs, const auto &rhs) {
             return lhs.first < rhs.first;
         });
-        for (auto &entry : fuzzy) {
-            filtered.push_back(std::move(entry.second));
+        for (const auto &[score, index] : fuzzy) {
+            selected.push_back(index);
         }
+    };
+
+    if (query.empty()) {
+        for (size_t index = 0; index < all.size(); ++index) {
+            selected.push_back(index);
+        }
+    } else if (search_mode == 0) {
+        selectExact();
+    } else if (search_mode == 1) {
+        selectFuzzy();
     } else if (search_mode == 2) {
-        for (auto &item : all) {
-            if (matchesRegex(searchable(item))) {
-                filtered.push_back(std::move(item));
-            }
-        }
+        selectRegex();
     } else {
-        for (auto &item : all) {
-            if (ContainsExact(searchable(item), query)) {
-                filtered.push_back(std::move(item));
-            }
+        selectExact();
+        if (selected.empty()) {
+            selectRegex();
         }
-        if (filtered.empty()) {
-            for (auto &item : all) {
-                if (matchesRegex(searchable(item))) {
-                    filtered.push_back(std::move(item));
-                }
-            }
+        if (selected.empty()) {
+            selectFuzzy();
         }
-        if (filtered.empty()) {
-            fuzzyResults = true;
-        std::vector<std::pair<double, ClipboardItem>> fuzzy;
-            for (auto &item : all) {
-                if (const auto score = FuzzyScore(searchable(item), query)) {
-                    fuzzy.emplace_back(*score, std::move(item));
-                }
-            }
-            std::stable_sort(fuzzy.begin(), fuzzy.end(), [](const auto &lhs, const auto &rhs) {
-                return lhs.first < rhs.first;
-            });
-            for (auto &entry : fuzzy) {
-                filtered.push_back(std::move(entry.second));
-            }
-        }
+    }
+
+    std::vector<ClipboardItem> filtered;
+    filtered.reserve(selected.size());
+    for (const size_t index : selected) {
+        filtered.push_back(std::move(all[index]));
     }
 
     std::stable_sort(filtered.begin(), filtered.end(), [sort_by, pins_at_bottom, fuzzyResults](const auto &lhs, const auto &rhs) {
@@ -961,69 +1343,57 @@ std::vector<ClipboardItem> Database::GetPinnedItems(bool load_payload) const {
 }
 
 void Database::LoadPayload(ClipboardItem &item) const {
-    item.data = m_payloadStore->Load(item.id);
-}
-
-std::vector<sqlite3_int64> Database::SelectItemIds(std::string_view condition) const {
-    std::string sql = "SELECT id FROM history_items";
-    if (!condition.empty()) {
-        sql += " WHERE ";
-        sql += condition;
-    }
-    sql += ";";
-
-    Statement statement(m_db, sql.c_str());
-    std::vector<sqlite3_int64> ids;
+    Statement statement(
+        m_db,
+        "SELECT format, name, data FROM clipboard_formats "
+        "WHERE item_id = ?1 ORDER BY sequence ASC;"
+    );
+    CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, item.id), "Unable to bind item id");
     while (true) {
         const int result = sqlite3_step(statement.get());
         if (result == SQLITE_DONE) {
             break;
         }
         if (result != SQLITE_ROW) {
-            throw MakeSqliteError(m_db, "Unable to read clipboard item ids");
+            throw MakeSqliteError(m_db, "Unable to load clipboard formats");
         }
-        ids.push_back(sqlite3_column_int64(statement.get(), 0));
-    }
-    return ids;
-}
 
-void Database::RemovePayloads(const std::vector<sqlite3_int64>& ids) const {
-    for (const sqlite3_int64 id : ids) {
-        m_payloadStore->Remove(id);
+        ClipboardFormatData format;
+        format.format = static_cast<UINT>(sqlite3_column_int64(statement.get(), 0));
+        format.name = ColumnText16(statement.get(), 1);
+        format.bytes = ColumnBlob(statement.get(), 2);
+        item.data.push_back(std::move(format));
     }
 }
 
 void Database::DeleteItem(sqlite3_int64 id) const {
-    {
-        auto transaction = BeginTransaction();
-        Statement statement(m_db, "DELETE FROM history_items WHERE id = ?1;");
-        CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, id), "Unable to bind item id");
-        if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-            throw MakeSqliteError(m_db, "Unable to delete history item");
-        }
-        transaction.Commit();
+    auto transaction = BeginTransaction();
+    Statement remove_index(m_db, "DELETE FROM history_fts WHERE rowid = ?1;");
+    CheckSqliteResult(m_db, sqlite3_bind_int64(remove_index.get(), 1, id), "Unable to bind search item id");
+    if (sqlite3_step(remove_index.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to delete clipboard search index");
     }
-    m_payloadStore->Remove(id);
+
+    Statement statement(m_db, "DELETE FROM history_items WHERE id = ?1;");
+    CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, id), "Unable to bind item id");
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to delete history item");
+    }
+    transaction.Commit();
 }
 
 void Database::DeleteUnpinned() const {
-    const std::vector<sqlite3_int64> ids = SelectItemIds("pinned = 0");
-    {
-        auto transaction = BeginTransaction();
-        Exec("DELETE FROM history_items WHERE pinned = 0;");
-        transaction.Commit();
-    }
-    RemovePayloads(ids);
+    auto transaction = BeginTransaction();
+    Exec("DELETE FROM history_fts WHERE rowid IN (SELECT id FROM history_items WHERE pinned = 0);");
+    Exec("DELETE FROM history_items WHERE pinned = 0;");
+    transaction.Commit();
 }
 
 void Database::DeleteAll() const {
-    const std::vector<sqlite3_int64> ids = SelectItemIds({});
-    {
-        auto transaction = BeginTransaction();
-        Exec("DELETE FROM history_items;");
-        transaction.Commit();
-    }
-    RemovePayloads(ids);
+    auto transaction = BeginTransaction();
+    Exec("DELETE FROM history_fts;");
+    Exec("DELETE FROM history_items;");
+    transaction.Commit();
 }
 
 void Database::TogglePin(sqlite3_int64 id, std::wstring_view pin_key, bool pinned) const {
@@ -1072,7 +1442,8 @@ void Database::UpdatePinnedItem(
         if (sqlite3_step(update.get()) != SQLITE_DONE) {
             throw MakeSqliteError(m_db, "Unable to update pinned item");
         }
-        m_payloadStore->Save(id, {data});
+        ReplaceFormats(id, {data});
+        ReplaceSearchIndex(id, text, {});
         transaction.Commit();
     }
 }
@@ -1146,7 +1517,6 @@ std::uintmax_t Database::StorageBytes() const {
             total += std::filesystem::file_size(path, error);
         }
     }
-    total += m_payloadStore->StorageBytes();
     return total;
 }
 

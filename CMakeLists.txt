@@ -31,6 +31,7 @@ target_include_directories(sqlite3 PUBLIC
 
 target_compile_definitions(sqlite3 PRIVATE
         SQLITE_THREADSAFE=1
+        SQLITE_ENABLE_FTS5
 )
 
 add_executable(maccy WIN32
