@@ -517,7 +517,7 @@ HMONITOR MainWindow::SelectedMonitor() const {
         : MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
 }
 
-void MainWindow::PositionPopup() {
+void MainWindow::PositionPopup(PopupPosition popup_position) {
     POINT cursor{};
     GetCursorPos(&cursor);
     RECT target{};
@@ -533,7 +533,7 @@ void MainWindow::PositionPopup() {
     int x = cursor.x;
     int y = cursor.y - PopupHeight();
 
-    switch (m_settings.popup_position) {
+    switch (popup_position) {
     case PopupPosition::WindowCenter: {
         if (has_target) {
             x = target.left + ((target.right - target.left) - PopupWidth()) / 2;
@@ -1490,7 +1490,7 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
 
     if (command == kTrayCommandShow && notification == 0) {
         handled = TRUE;
-        ShowMainWindow();
+        ShowMainWindow(PopupPosition::StatusItem);
         return 0;
     }
     if (command == kTrayCommandSettings && notification == 0) {
@@ -1680,7 +1680,7 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
             m_settings.ignore_only_next_event = false;
             m_settings.Save(m_database);
         } else {
-            ShowMainWindow();
+            ShowMainWindow(PopupPosition::StatusItem);
         }
         break;
     case WM_RBUTTONUP:
@@ -1735,6 +1735,10 @@ bool MainWindow::AddTrayIcon() {
 }
 
 void MainWindow::ShowMainWindow() {
+    ShowMainWindow(m_settings.popup_position);
+}
+
+void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_keyboardHandler.ClearHistoryHover();
     m_clipboardMonitor.CaptureTargetWindow();
     m_previewSuppressed = false;
@@ -1742,7 +1746,7 @@ void MainWindow::ShowMainWindow() {
     KillTimer(AppConstants::Timer::kSearch);
     HidePreview();
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
-    PositionPopup();
+    PositionPopup(popup_position);
 
     m_popupVisible = true;
     ShowWindow(SW_SHOW);

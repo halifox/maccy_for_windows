@@ -86,7 +86,7 @@ private:
     std::array<HWND, 4> FooterButtons() const;
 
     // Window positioning
-    void PositionPopup();
+    void PositionPopup(PopupPosition popup_position);
     void PositionOnMonitor(HMONITOR monitor, bool center);
     void PositionPreviewWindow();
     HMONITOR SelectedMonitor() const;
@@ -107,6 +107,7 @@ private:
     void TogglePreview();
 
     // Actions
+    void ShowMainWindow(PopupPosition popup_position);
     void PasteItem(int index);
     void PasteSelectedItem();
     void ToggleSelectedPin();
