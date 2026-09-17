@@ -502,17 +502,15 @@ HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
 }
 
 SettingsWindow::SettingsWindow(
-    DatabaseActor &database,
+    Database &database,
     HWND owner,
     AppSettings settings,
     std::array<std::vector<std::wstring>, 3> ignored_lists,
-    SettingsChangedCallback on_changed,
-    IgnoreRulesChangedCallback on_ignore_rules_changed
+    SettingsChangedCallback on_changed
 )
     : m_database(database),
       m_owner(owner),
       m_onChanged(std::move(on_changed)),
-      m_onIgnoreRulesChanged(std::move(on_ignore_rules_changed)),
       m_settings(std::move(settings)),
       m_ignoredLists(std::move(ignored_lists)) {}
 
@@ -869,19 +867,12 @@ void SettingsWindow::LoadStorageControls() {
     SetCheck(m_sSaveText, m_settings.save_text);
     ::SetWindowTextW(m_sHistorySize, std::to_wstring(m_settings.history_size).c_str());
     SelectCombo(m_sSortBy, m_settings.sort_by);
-    m_database.Post([this](DatabaseContext &context) {
-        const std::uintmax_t storage_bytes = context.database.StorageBytes();
-        const sqlite3_int64 current_count = context.database.CountItems();
-        m_database.PostToUi([this, storage_bytes, current_count] {
-            if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
-                return;
-            }
-            ::SetWindowTextW(m_sStorageSize, FormatByteCount(storage_bytes).c_str());
-            const std::wstring current_size_text =
-                L"（当前: " + std::to_wstring(current_count) + L" 项）";
-            ::SetWindowTextW(m_sCurrentSize, current_size_text.c_str());
-        });
-    });
+    const std::uintmax_t storage_bytes = m_database.StorageBytes();
+    const sqlite3_int64 current_count = m_database.CountItems();
+    ::SetWindowTextW(m_sStorageSize, FormatByteCount(storage_bytes).c_str());
+    const std::wstring current_size_text =
+        L"（当前: " + std::to_wstring(current_count) + L" 项）";
+    ::SetWindowTextW(m_sCurrentSize, current_size_text.c_str());
 }
 
 void SettingsWindow::LoadAdvancedControls() {
@@ -923,85 +914,72 @@ void SettingsWindow::RefreshPinsList() {
             ? m_pins[static_cast<size_t>(selected)].id
             : 0;
     }();
-    m_database.Post([this, previous_selection](DatabaseContext &context) {
-        auto pins = context.database.GetPinnedItems(PayloadMode::Metadata);
-        std::stable_sort(pins.begin(), pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
-            if (lhs.first_copied_at != rhs.first_copied_at) {
-                return lhs.first_copied_at < rhs.first_copied_at;
-            }
-            return lhs.id < rhs.id;
-        });
-        m_database.PostToUi([this, previous_selection, pins = std::move(pins)]() mutable {
-            if (m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_pList == nullptr) {
-                return;
-            }
-            m_pins = std::move(pins);
-
-            ListView_DeleteAllItems(m_pList);
-            for (size_t index = 0; index < m_pins.size(); ++index) {
-                const ClipboardItem &item = m_pins[index];
-                LVITEMW row{};
-                row.mask = LVIF_TEXT | LVIF_PARAM;
-                row.iItem = static_cast<int>(index);
-                row.lParam = item.id;
-                row.pszText = const_cast<wchar_t *>(item.pin.c_str());
-                ListView_InsertItem(m_pList, &row);
-
-                ListView_SetItemText(
-                    m_pList,
-                    static_cast<int>(index),
-                    1,
-                    const_cast<wchar_t *>(item.title.c_str())
-                );
-                std::wstring content;
-                if (item.has_text) {
-                    content = PinTextContent(item);
-                    if (content.empty()) {
-                        content = item.preview;
-                    }
-                } else {
-                    content = L"不可编辑的内容（图像或文件）";
-                }
-                for (wchar_t &character : content) {
-                    if (character == L'\r' || character == L'\n') {
-                        character = L' ';
-                    }
-                }
-                if (content.size() > 120) {
-                    content.resize(120);
-                    content += L"…";
-                }
-                ListView_SetItemText(
-                    m_pList,
-                    static_cast<int>(index),
-                    2,
-                    content.data()
-                );
-            }
-
-            // 恢复选中项
-            int selected_index = -1;
-            if (previous_selection != 0) {
-                for (size_t index = 0; index < m_pins.size(); ++index) {
-                    if (m_pins[index].id == previous_selection) {
-                        selected_index = static_cast<int>(index);
-                        break;
-                    }
-                }
-            }
-            if (selected_index < 0 && !m_pins.empty()) {
-                selected_index = 0;
-            }
-            if (selected_index >= 0) {
-                ListView_SetItemState(
-                    m_pList,
-                    selected_index,
-                    LVIS_SELECTED | LVIS_FOCUSED,
-                    LVIS_SELECTED | LVIS_FOCUSED
-                );
-            }
-        });
+    auto pins = m_database.GetPinnedItems(PayloadMode::Metadata);
+    std::stable_sort(pins.begin(), pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
+        if (lhs.first_copied_at != rhs.first_copied_at) {
+            return lhs.first_copied_at < rhs.first_copied_at;
+        }
+        return lhs.id < rhs.id;
     });
+    m_pins = std::move(pins);
+
+    ListView_DeleteAllItems(m_pList);
+    for (size_t index = 0; index < m_pins.size(); ++index) {
+        const ClipboardItem &item = m_pins[index];
+        LVITEMW row{};
+        row.mask = LVIF_TEXT | LVIF_PARAM;
+        row.iItem = static_cast<int>(index);
+        row.lParam = item.id;
+        row.pszText = const_cast<wchar_t *>(item.pin.c_str());
+        ListView_InsertItem(m_pList, &row);
+
+        ListView_SetItemText(
+            m_pList,
+            static_cast<int>(index),
+            1,
+            const_cast<wchar_t *>(item.title.c_str())
+        );
+        std::wstring content;
+        if (item.has_text) {
+            content = PinTextContent(item);
+            if (content.empty()) {
+                content = item.preview;
+            }
+        } else {
+            content = L"不可编辑的内容（图像或文件）";
+        }
+        for (wchar_t &character : content) {
+            if (character == L'\r' || character == L'\n') {
+                character = L' ';
+            }
+        }
+        if (content.size() > 120) {
+            content.resize(120);
+            content += L"…";
+        }
+        ListView_SetItemText(m_pList, static_cast<int>(index), 2, content.data());
+    }
+
+    int selected_index = -1;
+    if (previous_selection != 0) {
+        for (size_t index = 0; index < m_pins.size(); ++index) {
+            if (m_pins[index].id == previous_selection) {
+                selected_index = static_cast<int>(index);
+                break;
+            }
+        }
+    }
+    if (selected_index < 0 && !m_pins.empty()) {
+        selected_index = 0;
+    }
+    if (selected_index >= 0) {
+        ListView_SetItemState(
+            m_pList,
+            selected_index,
+            LVIS_SELECTED | LVIS_FOCUSED,
+            LVIS_SELECTED | LVIS_FOCUSED
+        );
+    }
 }
 
 void SettingsWindow::SaveCurrentPage() {
@@ -1086,41 +1064,20 @@ void SettingsWindow::SaveCurrentPage() {
         }
 
         const AppSettings snapshot = m_settings;
-        const std::uint64_t save_generation = ++m_saveGeneration;
-        const auto restore_previous = [this, previous, save_generation](const std::string &message) {
-            if (save_generation != m_saveGeneration) {
-                return;
-            }
-            m_settings = previous;
-            if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
-                LoadControlsFromSettings();
-                ::MessageBoxA(m_hWnd, message.c_str(), "无法保存设置", MB_OK | MB_ICONERROR);
-            }
-        };
-        const bool posted = m_database.Post([snapshot, previous](DatabaseContext &context) {
-            snapshot.Save(context.database);
-            if (previous.history_size != snapshot.history_size) {
-                context.database.TrimUnpinned(snapshot.history_size);
-            }
-            if (previous.show_special_symbols != snapshot.show_special_symbols) {
-                context.database.RegenerateTitles(snapshot.show_special_symbols);
-            }
-            context.settings = snapshot;
-        }, restore_previous, [this, snapshot, save_generation] {
-            if (save_generation != m_saveGeneration) {
-                return;
-            }
-            m_settings = snapshot;
-            UpdateDependencies();
-            NotifyOwner();
-        });
-        if (!posted) {
-            restore_previous("存储线程当前不可用");
-            return;
+        snapshot.Save(m_database);
+        if (previous.history_size != snapshot.history_size) {
+            m_database.TrimUnpinned(snapshot.history_size);
         }
+        if (previous.show_special_symbols != snapshot.show_special_symbols) {
+            m_database.RegenerateTitles(snapshot.show_special_symbols);
+        }
+        m_settings = snapshot;
         UpdateDependencies();
+        NotifyOwner();
     } catch (const std::exception &error) {
-        MessageBoxA(m_hWnd, error.what(), "Unable to save settings", MB_OK | MB_ICONERROR);
+        m_settings = previous;
+        LoadControlsFromSettings();
+        MessageBoxA(m_hWnd, error.what(), "无法保存设置", MB_OK | MB_ICONERROR);
     }
 }
 
@@ -1130,9 +1087,6 @@ void SettingsWindow::NotifyOwner(std::uint32_t updateMask) {
         m_ignorePageObjects[static_cast<size_t>(m_ignorePage)] != nullptr) {
         m_ignoredLists[static_cast<size_t>(m_ignorePage)] =
             m_ignorePageObjects[static_cast<size_t>(m_ignorePage)]->Values();
-        if (m_onIgnoreRulesChanged) {
-            m_onIgnoreRulesChanged(m_ignoredLists);
-        }
     }
     if (m_onChanged) {
         m_onChanged(m_settings, updateMask);
@@ -1146,37 +1100,31 @@ void SettingsWindow::EditSelectedPin() {
     }
 
     const sqlite3_int64 item_id = m_pins[selected].id;
-    m_database.Post([this, item_id](DatabaseContext &context) {
-        const auto item = context.database.GetItem(item_id, PayloadMode::Full);
+    try {
+        const auto item = m_database.GetItem(item_id, PayloadMode::Full);
         if (!item.has_value()) {
             return;
         }
-        m_database.PostToUi([this, item = std::move(*item)]() mutable {
-            if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
-                return;
-            }
-            EditPinDialog dialog(m_settings, item.id, m_pins, std::move(item));
-            if (dialog.DoModal(m_hWnd) != IDOK) {
-                return;
-            }
-            const sqlite3_int64 item_id = dialog.GetItemId();
-            const std::wstring key = dialog.GetKey();
-            const std::wstring title = dialog.GetTitle();
-            const bool content_modified = dialog.ContentModified();
-            const std::wstring content = dialog.GetContent();
-            m_database.Post([this, item_id, key, title, content_modified, content](DatabaseContext &context) {
-                if (content_modified) {
-                    context.database.UpdatePinnedItem(item_id, key, title, content);
-                } else {
-                    context.database.UpdatePinnedMetadata(item_id, key, title);
-                }
-                m_database.PostToUi([this] {
-                    RefreshPinsList();
-                    NotifyOwner();
-                });
-            });
-        });
-    });
+        EditPinDialog dialog(m_settings, item->id, m_pins, *item);
+        if (dialog.DoModal(m_hWnd) != IDOK) {
+            return;
+        }
+        const sqlite3_int64 edited_id = dialog.GetItemId();
+        const std::wstring key = dialog.GetKey();
+        const std::wstring title = dialog.GetTitle();
+        if (dialog.ContentModified()) {
+            m_database.UpdatePinnedItem(edited_id, key, title, dialog.GetContent());
+        } else {
+            m_database.UpdatePinnedMetadata(edited_id, key, title);
+        }
+        RefreshPinsList();
+        NotifyOwner();
+    } catch (const std::exception &error) {
+        ::MessageBoxA(m_hWnd, error.what(), "无法修改置顶项目", MB_OK | MB_ICONERROR);
+    } catch (...) {
+        ::MessageBoxW(m_hWnd, L"无法修改置顶项目。", L"无法修改置顶项目",
+                      MB_OK | MB_ICONERROR);
+    }
 }
 
 void SettingsWindow::DeleteSelectedPin() {
@@ -1188,13 +1136,16 @@ void SettingsWindow::DeleteSelectedPin() {
         return;
     }
     const sqlite3_int64 item_id = m_pins[selected].id;
-    m_database.Post([this, item_id](DatabaseContext &context) {
-        context.database.DeleteItem(item_id);
-        m_database.PostToUi([this] {
-            RefreshPinsList();
-            NotifyOwner();
-        });
-    });
+    try {
+        m_database.DeleteItem(item_id);
+        RefreshPinsList();
+        NotifyOwner();
+    } catch (const std::exception &error) {
+        ::MessageBoxA(m_hWnd, error.what(), "无法删除置顶项目", MB_OK | MB_ICONERROR);
+    } catch (...) {
+        ::MessageBoxW(m_hWnd, L"无法删除置顶项目。", L"无法删除置顶项目",
+                      MB_OK | MB_ICONERROR);
+    }
 }
 
 void SettingsWindow::OpenNotificationsSettings() {
@@ -1224,29 +1175,17 @@ void SettingsWindow::ResetPopupPosition() {
     const AppSettings previous = m_settings;
     m_settings.popup_x = 0;
     m_settings.popup_y = 0;
-    const AppSettings snapshot = m_settings;
-    const std::uint64_t save_generation = ++m_saveGeneration;
-    const auto restore_previous = [this, previous, save_generation](const std::string &message) {
-        if (save_generation != m_saveGeneration) {
-            return;
-        }
-        m_settings = previous;
-        if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
-            LoadControlsFromSettings();
-            ::MessageBoxA(m_hWnd, message.c_str(), "无法保存设置", MB_OK | MB_ICONERROR);
-        }
-    };
-    if (!m_database.Post([snapshot](DatabaseContext &context) {
-        snapshot.Save(context.database);
-        context.settings = snapshot;
-    }, restore_previous, [this, snapshot, save_generation] {
-        if (save_generation != m_saveGeneration) {
-            return;
-        }
-        m_settings = snapshot;
+    try {
+        m_settings.Save(m_database);
         NotifyOwner();
-    })) {
-        restore_previous("存储线程当前不可用");
+    } catch (const std::exception &error) {
+        m_settings = previous;
+        LoadControlsFromSettings();
+        ::MessageBoxA(m_hWnd, error.what(), "无法保存设置", MB_OK | MB_ICONERROR);
+    } catch (...) {
+        m_settings = previous;
+        LoadControlsFromSettings();
+        ::MessageBoxW(m_hWnd, L"无法保存设置。", L"无法保存设置", MB_OK | MB_ICONERROR);
     }
 }
 
@@ -1459,7 +1398,6 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    ++m_saveGeneration;
     if (m_windowIcon != nullptr) {
         ::SendMessageW(m_hWnd, WM_SETICON, ICON_BIG, 0);
         ::SendMessageW(m_hWnd, WM_SETICON, ICON_SMALL, 0);
@@ -1486,7 +1424,7 @@ void SetIgnoreListViewColumnWidth(HWND list, int width) {
 
 void IgnoreApplicationsPage::Initialize(
     HWND page_window,
-    DatabaseActor &database,
+    Database &database,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
@@ -1621,10 +1559,13 @@ bool IgnoreApplicationsPage::SaveList() {
     if (m_database == nullptr) {
         return false;
     }
-    const auto values = m_values;
-    return m_database->Post([values](DatabaseContext &context) {
-        context.database.ReplaceList(DatabaseList::IgnoredApplications, values);
-    });
+    try {
+        m_database->ReplaceList(DatabaseList::IgnoredApplications, m_values);
+        return true;
+    } catch (const std::exception &error) {
+        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
+        return false;
+    }
 }
 
 void IgnoreApplicationsPage::UpdateDescription() {
@@ -1638,7 +1579,7 @@ void IgnoreApplicationsPage::UpdateDescription() {
 
 void IgnoreFormatsPage::Initialize(
     HWND page_window,
-    DatabaseActor &database,
+    Database &database,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
@@ -1776,10 +1717,13 @@ bool IgnoreFormatsPage::SaveList() {
     if (m_database == nullptr) {
         return false;
     }
-    const auto values = m_values;
-    return m_database->Post([values](DatabaseContext &context) {
-        context.database.ReplaceList(DatabaseList::IgnoredFormats, values);
-    });
+    try {
+        m_database->ReplaceList(DatabaseList::IgnoredFormats, m_values);
+        return true;
+    } catch (const std::exception &error) {
+        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
+        return false;
+    }
 }
 
 void IgnoreFormatsPage::UpdateDescription() {
@@ -1793,7 +1737,7 @@ void IgnoreFormatsPage::UpdateDescription() {
 
 void IgnoreRegexpsPage::Initialize(
     HWND page_window,
-    DatabaseActor &database,
+    Database &database,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
@@ -1926,10 +1870,13 @@ bool IgnoreRegexpsPage::SaveList() {
     if (m_database == nullptr) {
         return false;
     }
-    const auto values = m_values;
-    return m_database->Post([values](DatabaseContext &context) {
-        context.database.ReplaceList(DatabaseList::IgnoredRegexps, values);
-    });
+    try {
+        m_database->ReplaceList(DatabaseList::IgnoredRegexps, m_values);
+        return true;
+    } catch (const std::exception &error) {
+        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
+        return false;
+    }
 }
 
 void IgnoreRegexpsPage::UpdateDescription() {

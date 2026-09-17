@@ -8,7 +8,6 @@
 #include <atlwin.h>
 
 #include <array>
-#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -22,8 +21,8 @@
 #include "PreviewWindow.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
-#include "ClipboardAgent.h"
-#include "DatabaseActor.h"
+#include "ClipboardMonitor.h"
+#include "Database.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -33,8 +32,7 @@ class MainWindow : public CDialogImpl<MainWindow> {
 public:
     enum { IDD = IDD_HISTORY };
 
-    MainWindow(DatabaseActor &database, ClipboardAgent &clipboard, PreviewWorker &preview,
-               DatabaseInitialState initial_state, bool isolated = false);
+    MainWindow(Database &database, PreviewWorker &preview, bool isolated = false);
     ~MainWindow();
 
     BEGIN_MSG_MAP(MainWindow)
@@ -67,7 +65,7 @@ public:
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
-        MESSAGE_HANDLER(AppConstants::kDatabaseActorResultMessage, OnDatabaseActorResult)
+        MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
     END_MSG_MAP()
 
@@ -104,8 +102,7 @@ private:
 
     // History management
     void RefreshHistory(std::wstring_view query);
-    void ApplyHistoryItems(std::uint64_t generation, std::wstring query,
-                           std::vector<ClipboardItem> items);
+    void ApplyHistoryItems(std::wstring query, std::vector<ClipboardItem> items);
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
 
@@ -179,7 +176,7 @@ private:
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnDatabaseActorResult(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
@@ -195,12 +192,12 @@ private:
     static void OnExitCallback(void* context);
     static void OnHideWindowCallback(void* context);
 
-    DatabaseActor &m_database;
-    ClipboardAgent &m_clipboard;
-    PreviewWorker &m_previewWorker;
+    Database &m_database;
     AppSettings m_settings;
     bool m_suppressClearAlert = false;
     std::array<std::vector<std::wstring>, 3> m_ignoredLists;
+    ClipboardMonitor m_clipboard;
+    PreviewWorker &m_previewWorker;
 
     // Components
     PasteController m_pasteController;
@@ -238,7 +235,6 @@ private:
     bool m_loadingList = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;
-    std::atomic<std::uint64_t> m_historyGeneration{0};
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};

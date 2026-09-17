@@ -38,11 +38,10 @@ set(MACCY_RESOURCE_FILE "${MACCY_SOURCE_DIR}/TrayIcon.rc")
 set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/main.cpp"
         "${MACCY_SOURCE_DIR}/MainWindow.cpp"
-        "${MACCY_SOURCE_DIR}/DatabaseActor.cpp"
+        "${MACCY_SOURCE_DIR}/ClipboardMonitor.cpp"
         "${MACCY_SOURCE_DIR}/PasteController.cpp"
         "${MACCY_SOURCE_DIR}/PreviewDecoder.cpp"
         "${MACCY_SOURCE_DIR}/PreviewWorker.cpp"
-        "${MACCY_SOURCE_DIR}/ClipboardAgent.cpp"
         "${MACCY_SOURCE_DIR}/HistoryRenderer.cpp"
         "${MACCY_SOURCE_DIR}/KeyboardHandler.cpp"
         "${MACCY_SOURCE_DIR}/Database.cpp"

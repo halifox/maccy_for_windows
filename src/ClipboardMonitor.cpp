@@ -1,4 +1,4 @@
-#include "ClipboardAgent.h"
+#include "ClipboardMonitor.h"
 #include "Constants.h"
 
 #include <algorithm>
@@ -8,7 +8,6 @@
 #include <limits>
 #include <regex>
 #include <sstream>
-#include <stdexcept>
 #include <utility>
 
 #include <shellapi.h>
@@ -16,22 +15,11 @@
 
 namespace {
 
-constexpr wchar_t kClipboardAgentWindowClass[] = L"maccy.ClipboardAgentWindow";
 constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
 constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
 constexpr wchar_t kExcludeClipboardContentFromMonitorProcessing[] =
     L"ExcludeClipboardContentFromMonitorProcessing";
 constexpr wchar_t kCanIncludeInClipboardHistory[] = L"CanIncludeInClipboardHistory";
-
-void RegisterClipboardAgentWindowClass() {
-    WNDCLASSEXW window_class{sizeof(window_class)};
-    window_class.lpfnWndProc = &ClipboardAgent::WindowProc;
-    window_class.hInstance = ::GetModuleHandleW(nullptr);
-    window_class.lpszClassName = kClipboardAgentWindowClass;
-    if (::RegisterClassExW(&window_class) == 0 && ::GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
-        throw std::runtime_error("Unable to register clipboard agent window class");
-    }
-}
 
 class ClipboardGuard {
 public:
@@ -309,169 +297,33 @@ std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
 
 } // namespace
 
-ClipboardAgentSettings ClipboardAgentSettings::FromAppSettings(const AppSettings &settings) {
-    ClipboardAgentSettings result;
-    result.respect_windows_clipboard_history_markers =
-        settings.respect_windows_clipboard_history_markers;
-    result.ignore_all_apps_except_listed = settings.ignore_all_apps_except_listed;
-    result.ignore_events = settings.ignore_events;
-    result.ignore_only_next_event = settings.ignore_only_next_event;
-    result.save_files = settings.save_files;
-    result.save_images = settings.save_images;
-    result.save_text = settings.save_text;
-    result.show_special_symbols = settings.show_special_symbols;
-    return result;
+ClipboardMonitor::ClipboardMonitor(Database& database, AppSettings& settings)
+    : m_database(database), m_settings(settings) {}
+
+ClipboardMonitor::~ClipboardMonitor() {
+    Shutdown();
 }
 
-ClipboardAgent::ClipboardAgent(
-    SnapshotHandler on_snapshot,
-    SettingsChangedHandler on_settings_changed
-)
-    : m_onSnapshot(std::move(on_snapshot)),
-      m_onSettingsChanged(std::move(on_settings_changed)) {}
-
-ClipboardAgent::~ClipboardAgent() {
-    Stop();
+bool ClipboardMonitor::Initialize(HWND owner) {
+    m_owner = owner;
+    m_clipboardListenerAdded = AddClipboardFormatListener(owner) == TRUE;
+    return m_clipboardListenerAdded;
 }
 
-void ClipboardAgent::Start(
-    ClipboardAgentSettings settings,
-    std::array<std::vector<std::wstring>, 3> ignored_lists
-) {
-    if (m_thread.joinable()) {
-        return;
+void ClipboardMonitor::Shutdown() {
+    if (m_clipboardListenerAdded && m_owner != nullptr) {
+        RemoveClipboardFormatListener(m_owner);
+        m_clipboardListenerAdded = false;
     }
-    {
-        std::lock_guard lock(m_readyMutex);
-        m_ready = false;
-        m_startupError = nullptr;
-    }
-    {
-        std::lock_guard lock(m_commandMutex);
-        m_commands.clear();
-        m_initialSettings = std::move(settings);
-        m_initialIgnoredLists = std::move(ignored_lists);
-    }
-    m_thread = std::jthread([this](std::stop_token stop_token) {
-        ThreadMain(stop_token);
-    });
-
-    std::unique_lock lock(m_readyMutex);
-    m_readyCondition.wait(lock, [this] { return m_ready; });
-    if (m_startupError != nullptr) {
-        const std::exception_ptr error = m_startupError;
-        lock.unlock();
-        Stop();
-        std::rethrow_exception(error);
-    }
-    m_accepting.store(true, std::memory_order_release);
+    m_expectedClipboardFingerprint.reset();
+    m_owner = nullptr;
 }
 
-void ClipboardAgent::Stop() {
-    if (!m_thread.joinable()) {
-        return;
-    }
-    m_accepting.store(false, std::memory_order_release);
-    m_thread.request_stop();
-    if (const HWND window = m_workerWindow.load(std::memory_order_acquire);
-        window != nullptr) {
-        ::PostMessageW(window, AppConstants::kClipboardAgentShutdownMessage, 0, 0);
-    }
-    m_thread.join();
-    m_workerWindow.store(nullptr, std::memory_order_release);
-    {
-        std::lock_guard lock(m_commandMutex);
-        m_commands.clear();
-    }
-}
-
-bool ClipboardAgent::SetSettings(ClipboardAgentSettings settings) {
-    return Enqueue([this, settings = std::move(settings)]() mutable {
-        ApplySettings(std::move(settings));
-    });
-}
-
-bool ClipboardAgent::SetIgnoreLists(
-    std::array<std::vector<std::wstring>, 3> ignored_lists
-) {
-    return Enqueue([this, ignored_lists = std::move(ignored_lists)]() mutable {
-        ApplyIgnoreLists(std::move(ignored_lists));
-    });
-}
-
-bool ClipboardAgent::WriteItem(
-    ClipboardItem item,
-    bool remove_formatting,
-    OperationCallback callback
-) {
-    if (item.data.empty()) {
-        return false;
-    }
-    return Enqueue([this, item = std::move(item), remove_formatting,
-                    callback = std::move(callback)]() mutable {
-        std::string error;
-        const bool success = WriteClipboardItem(item, remove_formatting, error);
-        if (callback) {
-            callback(success, std::move(error));
-        }
-    });
-}
-
-bool ClipboardAgent::ClearClipboard(OperationCallback callback) {
-    return Enqueue([this, callback = std::move(callback)]() mutable {
-        std::string error;
-        const bool success = ClearSystemClipboard(error);
-        if (callback) {
-            callback(success, std::move(error));
-        }
-    });
-}
-
-bool ClipboardAgent::Enqueue(Command command) {
-    if (!command || !m_accepting.load(std::memory_order_acquire)) {
-        return false;
-    }
-    std::lock_guard lock(m_commandMutex);
-    if (!m_accepting.load(std::memory_order_relaxed) ||
-        m_commands.size() >= kMaximumQueuedCommands) {
-        return false;
-    }
-    const HWND window = m_workerWindow.load(std::memory_order_acquire);
-    if (window == nullptr) {
-        return false;
-    }
-    m_commands.push_back(std::move(command));
-    if (::PostMessageW(window, AppConstants::kClipboardAgentCommandMessage, 0, 0) != FALSE) {
-        return true;
-    }
-    m_commands.pop_back();
-    return false;
-}
-
-void ClipboardAgent::ProcessCommands() {
-    std::deque<Command> commands;
-    {
-        std::lock_guard lock(m_commandMutex);
-        commands.swap(m_commands);
-    }
-    for (Command &command : commands) {
-        if (command) {
-            command();
-        }
-    }
-}
-
-void ClipboardAgent::ApplySettings(ClipboardAgentSettings settings) {
-    m_settings = std::move(settings);
-}
-
-void ClipboardAgent::ApplyIgnoreLists(
-    std::array<std::vector<std::wstring>, 3> ignored_lists
-) {
-    m_ignoredApps = std::move(ignored_lists[0]);
-    m_ignoredFormats = std::move(ignored_lists[1]);
+void ClipboardMonitor::ReloadIgnoreLists() {
+    m_ignoredApps = m_database.GetList(DatabaseList::IgnoredApplications);
+    m_ignoredFormats = m_database.GetList(DatabaseList::IgnoredFormats);
     m_ignoredRegexpPatterns.clear();
-    for (const std::wstring &pattern : ignored_lists[2]) {
+    for (const std::wstring& pattern : m_database.GetList(DatabaseList::IgnoredRegexps)) {
         try {
             m_ignoredRegexpPatterns.emplace_back(pattern);
         } catch (const std::regex_error&) {
@@ -480,7 +332,7 @@ void ClipboardAgent::ApplyIgnoreLists(
     }
 }
 
-bool ClipboardAgent::ShouldIgnoreApplication(std::wstring_view application) const {
+bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) const {
     if (m_settings.ignore_all_apps_except_listed) {
         if (application.empty()) {
             return true;
@@ -502,7 +354,7 @@ bool ClipboardAgent::ShouldIgnoreApplication(std::wstring_view application) cons
     );
 }
 
-bool ClipboardAgent::ShouldIgnoreFormat(std::wstring_view format) const {
+bool ClipboardMonitor::ShouldIgnoreFormat(std::wstring_view format) const {
     return std::any_of(
         m_ignoredFormats.begin(),
         m_ignoredFormats.end(),
@@ -512,7 +364,7 @@ bool ClipboardAgent::ShouldIgnoreFormat(std::wstring_view format) const {
     );
 }
 
-bool ClipboardAgent::ShouldIgnoreText(std::wstring_view text) const {
+bool ClipboardMonitor::ShouldIgnoreText(std::wstring_view text) const {
     for (const std::wregex& expression : m_ignoredRegexpPatterns) {
         if (std::regex_search(text.begin(), text.end(), expression)) {
             return true;
@@ -521,7 +373,7 @@ bool ClipboardAgent::ShouldIgnoreText(std::wstring_view text) const {
     return false;
 }
 
-std::wstring ClipboardAgent::GetSourceApplication() {
+std::wstring ClipboardMonitor::GetSourceApplication() {
     HWND owner = GetClipboardOwner();
     if (owner == nullptr) {
         owner = GetOpenClipboardWindow();
@@ -546,7 +398,7 @@ std::wstring ClipboardAgent::GetSourceApplication() {
     return ok ? std::wstring(path.data(), length) : std::wstring{};
 }
 
-bool ClipboardAgent::MatchesApplication(std::wstring_view actual, std::wstring_view configured) {
+bool ClipboardMonitor::MatchesApplication(std::wstring_view actual, std::wstring_view configured) {
     const std::wstring actual_path = NormalizePath(std::wstring(actual));
     const std::wstring configured_path = NormalizePath(std::wstring(configured));
     if (actual_path.empty() || configured_path.empty()) {
@@ -560,7 +412,7 @@ bool ClipboardAgent::MatchesApplication(std::wstring_view actual, std::wstring_v
         actual_path.substr(actual_path.find_last_of(L"\\/") + 1) == configured_path;
 }
 
-std::wstring ClipboardAgent::ExtractClipboardText() {
+std::wstring ClipboardMonitor::ExtractClipboardText() {
     const HGLOBAL data = static_cast<HGLOBAL>(GetClipboardData(CF_UNICODETEXT));
     if (data == nullptr) {
         return {};
@@ -586,7 +438,7 @@ std::wstring ClipboardAgent::ExtractClipboardText() {
     return result;
 }
 
-std::wstring ClipboardAgent::ExtractClipboardAnsiText() {
+std::wstring ClipboardMonitor::ExtractClipboardAnsiText() {
     const HGLOBAL data = static_cast<HGLOBAL>(GetClipboardData(CF_TEXT));
     if (data == nullptr) {
         return {};
@@ -629,7 +481,7 @@ std::wstring ClipboardAgent::ExtractClipboardAnsiText() {
     return result;
 }
 
-std::wstring ClipboardAgent::FilesPreview(HGLOBAL data) {
+std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
     if (data == nullptr) {
         return {};
     }
@@ -649,7 +501,7 @@ std::wstring ClipboardAgent::FilesPreview(HGLOBAL data) {
     return result;
 }
 
-std::wstring ClipboardAgent::HashSnapshot(const std::vector<ClipboardFormatData> &data) {
+std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {
     std::uint64_t hash = 1469598103934665603ULL;
     const auto add = [&hash](const unsigned char* bytes, size_t count) {
         for (size_t index = 0; index < count; ++index) {
@@ -667,7 +519,7 @@ std::wstring ClipboardAgent::HashSnapshot(const std::vector<ClipboardFormatData>
     return stream.str();
 }
 
-std::optional<ClipboardSnapshot> ClipboardAgent::CaptureClipboard() const {
+std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     if (m_settings.respect_windows_clipboard_history_markers &&
         IsExcludedByWindowsClipboardHistoryMarker()) {
         return std::nullopt;
@@ -770,7 +622,7 @@ std::optional<ClipboardSnapshot> ClipboardAgent::CaptureClipboard() const {
     if (capture.data.empty()) {
         return std::nullopt;
     }
-    capture.fingerprint = HashSnapshot(capture.data);
+    capture.fingerprint = HashCapture(capture.data);
     capture.preview = !text.empty() ? text : file_preview;
     if (capture.preview.empty() && capture.has_image) {
         capture.preview = L"[图片]";
@@ -785,65 +637,58 @@ std::optional<ClipboardSnapshot> ClipboardAgent::CaptureClipboard() const {
     return capture;
 }
 
-bool ClipboardAgent::ReadClipboardSnapshot() {
-    std::optional<ClipboardSnapshot> snapshot;
+bool ClipboardMonitor::ReadClipboardAndSave() {
+    std::optional<ClipboardSnapshot> capture;
     for (int attempt = 0; attempt < 10; ++attempt) {
         ClipboardGuard clipboard(m_owner);
         if (!clipboard.IsOpen()) {
             ::Sleep(10);
             continue;
         }
-        snapshot = CaptureClipboard();
+        capture = CaptureClipboard();
         break;
     }
-    if (!snapshot.has_value()) {
+    if (!capture.has_value()) {
         m_expectedClipboardFingerprint.reset();
         return false;
     }
 
     if (m_expectedClipboardFingerprint.has_value()) {
         const bool was_written_by_this_process =
-            snapshot->fingerprint == *m_expectedClipboardFingerprint;
+            capture->fingerprint == *m_expectedClipboardFingerprint;
         m_expectedClipboardFingerprint.reset();
         if (was_written_by_this_process) {
             return false;
         }
     }
 
-    if (!m_onSnapshot || !m_onSnapshot(std::move(*snapshot))) {
-        m_droppedSnapshots.fetch_add(1, std::memory_order_acq_rel);
-        return false;
-    }
+    m_database.SaveClipboard(*capture, m_settings.history_size);
     return true;
 }
 
-bool ClipboardAgent::WriteClipboardItem(
-    const ClipboardItem &item,
-    bool remove_formatting,
-    std::string &error
-) {
+bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove_formatting) {
     if (item.data.empty()) {
-        error = "剪贴板项目没有内容";
         return false;
     }
 
     const bool has_plain_text = std::any_of(
         item.data.begin(),
         item.data.end(),
-        [](const ClipboardFormatData &data) {
+        [](const ClipboardFormatData& data) {
             return data.format == CF_UNICODETEXT || data.format == CF_TEXT ||
                 data.name == L"CF_UNICODETEXT" || data.name == L"CF_TEXT";
         }
     );
     struct PendingFormat {
         UINT format = 0;
+        bool is_text = false;
         AllocatedGlobal data;
     };
 
     std::vector<PendingFormat> pending;
     std::vector<ClipboardFormatData> written_formats;
     bool has_text = false;
-    for (const ClipboardFormatData &data : item.data) {
+    for (const ClipboardFormatData& data : item.data) {
         const bool is_text = data.format == CF_UNICODETEXT || data.format == CF_TEXT ||
             data.name == L"CF_UNICODETEXT" || data.name == L"CF_TEXT";
         const bool is_files = data.format == CF_HDROP || data.name == L"CF_HDROP";
@@ -861,13 +706,11 @@ bool ClipboardAgent::WriteClipboardItem(
 
         AllocatedGlobal handle(::GlobalAlloc(GMEM_MOVEABLE, data.bytes.size()));
         if (handle.Get() == nullptr) {
-            error = "无法分配剪贴板内存";
             return false;
         }
         {
             const GlobalLockGuard lock(handle.Get());
             if (lock.Data() == nullptr) {
-                error = "无法锁定剪贴板内存";
                 return false;
             }
             std::memcpy(lock.Data(), data.bytes.data(), data.bytes.size());
@@ -876,186 +719,45 @@ bool ClipboardAgent::WriteClipboardItem(
         ClipboardFormatData written = data;
         written.format = format;
         written_formats.push_back(std::move(written));
-        pending.push_back(PendingFormat{format, std::move(handle)});
+        pending.push_back(PendingFormat{format, is_text, std::move(handle)});
         has_text = has_text || is_text;
     }
 
     if (pending.empty() || (has_plain_text && !has_text)) {
-        error = "剪贴板项目没有可写入的格式";
         return false;
     }
 
     ClipboardGuard clipboard(m_owner);
-    if (!clipboard.IsOpen()) {
-        error = "无法打开系统剪贴板";
-        return false;
-    }
-    if (::EmptyClipboard() == FALSE) {
-        error = "无法清空系统剪贴板";
+    if (!clipboard.IsOpen() || ::EmptyClipboard() == FALSE) {
         return false;
     }
     for (PendingFormat &format : pending) {
         if (::SetClipboardData(format.format, format.data.Get()) == nullptr) {
-            error = "无法写入系统剪贴板格式";
             return false;
         }
         format.data.Release();
     }
-    m_expectedClipboardFingerprint = HashSnapshot(written_formats);
+    m_expectedClipboardFingerprint = HashCapture(written_formats);
     return true;
 }
 
-bool ClipboardAgent::ClearSystemClipboard(std::string &error) {
+bool ClipboardMonitor::ClearClipboard() {
     ClipboardGuard clipboard(m_owner);
-    if (!clipboard.IsOpen()) {
-        error = "无法打开系统剪贴板";
-        return false;
-    }
-    if (::EmptyClipboard() == FALSE) {
-        error = "无法清空系统剪贴板";
+    if (!clipboard.IsOpen() || ::EmptyClipboard() == FALSE) {
         return false;
     }
     m_expectedClipboardFingerprint.reset();
     return true;
 }
 
-void ClipboardAgent::NotifySettingsChanged() {
-    if (m_onSettingsChanged) {
-        m_onSettingsChanged(m_settings);
-    }
-}
-
-void ClipboardAgent::HandleClipboardUpdate() {
+bool ClipboardMonitor::OnClipboardUpdate() {
     if (m_settings.ignore_events) {
         if (m_settings.ignore_only_next_event) {
             m_settings.ignore_events = false;
             m_settings.ignore_only_next_event = false;
-            NotifySettingsChanged();
+            m_settings.Save(m_database);
         }
-        return;
+        return false;
     }
-    try {
-        ReadClipboardSnapshot();
-    } catch (const std::exception &error) {
-        ::OutputDebugStringA(error.what());
-        ::OutputDebugStringA("\n");
-    } catch (...) {
-        ::OutputDebugStringA("Unhandled clipboard capture exception\n");
-    }
-}
-
-void ClipboardAgent::HandleShutdown() {
-    m_shuttingDown = true;
-    if (m_clipboardListenerAdded && m_owner != nullptr) {
-        ::RemoveClipboardFormatListener(m_owner);
-        m_clipboardListenerAdded = false;
-    }
-    ProcessCommands();
-    ::PostQuitMessage(0);
-}
-
-LRESULT CALLBACK ClipboardAgent::WindowProc(
-    HWND window,
-    UINT message,
-    WPARAM wParam,
-    LPARAM lParam
-) {
-    auto *agent = reinterpret_cast<ClipboardAgent *>(::GetWindowLongPtrW(
-        window,
-        GWLP_USERDATA
-    ));
-    if (message == WM_NCCREATE) {
-        const auto *create = reinterpret_cast<const CREATESTRUCTW *>(lParam);
-        agent = static_cast<ClipboardAgent *>(create->lpCreateParams);
-        ::SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(agent));
-    }
-    if (agent == nullptr) {
-        return ::DefWindowProcW(window, message, wParam, lParam);
-    }
-
-    switch (message) {
-    case AppConstants::kClipboardAgentCommandMessage:
-        agent->ProcessCommands();
-        return 0;
-    case AppConstants::kClipboardAgentShutdownMessage:
-        agent->HandleShutdown();
-        return 0;
-    case WM_CLIPBOARDUPDATE:
-        if (!agent->m_shuttingDown) {
-            agent->HandleClipboardUpdate();
-        }
-        return 0;
-    default:
-        break;
-    }
-    return ::DefWindowProcW(window, message, wParam, lParam);
-}
-
-void ClipboardAgent::ThreadMain(std::stop_token stop_token) {
-    try {
-        RegisterClipboardAgentWindowClass();
-        const HWND window = ::CreateWindowExW(
-            0,
-            kClipboardAgentWindowClass,
-            L"maccy clipboard agent",
-            0,
-            0,
-            0,
-            0,
-            0,
-            HWND_MESSAGE,
-            nullptr,
-            ::GetModuleHandleW(nullptr),
-            this
-        );
-        if (window == nullptr) {
-            throw std::runtime_error("Unable to create clipboard agent window");
-        }
-        m_owner = window;
-        m_workerWindow.store(window, std::memory_order_release);
-        m_settings = m_initialSettings;
-        ApplyIgnoreLists(m_initialIgnoredLists);
-        if (::AddClipboardFormatListener(window) == FALSE) {
-            throw std::runtime_error("Unable to register clipboard listener");
-        }
-        m_clipboardListenerAdded = true;
-        SignalReady();
-        if (stop_token.stop_requested()) {
-            ::PostMessageW(window, AppConstants::kClipboardAgentShutdownMessage, 0, 0);
-        }
-
-        MSG message{};
-        while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
-            ::TranslateMessage(&message);
-            ::DispatchMessageW(&message);
-        }
-
-        if (m_clipboardListenerAdded) {
-            ::RemoveClipboardFormatListener(window);
-            m_clipboardListenerAdded = false;
-        }
-        m_expectedClipboardFingerprint.reset();
-        m_owner = nullptr;
-        ::DestroyWindow(window);
-        m_workerWindow.store(nullptr, std::memory_order_release);
-    } catch (...) {
-        SignalStartupFailure(std::current_exception());
-    }
-}
-
-void ClipboardAgent::SignalReady() {
-    {
-        std::lock_guard lock(m_readyMutex);
-        m_ready = true;
-    }
-    m_readyCondition.notify_one();
-}
-
-void ClipboardAgent::SignalStartupFailure(std::exception_ptr error) {
-    {
-        std::lock_guard lock(m_readyMutex);
-        m_startupError = std::move(error);
-        m_ready = true;
-    }
-    m_readyCondition.notify_one();
+    return ReadClipboardAndSave();
 }
