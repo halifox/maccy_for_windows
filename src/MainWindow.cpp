@@ -989,6 +989,7 @@ void MainWindow::OpenAbout() {
              L"\n本项目不是 Maccy 官方 Windows 版本，也不隶属于或代表 Maccy 官方项目。"
              L"\n布局和交互参考 Maccy 2.7.1。"
              L"\n部分视觉资源来自 Maccy 项目，按 MIT 许可证使用。"
+             L"\n本项目源代码采用 MIT License，第三方组件和视觉资源遵循各自许可证。"
              L"\n\n使用 C++、WTL 和 SQLite 构建。";
     const std::wstring caption = L"关于 maccy";
     MessageBoxW(about.c_str(), caption.c_str(), MB_OK | MB_ICONINFORMATION);

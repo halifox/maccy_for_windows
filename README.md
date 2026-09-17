@@ -20,6 +20,19 @@ macOS 上的 Maccy 非常好用：极简、高效的界面让剪贴板历史随�
 - 使用原生 Windows UI、WTL、C++20 和 SQLite 构建
 - 按需加载剪贴板数据，减少长期运行时的内存占用
 
+## 许可证
+
+除明确标注的第三方文件外，本项目源代码采用 MIT License。
+第三方组件和视觉资源分别遵循其各自的许可证。
+
+项目自身源代码的许可证见 [`LICENSE`](LICENSE)。
+
+当前仓库中的第三方内容包括：
+
+- Maccy 图标和视觉资源：MIT License，见 [`THIRD_PARTY_NOTICES/Maccy-LICENSE.txt`](THIRD_PARTY_NOTICES/Maccy-LICENSE.txt)
+- WTL 头文件：Microsoft Public License，见 [`THIRD_PARTY_NOTICES/WTL-MS-PL.txt`](THIRD_PARTY_NOTICES/WTL-MS-PL.txt)
+- SQLite：Public Domain，详见 [SQLite 官方说明](https://www.sqlite.org/copyright.html)
+
 ## 构建
 
 需要：
