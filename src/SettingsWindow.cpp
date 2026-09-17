@@ -1,4 +1,5 @@
 #include "SettingsWindow.h"
+#include "ClipboardMonitor.h"
 #include "Constants.h"
 
 #include <windows.h>
@@ -12,6 +13,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "PinKeys.h"
 #include "TrayIcon.h"
@@ -35,8 +37,9 @@ std::wstring PinTextContent(const ClipboardItem &item) {
 }
 
 // EditPinDialog 实现
-EditPinDialog::EditPinDialog(Database &database, const AppSettings &settings, sqlite3_int64 item_id, const std::vector<ClipboardItem> &pins)
-    : m_database(database), m_settings(settings), m_itemId(item_id), m_pins(pins) {
+EditPinDialog::EditPinDialog(const AppSettings &settings, sqlite3_int64 item_id,
+                             const std::vector<ClipboardItem> &pins, ClipboardItem item)
+    : m_settings(settings), m_itemId(item_id), m_pins(pins), m_item(std::move(item)) {
 }
 
 LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
@@ -48,14 +51,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     HWND contentEdit = GetDlgItem(IDC_EDIT_PIN_CONTENT);
     HWND hintLabel = GetDlgItem(IDC_P_CONTENT_HINT);
 
-    // 加载当前项目数据
-    std::optional<ClipboardItem> itemOpt = m_database.GetItem(m_itemId, PayloadMode::Full);
-    if (!itemOpt) {
-        EndDialog(IDCANCEL);
-        return TRUE;
-    }
-
-    ClipboardItem item = std::move(*itemOpt);
+    ClipboardItem &item = m_item;
     m_key = item.pin;
     m_title = item.title;
     m_originalContent = PinTextContent(item);
@@ -466,21 +462,13 @@ constexpr std::array<PageDefinition, 6> kPageDefinitions = {
 struct IgnorePageDefinition {
     UINT resource_id;
     const wchar_t *title;
-    DatabaseList database_list;
 };
 
 constexpr std::array<IgnorePageDefinition, 3> kIgnorePageDefinitions = {
-    IgnorePageDefinition{IDD_IGNORE_APPLICATIONS, L"忽略应用", DatabaseList::IgnoredApplications},
-    IgnorePageDefinition{IDD_IGNORE_FORMATS, L"忽略剪贴板类型", DatabaseList::IgnoredFormats},
-    IgnorePageDefinition{IDD_IGNORE_REGEXPS, L"正则表达式", DatabaseList::IgnoredRegexps},
+    IgnorePageDefinition{IDD_IGNORE_APPLICATIONS, L"忽略应用"},
+    IgnorePageDefinition{IDD_IGNORE_FORMATS, L"忽略剪贴板类型"},
+    IgnorePageDefinition{IDD_IGNORE_REGEXPS, L"正则表达式"},
 };
-
-DatabaseList IgnoreListForPage(int page) {
-    if (page >= 0 && page < static_cast<int>(kIgnorePageDefinitions.size())) {
-        return kIgnorePageDefinitions[static_cast<size_t>(page)].database_list;
-    }
-    return DatabaseList::IgnoredApplications;
-}
 
 INT_PTR CALLBACK ResourcePageDialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     if (message == WM_INITDIALOG) {
@@ -513,8 +501,25 @@ HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
 
 }
 
-SettingsWindow::SettingsWindow(Database &database, HWND owner)
-    : m_database(database), m_owner(owner) {}
+SettingsWindow::SettingsWindow(
+    StorageWorker &storage,
+    HWND owner,
+    AppSettings settings,
+    std::array<std::vector<std::wstring>, 3> ignored_lists,
+    SettingsChangedCallback on_changed
+)
+    : m_storage(storage),
+      m_owner(owner),
+      m_onChanged(std::move(on_changed)),
+      m_settings(std::move(settings)),
+      m_ignoredLists(std::move(ignored_lists)) {}
+
+void SettingsWindow::SetSettingsSnapshot(const AppSettings &settings) {
+    m_settings = settings;
+    if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+        LoadControlsFromSettings();
+    }
+}
 
 bool SettingsWindow::CreateOrShow() {
     if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
@@ -627,7 +632,11 @@ bool SettingsWindow::CreatePageWindows() {
 
     for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
         if (m_ignorePageObjects[page] != nullptr) {
-            m_ignorePageObjects[page]->Initialize(m_ignorePages[page], m_database);
+            m_ignorePageObjects[page]->Initialize(
+                m_ignorePages[page],
+                m_storage,
+                m_ignoredLists[page]
+            );
         }
     }
 
@@ -858,11 +867,19 @@ void SettingsWindow::LoadStorageControls() {
     SetCheck(m_sSaveText, m_settings.save_text);
     ::SetWindowTextW(m_sHistorySize, std::to_wstring(m_settings.history_size).c_str());
     SelectCombo(m_sSortBy, m_settings.sort_by);
-    ::SetWindowTextW(m_sStorageSize, FormatByteCount(m_database.StorageBytes()).c_str());
-
-    const sqlite3_int64 current_count = m_database.CountItems();
-    const std::wstring current_size_text = L"（当前: " + std::to_wstring(current_count) + L" 项）";
-    ::SetWindowTextW(m_sCurrentSize, current_size_text.c_str());
+    m_storage.Post([this](StorageContext &context) {
+        const std::uintmax_t storage_bytes = context.database.StorageBytes();
+        const sqlite3_int64 current_count = context.database.CountItems();
+        m_storage.PostToUi([this, storage_bytes, current_count] {
+            if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+                return;
+            }
+            ::SetWindowTextW(m_sStorageSize, FormatByteCount(storage_bytes).c_str());
+            const std::wstring current_size_text =
+                L"（当前: " + std::to_wstring(current_count) + L" 项）";
+            ::SetWindowTextW(m_sCurrentSize, current_size_text.c_str());
+        });
+    });
 }
 
 void SettingsWindow::LoadAdvancedControls() {
@@ -878,7 +895,6 @@ void SettingsWindow::LoadAdvancedControls() {
 }
 
 void SettingsWindow::LoadControlsFromSettings() {
-    m_settings = AppSettings::Load(m_database);
     m_loading = true;
     LoadGeneralControls();
     LoadAppearanceControls();
@@ -899,84 +915,91 @@ void SettingsWindow::RefreshPinsList() {
         return;
     }
 
-    // 保存当前选中项的 ID
-    sqlite3_int64 previous_selection = 0;
-    const int current_selected = SelectedListViewItem(m_pList);
-    if (current_selected >= 0 && current_selected < static_cast<int>(m_pins.size())) {
-        previous_selection = m_pins[current_selected].id;
-    }
+    const sqlite3_int64 previous_selection = [&] {
+        const int selected = SelectedListViewItem(m_pList);
+        return selected >= 0 && selected < static_cast<int>(m_pins.size())
+            ? m_pins[static_cast<size_t>(selected)].id
+            : 0;
+    }();
+    m_storage.Post([this, previous_selection](StorageContext &context) {
+        auto pins = context.database.GetPinnedItems(PayloadMode::Metadata);
+        std::stable_sort(pins.begin(), pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
+            if (lhs.first_copied_at != rhs.first_copied_at) {
+                return lhs.first_copied_at < rhs.first_copied_at;
+            }
+            return lhs.id < rhs.id;
+        });
+        m_storage.PostToUi([this, previous_selection, pins = std::move(pins)]() mutable {
+            if (m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_pList == nullptr) {
+                return;
+            }
+            m_pins = std::move(pins);
 
-    m_pins = m_database.GetPinnedItems(PayloadMode::Metadata);
-    std::stable_sort(m_pins.begin(), m_pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
-        if (lhs.first_copied_at != rhs.first_copied_at) {
-            return lhs.first_copied_at < rhs.first_copied_at;
-        }
-        return lhs.id < rhs.id;
+            ListView_DeleteAllItems(m_pList);
+            for (size_t index = 0; index < m_pins.size(); ++index) {
+                const ClipboardItem &item = m_pins[index];
+                LVITEMW row{};
+                row.mask = LVIF_TEXT | LVIF_PARAM;
+                row.iItem = static_cast<int>(index);
+                row.lParam = item.id;
+                row.pszText = const_cast<wchar_t *>(item.pin.c_str());
+                ListView_InsertItem(m_pList, &row);
+
+                ListView_SetItemText(
+                    m_pList,
+                    static_cast<int>(index),
+                    1,
+                    const_cast<wchar_t *>(item.title.c_str())
+                );
+                std::wstring content;
+                if (item.has_text) {
+                    content = PinTextContent(item);
+                    if (content.empty()) {
+                        content = item.preview;
+                    }
+                } else {
+                    content = L"不可编辑的内容（图像或文件）";
+                }
+                for (wchar_t &character : content) {
+                    if (character == L'\r' || character == L'\n') {
+                        character = L' ';
+                    }
+                }
+                if (content.size() > 120) {
+                    content.resize(120);
+                    content += L"…";
+                }
+                ListView_SetItemText(
+                    m_pList,
+                    static_cast<int>(index),
+                    2,
+                    content.data()
+                );
+            }
+
+            // 恢复选中项
+            int selected_index = -1;
+            if (previous_selection != 0) {
+                for (size_t index = 0; index < m_pins.size(); ++index) {
+                    if (m_pins[index].id == previous_selection) {
+                        selected_index = static_cast<int>(index);
+                        break;
+                    }
+                }
+            }
+            if (selected_index < 0 && !m_pins.empty()) {
+                selected_index = 0;
+            }
+            if (selected_index >= 0) {
+                ListView_SetItemState(
+                    m_pList,
+                    selected_index,
+                    LVIS_SELECTED | LVIS_FOCUSED,
+                    LVIS_SELECTED | LVIS_FOCUSED
+                );
+            }
+        });
     });
-
-    ListView_DeleteAllItems(m_pList);
-    for (size_t index = 0; index < m_pins.size(); ++index) {
-        const ClipboardItem &item = m_pins[index];
-        LVITEMW row{};
-        row.mask = LVIF_TEXT | LVIF_PARAM;
-        row.iItem = static_cast<int>(index);
-        row.lParam = item.id;
-        row.pszText = const_cast<wchar_t *>(item.pin.c_str());
-        ListView_InsertItem(m_pList, &row);
-
-        ListView_SetItemText(
-            m_pList,
-            static_cast<int>(index),
-            1,
-            const_cast<wchar_t *>(item.title.c_str())
-        );
-        std::wstring content;
-        if (item.has_text) {
-            content = PinTextContent(item);
-            if (content.empty()) {
-                content = item.preview;
-            }
-        } else {
-            content = L"不可编辑的内容（图像或文件）";
-        }
-        for (wchar_t &character : content) {
-            if (character == L'\r' || character == L'\n') {
-                character = L' ';
-            }
-        }
-        if (content.size() > 120) {
-            content.resize(120);
-            content += L"…";
-        }
-        ListView_SetItemText(
-            m_pList,
-            static_cast<int>(index),
-            2,
-            content.data()
-        );
-    }
-
-    // 恢复选中项
-    int selected_index = -1;
-    if (previous_selection != 0) {
-        for (size_t index = 0; index < m_pins.size(); ++index) {
-            if (m_pins[index].id == previous_selection) {
-                selected_index = static_cast<int>(index);
-                break;
-            }
-        }
-    }
-    if (selected_index < 0 && !m_pins.empty()) {
-        selected_index = 0;
-    }
-    if (selected_index >= 0) {
-        ListView_SetItemState(
-            m_pList,
-            selected_index,
-            LVIS_SELECTED | LVIS_FOCUSED,
-            LVIS_SELECTED | LVIS_FOCUSED
-        );
-    }
 }
 
 void SettingsWindow::SaveCurrentPage(bool notify) {
@@ -984,8 +1007,7 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
         return;
     }
 
-    const AppSettings previous = AppSettings::Load(m_database);
-    m_settings = previous;
+    const AppSettings previous = m_settings;
     try {
         switch (m_currentPage) {
         case kPageGeneral:
@@ -1061,13 +1083,17 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
             break;
         }
 
-        m_settings.Save(m_database);
-        if (previous.history_size != m_settings.history_size) {
-            m_database.TrimUnpinned(m_settings.history_size);
-        }
-        if (previous.show_special_symbols != m_settings.show_special_symbols) {
-            m_database.RegenerateTitles(m_settings.show_special_symbols);
-        }
+        const AppSettings snapshot = m_settings;
+        m_storage.Post([snapshot, previous](StorageContext &context) {
+            snapshot.Save(context.database);
+            context.settings = snapshot;
+            if (previous.history_size != snapshot.history_size) {
+                context.database.TrimUnpinned(snapshot.history_size);
+            }
+            if (previous.show_special_symbols != snapshot.show_special_symbols) {
+                context.database.RegenerateTitles(snapshot.show_special_symbols);
+            }
+        });
         UpdateDependencies();
         if (notify) {
             NotifyOwner();
@@ -1078,8 +1104,14 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
 }
 
 void SettingsWindow::NotifyOwner(std::uint32_t updateMask) {
-    if (m_owner != nullptr && ::IsWindow(m_owner)) {
-        ::PostMessageW(m_owner, AppConstants::kUiUpdateMessage, updateMask, 0);
+    if ((updateMask & AppConstants::UiUpdate::kIgnoreRules) != 0 &&
+        m_ignorePage >= 0 && m_ignorePage < static_cast<int>(m_ignorePageObjects.size()) &&
+        m_ignorePageObjects[static_cast<size_t>(m_ignorePage)] != nullptr) {
+        m_ignoredLists[static_cast<size_t>(m_ignorePage)] =
+            m_ignorePageObjects[static_cast<size_t>(m_ignorePage)]->Values();
+    }
+    if (m_onChanged) {
+        m_onChanged(m_settings, updateMask);
     }
 }
 
@@ -1089,23 +1121,38 @@ void SettingsWindow::EditSelectedPin() {
         return;
     }
 
-    const sqlite3_int64 itemId = m_pins[selected].id;
-    EditPinDialog dialog(m_database, m_settings, itemId, m_pins);
-    if (dialog.DoModal(m_hWnd) != IDOK) {
-        return;
-    }
-
-    try {
-        if (dialog.ContentModified()) {
-            m_database.UpdatePinnedItem(itemId, dialog.GetKey(), dialog.GetTitle(), dialog.GetContent());
-        } else {
-            m_database.UpdatePinnedMetadata(itemId, dialog.GetKey(), dialog.GetTitle());
+    const sqlite3_int64 item_id = m_pins[selected].id;
+    m_storage.Post([this, item_id](StorageContext &context) {
+        const auto item = context.database.GetItem(item_id, PayloadMode::Full);
+        if (!item.has_value()) {
+            return;
         }
-        RefreshPinsList();
-        NotifyOwner();
-    } catch (const std::exception &error) {
-        MessageBoxA(m_hWnd, error.what(), "Unable to save pinned item", MB_OK | MB_ICONERROR);
-    }
+        m_storage.PostToUi([this, item = std::move(*item)]() mutable {
+            if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+                return;
+            }
+            EditPinDialog dialog(m_settings, item.id, m_pins, std::move(item));
+            if (dialog.DoModal(m_hWnd) != IDOK) {
+                return;
+            }
+            const sqlite3_int64 item_id = dialog.GetItemId();
+            const std::wstring key = dialog.GetKey();
+            const std::wstring title = dialog.GetTitle();
+            const bool content_modified = dialog.ContentModified();
+            const std::wstring content = dialog.GetContent();
+            m_storage.Post([this, item_id, key, title, content_modified, content](StorageContext &context) {
+                if (content_modified) {
+                    context.database.UpdatePinnedItem(item_id, key, title, content);
+                } else {
+                    context.database.UpdatePinnedMetadata(item_id, key, title);
+                }
+                m_storage.PostToUi([this] {
+                    RefreshPinsList();
+                    NotifyOwner();
+                });
+            });
+        });
+    });
 }
 
 void SettingsWindow::DeleteSelectedPin() {
@@ -1116,13 +1163,14 @@ void SettingsWindow::DeleteSelectedPin() {
     if (::MessageBoxW(m_hWnd, L"删除当前置顶项目？", L"确认", MB_YESNO | MB_ICONQUESTION) != IDYES) {
         return;
     }
-    try {
-        m_database.DeleteItem(m_pins[selected].id);
-        RefreshPinsList();
-        NotifyOwner();
-    } catch (const std::exception &error) {
-        MessageBoxA(m_hWnd, error.what(), "Unable to delete pinned item", MB_OK | MB_ICONERROR);
-    }
+    const sqlite3_int64 item_id = m_pins[selected].id;
+    m_storage.Post([this, item_id](StorageContext &context) {
+        context.database.DeleteItem(item_id);
+        m_storage.PostToUi([this] {
+            RefreshPinsList();
+            NotifyOwner();
+        });
+    });
 }
 
 void SettingsWindow::OpenNotificationsSettings() {
@@ -1141,15 +1189,14 @@ void SettingsWindow::CheckForUpdatesNow() {
 }
 
 void SettingsWindow::ResetPopupPosition() {
-    try {
-        m_settings = AppSettings::Load(m_database);
-        m_settings.popup_x = 0;
-        m_settings.popup_y = 0;
-        m_settings.Save(m_database);
-        NotifyOwner();
-    } catch (const std::exception &error) {
-        MessageBoxA(m_hWnd, error.what(), "Unable to reset popup position", MB_OK | MB_ICONERROR);
-    }
+    m_settings.popup_x = 0;
+    m_settings.popup_y = 0;
+    const AppSettings snapshot = m_settings;
+    m_storage.Post([snapshot](StorageContext &context) {
+        snapshot.Save(context.database);
+        context.settings = snapshot;
+    });
+    NotifyOwner();
 }
 
 LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
@@ -1178,7 +1225,6 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED
     );
 
-    m_settings = AppSettings::Load(m_database);
     CreateTabs();
     if (!CreatePageWindows()) {
         handled = FALSE;
@@ -1387,9 +1433,14 @@ void SetIgnoreListViewColumnWidth(HWND list, int width) {
 
 }
 
-void IgnoreApplicationsPage::Initialize(HWND page_window, Database &database) {
+void IgnoreApplicationsPage::Initialize(
+    HWND page_window,
+    StorageWorker &storage,
+    std::vector<std::wstring> values
+) {
     m_pageWindow = page_window;
-    m_database = &database;
+    m_storage = &storage;
+    m_values = std::move(values);
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
@@ -1400,7 +1451,6 @@ void IgnoreApplicationsPage::Initialize(HWND page_window, Database &database) {
         ListView_InsertColumn(m_list, 0, &column);
     }
 
-    LoadList();
     UpdateDescription();
 }
 
@@ -1418,8 +1468,6 @@ void IgnoreApplicationsPage::Hide() {
 }
 
 void IgnoreApplicationsPage::Refresh() {
-    LoadList();
-
     if (m_list == nullptr) {
         return;
     }
@@ -1519,22 +1567,14 @@ bool IgnoreApplicationsPage::ResetToDefaults() {
 }
 
 bool IgnoreApplicationsPage::SaveList() {
-    if (m_database == nullptr) {
+    if (m_storage == nullptr) {
         return false;
     }
-
-    try {
-        m_database->ReplaceList(DatabaseList::IgnoredApplications, m_values);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-void IgnoreApplicationsPage::LoadList() {
-    if (m_database != nullptr) {
-        m_values = m_database->GetList(DatabaseList::IgnoredApplications);
-    }
+    const auto values = m_values;
+    return m_storage->Post([values](StorageContext &context) {
+        context.database.ReplaceList(DatabaseList::IgnoredApplications, values);
+        context.clipboard.ReloadIgnoreLists();
+    });
 }
 
 void IgnoreApplicationsPage::UpdateDescription() {
@@ -1546,9 +1586,14 @@ void IgnoreApplicationsPage::UpdateDescription() {
     }
 }
 
-void IgnoreFormatsPage::Initialize(HWND page_window, Database &database) {
+void IgnoreFormatsPage::Initialize(
+    HWND page_window,
+    StorageWorker &storage,
+    std::vector<std::wstring> values
+) {
     m_pageWindow = page_window;
-    m_database = &database;
+    m_storage = &storage;
+    m_values = std::move(values);
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
@@ -1559,7 +1604,6 @@ void IgnoreFormatsPage::Initialize(HWND page_window, Database &database) {
         ListView_InsertColumn(m_list, 0, &column);
     }
 
-    LoadList();
     UpdateDescription();
 }
 
@@ -1577,8 +1621,6 @@ void IgnoreFormatsPage::Hide() {
 }
 
 void IgnoreFormatsPage::Refresh() {
-    LoadList();
-
     if (m_list == nullptr) {
         return;
     }
@@ -1672,34 +1714,23 @@ bool IgnoreFormatsPage::RemoveValue() {
 }
 
 bool IgnoreFormatsPage::ResetToDefaults() {
-    if (m_database != nullptr) {
-        try {
-            m_database->ResetIgnoredFormats();
-            Refresh();
-            return true;
-        } catch (...) {
-        }
+    m_values = {L"CF_CLIPBOARD_VIEWER_IGNORE"};
+    if (!SaveList()) {
+        return false;
     }
-    return false;
+    Refresh();
+    return true;
 }
 
 bool IgnoreFormatsPage::SaveList() {
-    if (m_database == nullptr) {
+    if (m_storage == nullptr) {
         return false;
     }
-
-    try {
-        m_database->ReplaceList(DatabaseList::IgnoredFormats, m_values);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-void IgnoreFormatsPage::LoadList() {
-    if (m_database != nullptr) {
-        m_values = m_database->GetList(DatabaseList::IgnoredFormats);
-    }
+    const auto values = m_values;
+    return m_storage->Post([values](StorageContext &context) {
+        context.database.ReplaceList(DatabaseList::IgnoredFormats, values);
+        context.clipboard.ReloadIgnoreLists();
+    });
 }
 
 void IgnoreFormatsPage::UpdateDescription() {
@@ -1711,9 +1742,14 @@ void IgnoreFormatsPage::UpdateDescription() {
     }
 }
 
-void IgnoreRegexpsPage::Initialize(HWND page_window, Database &database) {
+void IgnoreRegexpsPage::Initialize(
+    HWND page_window,
+    StorageWorker &storage,
+    std::vector<std::wstring> values
+) {
     m_pageWindow = page_window;
-    m_database = &database;
+    m_storage = &storage;
+    m_values = std::move(values);
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
@@ -1724,7 +1760,6 @@ void IgnoreRegexpsPage::Initialize(HWND page_window, Database &database) {
         ListView_InsertColumn(m_list, 0, &column);
     }
 
-    LoadList();
     UpdateDescription();
 }
 
@@ -1742,8 +1777,6 @@ void IgnoreRegexpsPage::Hide() {
 }
 
 void IgnoreRegexpsPage::Refresh() {
-    LoadList();
-
     if (m_list == nullptr) {
         return;
     }
@@ -1841,22 +1874,14 @@ bool IgnoreRegexpsPage::ResetToDefaults() {
 }
 
 bool IgnoreRegexpsPage::SaveList() {
-    if (m_database == nullptr) {
+    if (m_storage == nullptr) {
         return false;
     }
-
-    try {
-        m_database->ReplaceList(DatabaseList::IgnoredRegexps, m_values);
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-void IgnoreRegexpsPage::LoadList() {
-    if (m_database != nullptr) {
-        m_values = m_database->GetList(DatabaseList::IgnoredRegexps);
-    }
+    const auto values = m_values;
+    return m_storage->Post([values](StorageContext &context) {
+        context.database.ReplaceList(DatabaseList::IgnoredRegexps, values);
+        context.clipboard.ReloadIgnoreLists();
+    });
 }
 
 void IgnoreRegexpsPage::UpdateDescription() {

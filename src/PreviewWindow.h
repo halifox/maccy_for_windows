@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "Database.h"
+#include "PreviewDecoder.h"
 #include "resource.h"
 
 class PreviewWindow : public CDialogImpl<PreviewWindow> {
@@ -28,7 +28,8 @@ public:
     END_MSG_MAP()
 
     bool Initialize(HWND owner);
-    void SetItem(const ClipboardItem &item);
+    void SetItem(const ClipboardItem &item, PreviewBitmap bitmap = {});
+    void GetImageSize(UINT &width, UINT &height) const noexcept;
     void Hide();
     bool IsVisible() const noexcept;
     bool ContainsWindow(HWND window) const noexcept;
@@ -37,7 +38,6 @@ public:
 private:
     void ClearBitmap();
     bool UpdateFont(UINT dpi);
-    bool LoadBitmapForItem(const ClipboardItem &item);
     void UpdateStatus(const ClipboardItem &item);
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);

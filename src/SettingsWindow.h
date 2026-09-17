@@ -4,6 +4,7 @@
 #include "Constants.h"
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,19 +14,21 @@
 #include <atlctrls.h>
 #include <atlwin.h>
 
-#include "Database.h"
 #include "Settings.h"
+#include "StorageWorker.h"
 #include "resource.h"
 
 class EditPinDialog : public CDialogImpl<EditPinDialog> {
 public:
     enum { IDD = IDD_EDIT_PIN };
 
-    EditPinDialog(Database &database, const AppSettings &settings, sqlite3_int64 item_id, const std::vector<ClipboardItem> &pins);
+    EditPinDialog(const AppSettings &settings, sqlite3_int64 item_id,
+                  const std::vector<ClipboardItem> &pins, ClipboardItem item);
 
     std::wstring GetKey() const { return m_key; }
     std::wstring GetTitle() const { return m_title; }
     std::wstring GetContent() const { return m_content; }
+    sqlite3_int64 GetItemId() const noexcept { return m_itemId; }
     bool ContentModified() const { return m_contentModified; }
 
     BEGIN_MSG_MAP(EditPinDialog)
@@ -39,10 +42,10 @@ private:
     LRESULT OnOK(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnCancel(WORD, WORD, HWND, BOOL &handled);
 
-    Database &m_database;
     const AppSettings &m_settings;
     sqlite3_int64 m_itemId;
     const std::vector<ClipboardItem> &m_pins;
+    ClipboardItem m_item;
     std::wstring m_key;
     std::wstring m_title;
     std::wstring m_content;
@@ -79,7 +82,8 @@ class IgnorePageBase {
 public:
     virtual ~IgnorePageBase() = default;
 
-    virtual void Initialize(HWND page_window, Database &database) = 0;
+    virtual void Initialize(HWND page_window, StorageWorker &storage,
+                            std::vector<std::wstring> values) = 0;
     virtual void Show() = 0;
     virtual void Hide() = 0;
     virtual void Refresh() = 0;
@@ -90,18 +94,20 @@ public:
     virtual bool SaveList() = 0;
 
     HWND GetPageWindow() const { return m_pageWindow; }
+    const std::vector<std::wstring> &Values() const noexcept { return m_values; }
 
 protected:
     HWND m_pageWindow = nullptr;
     HWND m_list = nullptr;
     HWND m_description = nullptr;
-    Database *m_database = nullptr;
+    StorageWorker *m_storage = nullptr;
     std::vector<std::wstring> m_values;
 };
 
 class IgnoreApplicationsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, Database &database) override;
+    void Initialize(HWND page_window, StorageWorker &storage,
+                    std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
     void Refresh() override;
@@ -112,13 +118,13 @@ public:
     bool SaveList() override;
 
 private:
-    void LoadList();
     void UpdateDescription();
 };
 
 class IgnoreFormatsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, Database &database) override;
+    void Initialize(HWND page_window, StorageWorker &storage,
+                    std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
     void Refresh() override;
@@ -129,13 +135,13 @@ public:
     bool SaveList() override;
 
 private:
-    void LoadList();
     void UpdateDescription();
 };
 
 class IgnoreRegexpsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, Database &database) override;
+    void Initialize(HWND page_window, StorageWorker &storage,
+                    std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
     void Refresh() override;
@@ -146,7 +152,6 @@ public:
     bool SaveList() override;
 
 private:
-    void LoadList();
     void UpdateDescription();
 };
 
@@ -154,10 +159,15 @@ class SettingsWindow : public CDialogImpl<SettingsWindow> {
 public:
     enum { IDD = IDD_SETTINGS };
 
-    SettingsWindow(Database &database, HWND owner);
+    using SettingsChangedCallback = std::function<void(const AppSettings &, std::uint32_t)>;
+
+    SettingsWindow(StorageWorker &storage, HWND owner, AppSettings settings,
+                   std::array<std::vector<std::wstring>, 3> ignored_lists,
+                   SettingsChangedCallback on_changed);
 
     bool CreateOrShow();
     void DestroyForOwner();
+    void SetSettingsSnapshot(const AppSettings &settings);
     bool IsOpen() const noexcept { return m_hWnd != nullptr && IsWindowVisible(); }
     HWND Window() const noexcept { return m_hWnd; }
 
@@ -203,8 +213,9 @@ private:
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
 
-    Database &m_database;
+    StorageWorker &m_storage;
     HWND m_owner = nullptr;
+    SettingsChangedCallback m_onChanged;
     CTabCtrl m_tabs;
     std::array<HWND, AppConstants::SettingsUI::kPageCount> m_pages{};
     std::array<HWND, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePages{};
@@ -214,6 +225,7 @@ private:
     HICON m_windowIcon = nullptr;
 
     AppSettings m_settings{};
+    std::array<std::vector<std::wstring>, 3> m_ignoredLists;
 
     HWND m_gLaunch = nullptr;
     HWND m_gUpdates = nullptr;

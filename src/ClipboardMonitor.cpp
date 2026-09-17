@@ -159,39 +159,6 @@ std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
     return result;
 }
 
-bool IsKeyDown(int virtual_key) {
-    return (GetAsyncKeyState(virtual_key) & 0x8000) != 0;
-}
-
-bool IsControlOnlyDown() {
-    return IsKeyDown(VK_CONTROL) && !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT);
-}
-
-void SendControlVPaste() {
-    INPUT inputs[4]{};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = VK_CONTROL;
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = L'V';
-    inputs[2].type = INPUT_KEYBOARD;
-    inputs[2].ki.wVk = L'V';
-    inputs[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    inputs[3].type = INPUT_KEYBOARD;
-    inputs[3].ki.wVk = VK_CONTROL;
-    inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
-}
-
-void SendPasteWithHeldControl() {
-    INPUT inputs[2]{};
-    inputs[0].type = INPUT_KEYBOARD;
-    inputs[0].ki.wVk = L'V';
-    inputs[1].type = INPUT_KEYBOARD;
-    inputs[1].ki.wVk = L'V';
-    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
-}
-
 } // namespace
 
 ClipboardMonitor::ClipboardMonitor(Database& database, AppSettings& settings)
@@ -537,7 +504,7 @@ bool ClipboardMonitor::ReadClipboardAndSave() {
     return false;
 }
 
-bool ClipboardMonitor::SetClipboardItem(const ClipboardItem& item, bool remove_formatting) {
+bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove_formatting) {
     if (item.data.empty()) {
         return false;
     }
@@ -545,6 +512,9 @@ bool ClipboardMonitor::SetClipboardItem(const ClipboardItem& item, bool remove_f
         return false;
     }
     bool success = EmptyClipboard() != FALSE;
+    if (success) {
+        m_skipNextClipboardEvent = true;
+    }
     bool has_text = false;
     const bool has_plain_text = std::any_of(
         item.data.begin(),
@@ -598,10 +568,8 @@ bool ClipboardMonitor::SetClipboardItem(const ClipboardItem& item, bool remove_f
 }
 
 bool ClipboardMonitor::OnClipboardUpdate() {
-    if (m_pasting || m_skipNextClipboardEvent) {
-        if (m_skipNextClipboardEvent) {
-            m_skipNextClipboardEvent = false;
-        }
+    if (m_skipNextClipboardEvent) {
+        m_skipNextClipboardEvent = false;
         return false;
     }
 
@@ -619,106 +587,5 @@ bool ClipboardMonitor::OnClipboardUpdate() {
         OutputDebugStringA(error.what());
         OutputDebugStringA("\n");
         return false;
-    }
-}
-
-void ClipboardMonitor::CaptureTargetWindow(HWND candidate) {
-    HWND foreground = candidate != nullptr ? candidate : GetForegroundWindow();
-    if (foreground == nullptr || m_owner == nullptr) {
-        return;
-    }
-    const HWND root = GetAncestor(foreground, GA_ROOT);
-    if (root != nullptr) {
-        foreground = root;
-    }
-
-    m_targetWindow = foreground;
-    m_targetFocusWindow = foreground;
-    m_targetCaretRect = {};
-    m_hasTargetCaretRect = false;
-    const DWORD target_thread = GetWindowThreadProcessId(foreground, nullptr);
-    GUITHREADINFO gui_info{sizeof(gui_info)};
-    if (target_thread != 0 && GetGUIThreadInfo(target_thread, &gui_info)) {
-        if (gui_info.hwndFocus != nullptr) {
-            m_targetFocusWindow = gui_info.hwndFocus;
-        }
-        if (gui_info.hwndCaret != nullptr && !IsRectEmpty(&gui_info.rcCaret)) {
-            m_targetCaretRect = gui_info.rcCaret;
-            m_hasTargetCaretRect = true;
-        }
-    }
-}
-
-void ClipboardMonitor::RestoreTargetFocusAndPaste(HWND target, HWND target_focus, bool paste) {
-    if (!::IsWindow(target)) {
-        return;
-    }
-    if (::IsIconic(target)) {
-        ::ShowWindow(target, SW_RESTORE);
-    }
-    const DWORD current_thread = GetCurrentThreadId();
-    const DWORD target_thread = GetWindowThreadProcessId(target, nullptr);
-    const bool attached = target_thread != 0 && target_thread != current_thread &&
-        AttachThreadInput(current_thread, target_thread, TRUE) != FALSE;
-    SetForegroundWindow(target);
-    if (attached && ::IsWindow(target_focus) && GetAncestor(target_focus, GA_ROOT) == target) {
-        ::SetFocus(target_focus);
-    }
-    if (attached) {
-        AttachThreadInput(current_thread, target_thread, FALSE);
-    }
-    SetForegroundWindow(target);
-    if (!paste) {
-        return;
-    }
-    const HWND active_window = GetForegroundWindow();
-    if (active_window != target && GetAncestor(active_window, GA_ROOT) != target) {
-        return;
-    }
-    if (PasteModifiersDown()) {
-        if (IsControlOnlyDown()) {
-            SendPasteWithHeldControl();
-        } else {
-            StartPasteTimer(target, target_focus);
-        }
-        return;
-    }
-    SendControlVPaste();
-}
-
-bool ClipboardMonitor::PasteModifiersDown() {
-    return IsKeyDown(VK_CONTROL) || IsKeyDown(VK_MENU) || IsKeyDown(VK_SHIFT);
-}
-
-void ClipboardMonitor::StartPasteTimer(HWND target, HWND focus) {
-    m_pendingPasteTarget = target;
-    m_pendingPasteFocus = focus;
-    m_pendingPasteDeadline = GetTickCount64() + 3000;
-    ::SetTimer(m_owner, AppConstants::Timer::kPaste, 15, nullptr);
-}
-
-void ClipboardMonitor::OnPasteTimer(HWND mainWindow) {
-    const HWND target = m_pendingPasteTarget;
-    const HWND focus = m_pendingPasteFocus;
-    if (GetForegroundWindow() != target || GetTickCount64() > m_pendingPasteDeadline) {
-        StopPasteTimer(mainWindow);
-    } else if (!PasteModifiersDown()) {
-        StopPasteTimer(mainWindow);
-        RestoreTargetFocusAndPaste(target, focus, true);
-    }
-}
-
-void ClipboardMonitor::StopPasteTimer(HWND mainWindow) {
-    KillTimer(mainWindow, AppConstants::Timer::kPaste);
-    m_pendingPasteTarget = nullptr;
-    m_pendingPasteFocus = nullptr;
-    m_pendingPasteDeadline = 0;
-}
-
-void ClipboardMonitor::UpdateTrayTooltip(NOTIFYICONDATAW& notifyIcon, bool trayIconAdded) const {
-    lstrcpynW(notifyIcon.szTip, L"剪贴板历史", ARRAYSIZE(notifyIcon.szTip));
-    if (trayIconAdded) {
-        notifyIcon.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
-        Shell_NotifyIconW(NIM_MODIFY, &notifyIcon);
     }
 }

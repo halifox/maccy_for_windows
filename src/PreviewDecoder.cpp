@@ -1,0 +1,413 @@
+#include "PreviewDecoder.h"
+
+#include <atlbase.h>
+#include <wincodec.h>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cwctype>
+#include <cstring>
+#include <limits>
+#include <utility>
+
+namespace {
+
+constexpr std::uint64_t kMaximumSourcePixels = 64ULL * 1024ULL * 1024ULL;
+
+bool IsEncodedImageName(std::wstring_view name) {
+    constexpr std::wstring_view names[] = {
+        L"PNG",
+        L"image/png",
+        L"JFIF",
+        L"image/jpeg",
+        L"TIFF",
+        L"image/tiff",
+        L"HEIC",
+        L"image/heic",
+    };
+    return std::any_of(names, names + ARRAYSIZE(names), [name](std::wstring_view expected) {
+        if (name.size() != expected.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < name.size(); ++index) {
+            if (std::towlower(name[index]) != std::towlower(expected[index])) {
+                return false;
+            }
+        }
+        return true;
+    });
+}
+
+bool IsDib(const ClipboardFormatData &data) {
+    return data.format == CF_DIBV5 || data.format == CF_DIB;
+}
+
+bool FitSize(
+    UINT source_width,
+    UINT source_height,
+    UINT maximum_width,
+    UINT maximum_height,
+    UINT &width,
+    UINT &height
+) {
+    if (source_width == 0 || source_height == 0 || maximum_width == 0 || maximum_height == 0) {
+        return false;
+    }
+
+    const double scale = std::min({
+        1.0,
+        static_cast<double>(maximum_width) / source_width,
+        static_cast<double>(maximum_height) / source_height,
+    });
+    width = std::max(1u, static_cast<UINT>(std::floor(source_width * scale)));
+    height = std::max(1u, static_cast<UINT>(std::floor(source_height * scale)));
+    return static_cast<std::uint64_t>(width) * height <= kMaximumSourcePixels;
+}
+
+bool ReadDibLayout(
+    const std::vector<unsigned char> &bytes,
+    BITMAPINFOHEADER &header,
+    size_t &bits_offset,
+    UINT &width,
+    UINT &height
+) {
+    if (bytes.size() < sizeof(BITMAPINFOHEADER)) {
+        return false;
+    }
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.biSize < sizeof(BITMAPINFOHEADER) ||
+        header.biSize > bytes.size() ||
+        header.biWidth <= 0 || header.biHeight == 0 ||
+        header.biPlanes != 1 ||
+        (header.biBitCount != 1 && header.biBitCount != 4 &&
+         header.biBitCount != 8 && header.biBitCount != 16 &&
+         header.biBitCount != 24 && header.biBitCount != 32) ||
+        (header.biCompression != BI_RGB && header.biCompression != BI_BITFIELDS)) {
+        return false;
+    }
+
+    std::uint64_t offset = header.biSize;
+    if (header.biBitCount <= 8) {
+        const std::uint64_t colors = header.biClrUsed != 0
+            ? header.biClrUsed
+            : (1ULL << header.biBitCount);
+        offset += colors * sizeof(RGBQUAD);
+    } else if (header.biCompression == BI_BITFIELDS &&
+               header.biSize == sizeof(BITMAPINFOHEADER)) {
+        offset += 3 * sizeof(DWORD);
+    }
+    if (offset >= bytes.size()) {
+        return false;
+    }
+
+    const std::uint64_t source_width = static_cast<std::uint64_t>(header.biWidth);
+    const std::uint64_t source_height = static_cast<std::uint64_t>(
+        header.biHeight < 0 ? -static_cast<LONGLONG>(header.biHeight) : header.biHeight
+    );
+    if (source_width == 0 || source_height == 0 ||
+        source_width * source_height > kMaximumSourcePixels) {
+        return false;
+    }
+
+    const std::uint64_t row_bits = source_width * header.biBitCount;
+    const std::uint64_t row_bytes = ((row_bits + 31) / 32) * 4;
+    const std::uint64_t image_bytes = row_bytes * source_height;
+    if (image_bytes > bytes.size() - offset) {
+        return false;
+    }
+
+    bits_offset = static_cast<size_t>(offset);
+    width = static_cast<UINT>(source_width);
+    height = static_cast<UINT>(source_height);
+    return true;
+}
+
+HBITMAP CreateOutputBitmap(UINT width, UINT height, void **bits) {
+    if (width == 0 || height == 0 ||
+        static_cast<std::uint64_t>(width) * height > kMaximumSourcePixels) {
+        return nullptr;
+    }
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(info.bmiHeader);
+    info.bmiHeader.biWidth = static_cast<LONG>(width);
+    info.bmiHeader.biHeight = -static_cast<LONG>(height);
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    return ::CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, bits, nullptr, 0);
+}
+
+std::optional<PreviewBitmap> CreateBitmapFromDib(
+    const std::vector<unsigned char> &bytes,
+    UINT maximum_width,
+    UINT maximum_height,
+    std::stop_token stop_token
+) {
+    BITMAPINFOHEADER header{};
+    size_t bits_offset = 0;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    if (!ReadDibLayout(bytes, header, bits_offset, source_width, source_height)) {
+        return std::nullopt;
+    }
+
+    UINT width = 0;
+    UINT height = 0;
+    if (!FitSize(source_width, source_height, maximum_width, maximum_height, width, height)) {
+        return std::nullopt;
+    }
+
+    void *destination = nullptr;
+    HBITMAP bitmap = CreateOutputBitmap(width, height, &destination);
+    if (bitmap == nullptr || destination == nullptr) {
+        if (bitmap != nullptr) {
+            ::DeleteObject(bitmap);
+        }
+        return std::nullopt;
+    }
+
+    if (stop_token.stop_requested()) {
+        ::DeleteObject(bitmap);
+        return std::nullopt;
+    }
+
+    HDC dc = ::CreateCompatibleDC(nullptr);
+    if (dc == nullptr) {
+        ::DeleteObject(bitmap);
+        return std::nullopt;
+    }
+    const HGDIOBJ previous = ::SelectObject(dc, bitmap);
+    ::SetStretchBltMode(dc, HALFTONE);
+    ::SetBrushOrgEx(dc, 0, 0, nullptr);
+    const int result = ::StretchDIBits(
+        dc,
+        0,
+        0,
+        static_cast<int>(width),
+        static_cast<int>(height),
+        0,
+        0,
+        static_cast<int>(source_width),
+        static_cast<int>(source_height),
+        bytes.data() + bits_offset,
+        reinterpret_cast<const BITMAPINFO *>(bytes.data()),
+        DIB_RGB_COLORS,
+        SRCCOPY
+    );
+    ::SelectObject(dc, previous);
+    ::DeleteDC(dc);
+    if (result == GDI_ERROR || stop_token.stop_requested()) {
+        ::DeleteObject(bitmap);
+        return std::nullopt;
+    }
+    return PreviewBitmap(bitmap, static_cast<int>(width), static_cast<int>(height));
+}
+
+std::optional<PreviewBitmap> CreateBitmapFromEncoded(
+    const std::vector<unsigned char> &bytes,
+    UINT maximum_width,
+    UINT maximum_height,
+    std::stop_token stop_token
+) {
+    if (bytes.empty() || stop_token.stop_requested()) {
+        return std::nullopt;
+    }
+
+    CComPtr<IWICImagingFactory> factory;
+    if (FAILED(::CoCreateInstance(
+        CLSID_WICImagingFactory,
+        nullptr,
+        CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&factory)
+    ))) {
+        return std::nullopt;
+    }
+
+    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes.size());
+    if (memory == nullptr) {
+        return std::nullopt;
+    }
+    void *destination = ::GlobalLock(memory);
+    if (destination == nullptr) {
+        ::GlobalFree(memory);
+        return std::nullopt;
+    }
+    std::memcpy(destination, bytes.data(), bytes.size());
+    ::GlobalUnlock(memory);
+
+    CComPtr<IStream> stream;
+    if (FAILED(::CreateStreamOnHGlobal(memory, TRUE, &stream))) {
+        ::GlobalFree(memory);
+        return std::nullopt;
+    }
+
+    CComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(factory->CreateDecoderFromStream(
+        stream,
+        nullptr,
+        WICDecodeMetadataCacheOnLoad,
+        &decoder
+    ))) {
+        return std::nullopt;
+    }
+
+    CComPtr<IWICBitmapFrameDecode> frame;
+    if (FAILED(decoder->GetFrame(0, &frame))) {
+        return std::nullopt;
+    }
+
+    UINT source_width = 0;
+    UINT source_height = 0;
+    if (FAILED(frame->GetSize(&source_width, &source_height)) ||
+        source_width == 0 || source_height == 0 ||
+        static_cast<std::uint64_t>(source_width) * source_height > kMaximumSourcePixels) {
+        return std::nullopt;
+    }
+
+    UINT width = 0;
+    UINT height = 0;
+    if (!FitSize(source_width, source_height, maximum_width, maximum_height, width, height)) {
+        return std::nullopt;
+    }
+
+    IWICBitmapSource *source = frame;
+    CComPtr<IWICBitmapScaler> scaler;
+    if (width != source_width || height != source_height) {
+        if (stop_token.stop_requested() ||
+            FAILED(factory->CreateBitmapScaler(&scaler)) ||
+            FAILED(scaler->Initialize(
+                frame,
+                width,
+                height,
+                WICBitmapInterpolationModeFant
+            ))) {
+            return std::nullopt;
+        }
+        source = scaler;
+    }
+
+    CComPtr<IWICFormatConverter> converter;
+    if (stop_token.stop_requested() ||
+        FAILED(factory->CreateFormatConverter(&converter)) ||
+        FAILED(converter->Initialize(
+            source,
+            GUID_WICPixelFormat32bppPBGRA,
+            WICBitmapDitherTypeNone,
+            nullptr,
+            0.0,
+            WICBitmapPaletteTypeCustom
+        ))) {
+        return std::nullopt;
+    }
+
+    if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0) {
+        return std::nullopt;
+    }
+
+    void *bits = nullptr;
+    HBITMAP bitmap = CreateOutputBitmap(width, height, &bits);
+    if (bitmap == nullptr || bits == nullptr) {
+        if (bitmap != nullptr) {
+            ::DeleteObject(bitmap);
+        }
+        return std::nullopt;
+    }
+
+    const std::uint64_t stride_value = static_cast<std::uint64_t>(width) * 4;
+    const std::uint64_t buffer_size_value = stride_value * height;
+    if (stride_value > std::numeric_limits<UINT>::max() ||
+        buffer_size_value > std::numeric_limits<UINT>::max() ||
+        stop_token.stop_requested()) {
+        ::DeleteObject(bitmap);
+        return std::nullopt;
+    }
+    const UINT stride = static_cast<UINT>(stride_value);
+    const UINT buffer_size = static_cast<UINT>(buffer_size_value);
+    if (FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(bits))) ||
+        stop_token.stop_requested()) {
+        ::DeleteObject(bitmap);
+        return std::nullopt;
+    }
+    return PreviewBitmap(bitmap, static_cast<int>(width), static_cast<int>(height));
+}
+
+} // namespace
+
+PreviewBitmap::~PreviewBitmap() {
+    if (handle != nullptr) {
+        ::DeleteObject(handle);
+    }
+}
+
+PreviewBitmap::PreviewBitmap(PreviewBitmap &&other) noexcept
+    : handle(other.handle), width(other.width), height(other.height) {
+    other.handle = nullptr;
+    other.width = 0;
+    other.height = 0;
+}
+
+PreviewBitmap &PreviewBitmap::operator=(PreviewBitmap &&other) noexcept {
+    if (this != &other) {
+        if (handle != nullptr) {
+            ::DeleteObject(handle);
+        }
+        handle = other.handle;
+        width = other.width;
+        height = other.height;
+        other.handle = nullptr;
+        other.width = 0;
+        other.height = 0;
+    }
+    return *this;
+}
+
+HBITMAP PreviewBitmap::Release() noexcept {
+    HBITMAP result = handle;
+    handle = nullptr;
+    width = 0;
+    height = 0;
+    return result;
+}
+
+std::optional<PreviewBitmap> DecodePreviewBitmap(
+    const ClipboardItem &item,
+    UINT maximum_width,
+    UINT maximum_height,
+    std::stop_token stop_token
+) {
+    if (!item.has_image) {
+        return std::nullopt;
+    }
+    for (const ClipboardFormatData &data : item.data) {
+        if (stop_token.stop_requested()) {
+            return std::nullopt;
+        }
+        if (IsEncodedImageName(data.name)) {
+            if (auto bitmap = CreateBitmapFromEncoded(
+                    data.bytes,
+                    maximum_width,
+                    maximum_height,
+                    stop_token
+                )) {
+                return bitmap;
+            }
+        }
+    }
+    for (const ClipboardFormatData &data : item.data) {
+        if (stop_token.stop_requested()) {
+            return std::nullopt;
+        }
+        if (IsDib(data)) {
+            if (auto bitmap = CreateBitmapFromDib(
+                    data.bytes,
+                    maximum_width,
+                    maximum_height,
+                    stop_token
+                )) {
+                return bitmap;
+            }
+        }
+    }
+    return std::nullopt;
+}

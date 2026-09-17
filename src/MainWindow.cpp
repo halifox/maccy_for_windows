@@ -1,9 +1,12 @@
 #include "MainWindow.h"
+#include "ClipboardMonitor.h"
 #include "Constants.h"
 #include "PinKeys.h"
 #include "SettingsWindow.h"
 #include "TrayIcon.h"
 #include "UiFont.h"
+
+#include <shellapi.h>
 
 #include <algorithm>
 #include <array>
@@ -84,10 +87,13 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
 
 } // namespace
 
-MainWindow::MainWindow(Database& database, bool isolated)
-    : m_database(database),
-      m_settings(AppSettings::Load(database)),
-      m_clipboardMonitor(database, m_settings),
+MainWindow::MainWindow(StorageWorker &storage, PreviewWorker &preview,
+                       StorageInitialState initial_state, bool isolated)
+    : m_storage(storage),
+      m_previewWorker(preview),
+      m_settings(std::move(initial_state.settings)),
+      m_suppressClearAlert(initial_state.suppress_clear_alert),
+      m_ignoredLists(std::move(initial_state.ignored_lists)),
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
       m_isolated(isolated) {}
@@ -477,7 +483,7 @@ void MainWindow::HandlePopupActivation(HWND activating_window) {
 
     const bool outside_popup = !IsOurWindow(activating_window);
     if (activating_window != nullptr && !m_trayMenuShowing && outside_popup) {
-        m_clipboardMonitor.CaptureTargetWindow(activating_window);
+        m_pasteController.CaptureTargetWindow(activating_window);
     }
     if (m_popupVisible && !m_exiting && !m_trayMenuShowing && outside_popup) {
         HideMainWindow();
@@ -546,9 +552,9 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
     POINT cursor{};
     GetCursorPos(&cursor);
     RECT target{};
-    const bool has_target = m_clipboardMonitor.GetTargetWindow() != nullptr
-        && ::IsWindow(m_clipboardMonitor.GetTargetWindow())
-        && ::GetWindowRect(m_clipboardMonitor.GetTargetWindow(), &target) == TRUE;
+    const bool has_target = m_pasteController.GetTargetWindow() != nullptr
+        && ::IsWindow(m_pasteController.GetTargetWindow())
+        && ::GetWindowRect(m_pasteController.GetTargetWindow(), &target) == TRUE;
     const HMONITOR monitor = SelectedMonitor();
     MONITORINFO monitor_info{sizeof(monitor_info)};
     if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitor_info)) {
@@ -680,18 +686,41 @@ void MainWindow::PositionPreviewWindow() {
 }
 
 void MainWindow::RefreshHistory(std::wstring_view query) {
+    const std::uint64_t generation = ++m_historyGeneration;
+    const std::wstring owned_query(query);
+    const int search_mode = static_cast<int>(m_settings.search_mode);
+    const int sort_by = m_settings.sort_by;
+    const bool pins_at_bottom = m_settings.pin_to == PinPosition::Bottom;
+    m_storage.Post([this, generation, owned_query, search_mode, sort_by, pins_at_bottom](
+        StorageContext &context
+    ) {
+        auto items = context.database.SearchHistory(
+            owned_query,
+            search_mode,
+            sort_by,
+            pins_at_bottom
+        );
+        m_storage.PostToUi([this, generation, owned_query, items = std::move(items)]() mutable {
+            ApplyHistoryItems(generation, owned_query, std::move(items));
+        });
+    });
+}
+
+void MainWindow::ApplyHistoryItems(
+    std::uint64_t generation,
+    std::wstring query,
+    std::vector<ClipboardItem> items
+) {
+    if (generation != m_historyGeneration || m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+        return;
+    }
     try {
         const bool sameQuery = query == m_searchQuery;
         const sqlite3_int64 previous = sameQuery ? m_keyboardHandler.GetActiveItemId() : 0;
         const int previousIndex = m_keyboardHandler.GetActiveItemIndex();
         const bool previewOpen = m_previewWindow.IsVisible();
-        const std::wstring ownedQuery(query);
-        m_items = m_database.SearchHistory(
-            ownedQuery,
-            static_cast<int>(m_settings.search_mode),
-            m_settings.sort_by,
-            m_settings.pin_to == PinPosition::Bottom
-        );
+        const std::wstring ownedQuery = query;
+        m_items = std::move(items);
 
         KillTimer(AppConstants::Timer::kPreview);
         m_previewCandidateId = 0;
@@ -785,13 +814,14 @@ void MainWindow::ScheduleSearch() {
 }
 
 void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id) {
+    const bool preview_requested = m_previewWindow.IsVisible() || m_previewCandidateId != 0;
     KillTimer(AppConstants::Timer::kPreview);
-    m_previewCandidateId = 0;
     if (!m_popupVisible || m_previewSuppressed || item_id == 0) {
+        m_previewCandidateId = 0;
         return;
     }
-    if (m_previewWindow.IsVisible()) {
-        if (m_previewItemId != item_id) {
+    if (preview_requested) {
+        if (m_previewItemId != item_id || m_previewCandidateId != item_id) {
             ShowPreviewForItem(item_id);
         }
         return;
@@ -809,17 +839,37 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
         return;
     }
     KillTimer(AppConstants::Timer::kPreview);
-    try {
-        const auto item = m_database.GetItem(item_id, PayloadMode::Preview);
-        if (!item) {
-            HidePreview();
-            return;
-        }
-        m_previewWindow.SetItem(*item);
-        m_previewItemId = item_id;
-        m_previewCandidateId = 0;
-        PositionPreviewWindow();
-    } catch (...) {
+    const std::uint64_t generation = ++m_previewGeneration;
+    UINT maximum_width = 0;
+    UINT maximum_height = 0;
+    m_previewWindow.GetImageSize(maximum_width, maximum_height);
+    m_previewWindow.Hide();
+    m_previewItemId = 0;
+    m_previewCandidateId = item_id;
+    if (!m_previewWorker.Request(
+            item_id,
+            generation,
+            maximum_width,
+            maximum_height,
+            [this](std::shared_ptr<PreviewResult> result) {
+                if (result == nullptr || result->generation != m_previewGeneration ||
+                    result->item_id != m_selectedItemId || !m_popupVisible || m_previewSuppressed) {
+                    return;
+                }
+                if (!result->item.has_value()) {
+                    HidePreview();
+                    return;
+                }
+                PreviewBitmap bitmap;
+                if (result->bitmap.has_value()) {
+                    bitmap = std::move(*result->bitmap);
+                }
+                m_previewWindow.SetItem(*result->item, std::move(bitmap));
+                m_previewItemId = result->item_id;
+                m_previewCandidateId = 0;
+                PositionPreviewWindow();
+            }
+        )) {
         HidePreview();
     }
 }
@@ -844,6 +894,7 @@ void MainWindow::ShowPreviewForSelection() {
 
 void MainWindow::HidePreview() {
     KillTimer(AppConstants::Timer::kPreview);
+    ++m_previewGeneration;
     m_previewCandidateId = 0;
     m_previewItemId = 0;
     m_previewWindow.Hide();
@@ -860,35 +911,51 @@ void MainWindow::TogglePreview() {
 }
 
 void MainWindow::PasteItem(int index) {
-    if (m_loadingList || m_clipboardMonitor.IsPasting() ||
+    if (m_loadingList || m_pasteInProgress ||
         index < 0 || static_cast<size_t>(index) >= m_items.size()) {
         return;
     }
-    const HWND target = m_clipboardMonitor.GetTargetWindow();
-    const HWND target_focus = m_clipboardMonitor.GetTargetFocusWindow();
+    const HWND target = m_pasteController.GetTargetWindow();
+    const HWND target_focus = m_pasteController.GetTargetFocusWindow();
     const sqlite3_int64 id = m_items[static_cast<size_t>(index)].id;
-    try {
-        const auto [paste, plain] = ResolvePasteAction(
-            m_settings.paste_by_default,
-            m_settings.remove_formatting_by_default,
-            (GetKeyState(VK_CONTROL) & 0x8000) != 0,
-            (GetKeyState(VK_MENU) & 0x8000) != 0,
-            (GetKeyState(VK_SHIFT) & 0x8000) != 0
-        );
-        const auto item = m_database.GetItem(id, PayloadMode::Full);
-        if (!item || !m_clipboardMonitor.SetClipboardItem(*item, plain)) {
-            return;
+    const auto [paste, plain] = ResolvePasteAction(
+        m_settings.paste_by_default,
+        m_settings.remove_formatting_by_default,
+        (GetKeyState(VK_CONTROL) & 0x8000) != 0,
+        (GetKeyState(VK_MENU) & 0x8000) != 0,
+        (GetKeyState(VK_SHIFT) & 0x8000) != 0
+    );
+    m_pasteInProgress = true;
+    if (!m_storage.Post([this, id, target, target_focus, paste, plain](StorageContext &context) {
+        bool success = false;
+        std::string error;
+        try {
+            const auto item = context.database.GetItem(id, PayloadMode::Full);
+            success = item.has_value() && context.clipboard.WriteClipboardItem(*item, plain);
+            if (success) {
+                context.database.MarkCopied(id);
+            }
+        } catch (const std::exception &exception) {
+            error = exception.what();
+        } catch (...) {
+            error = "Unknown paste error";
         }
-        m_clipboardMonitor.SetPasting(true);
-        m_clipboardMonitor.SetSkipNextEvent(true);
-        HideMainWindow();
-        m_database.MarkCopied(id);
-        m_clipboardMonitor.RestoreTargetFocusAndPaste(target, target_focus, paste);
-        m_clipboardMonitor.SetPasting(false);
-    } catch (const std::exception& error) {
-        m_clipboardMonitor.SetPasting(false);
-        OutputDebugStringA(error.what());
-        OutputDebugStringA("\n");
+        m_storage.PostToUi([this, target, target_focus, paste, success,
+                            error = std::move(error)]() {
+            m_pasteInProgress = false;
+            if (!success) {
+                if (!error.empty()) {
+                    ::OutputDebugStringA(error.c_str());
+                    ::OutputDebugStringA("\n");
+                }
+                return;
+            }
+            HideMainWindow();
+            m_pasteController.RestoreTargetFocusAndPaste(target, target_focus, paste);
+            RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+        });
+    })) {
+        m_pasteInProgress = false;
     }
 }
 
@@ -904,25 +971,42 @@ void MainWindow::ToggleSelectedPin() {
     if (index < 0) {
         return;
     }
-    ClipboardItem& item = m_items[static_cast<size_t>(index)];
-    try {
-        if (item.pinned) {
-            m_database.TogglePin(item.id, {}, false);
-        } else {
-            const std::wstring key = PinKeyPolicy::Next(
-                m_database.SearchHistory({}, 0, 0, false),
-                m_settings
-            );
-            if (key.empty()) {
-                MessageBoxW(L"没有可用的置顶快捷键，请先取消一个置顶项目。", L"置顶", MB_OK);
-                return;
+    const ClipboardItem item = m_items[static_cast<size_t>(index)];
+    const AppSettings settings = m_settings;
+    if (!m_storage.Post([this, item, settings](StorageContext &context) {
+        try {
+            if (item.pinned) {
+                context.database.TogglePin(item.id, {}, false);
+            } else {
+                const std::wstring key = PinKeyPolicy::Next(
+                    context.database.SearchHistory({}, 0, 0, false),
+                    settings
+                );
+                if (key.empty()) {
+                    m_storage.PostToUi([this] {
+                        ::MessageBoxW(
+                            m_hWnd,
+                            L"没有可用的置顶快捷键，请先取消一个置顶项目。",
+                            L"置顶",
+                            MB_OK
+                        );
+                    });
+                    return;
+                }
+                context.database.TogglePin(item.id, key, true);
             }
-            m_database.TogglePin(item.id, key, true);
+            m_storage.PostToUi([this] {
+                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+            });
+        } catch (const std::exception &error) {
+            const std::string message = error.what();
+            m_storage.PostToUi([this, message] {
+                ::OutputDebugStringA(message.c_str());
+                ::OutputDebugStringA("\n");
+            });
         }
-        RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-    } catch (const std::exception& error) {
-        OutputDebugStringA(error.what());
-        OutputDebugStringA("\n");
+    })) {
+        return;
     }
 }
 
@@ -931,17 +1015,26 @@ void MainWindow::DeleteSelectedItem() {
     if (index < 0) {
         return;
     }
-    try {
-        m_database.DeleteItem(m_items[static_cast<size_t>(index)].id);
-        RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-    } catch (const std::exception& error) {
-        OutputDebugStringA(error.what());
-        OutputDebugStringA("\n");
-    }
+    const sqlite3_int64 item_id = m_items[static_cast<size_t>(index)].id;
+    m_storage.Post([this, item_id](StorageContext &context) {
+        try {
+            context.database.DeleteItem(item_id);
+            m_storage.PostToUi([this] {
+                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+            });
+        } catch (const std::exception &error) {
+            const std::string message = error.what();
+            m_storage.PostToUi([message] {
+                ::OutputDebugStringA(message.c_str());
+                ::OutputDebugStringA("\n");
+            });
+        }
+    });
 }
 
 void MainWindow::ClearHistory(bool all) {
-    const bool suppress = m_database.GetSetting(L"behavior.suppressClearAlert") == std::optional<std::wstring>(L"1");
+    const bool suppress = m_suppressClearAlert;
+    bool remember = false;
     if (!suppress) {
         m_modalShowing = true;
         TASKDIALOGCONFIG config{sizeof(config)};
@@ -961,22 +1054,41 @@ void MainWindow::ClearHistory(bool all) {
         }
         m_modalShowing = false;
         if (button != IDYES) return;
-        if (checked) m_database.SetSetting(L"behavior.suppressClearAlert", L"1");
+        remember = checked != FALSE;
+        if (remember) {
+            m_suppressClearAlert = true;
+        }
     }
-    try {
-        if (all) {
-            m_database.DeleteAll();
-        } else {
-            m_database.DeleteUnpinned();
+    const bool clear_clipboard = m_settings.clear_system_clipboard;
+    if (!m_storage.Post([this, all, remember, clear_clipboard](StorageContext &context) {
+        try {
+            if (remember) {
+                context.database.SetSetting(L"behavior.suppressClearAlert", L"1");
+            }
+            if (all) {
+                context.database.DeleteAll();
+            } else {
+                context.database.DeleteUnpinned();
+            }
+            m_storage.PostToUi([this, clear_clipboard] {
+                if (clear_clipboard && ::OpenClipboard(m_hWnd)) {
+                    ::EmptyClipboard();
+                    ::CloseClipboard();
+                }
+                ::SetWindowTextW(m_search, L"");
+                RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
+            });
+        } catch (const std::exception &error) {
+            const std::string message = error.what();
+            m_storage.PostToUi([this, message] {
+                ::MessageBoxA(m_hWnd, message.c_str(), "Unable to clear history",
+                              MB_OK | MB_ICONERROR);
+            });
         }
-        if (m_settings.clear_system_clipboard && ::OpenClipboard(m_hWnd)) {
-            EmptyClipboard();
-            CloseClipboard();
+    })) {
+        if (remember) {
+            m_suppressClearAlert = false;
         }
-        ::SetWindowTextW(m_search, L"");
-        RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
-    } catch (const std::exception& error) {
-        MessageBoxA(m_hWnd, error.what(), "Unable to clear history", MB_OK | MB_ICONERROR);
     }
 }
 
@@ -999,7 +1111,17 @@ void MainWindow::OpenAbout() {
 void MainWindow::OpenSettings() {
     HideMainWindow();
     if (m_settingsWindow == nullptr) {
-        m_settingsWindow = std::make_unique<SettingsWindow>(m_database, m_hWnd);
+        m_settingsWindow = std::make_unique<SettingsWindow>(
+            m_storage,
+            m_hWnd,
+            m_settings,
+            m_ignoredLists,
+            [this](const AppSettings &settings, std::uint32_t updates) {
+                OnSettingsChanged(settings, updates);
+            }
+        );
+    } else {
+        m_settingsWindow->SetSettingsSnapshot(m_settings);
     }
     if (!m_settingsWindow->CreateOrShow()) {
         ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"maccy", MB_OK | MB_ICONERROR);
@@ -1009,10 +1131,12 @@ void MainWindow::OpenSettings() {
 void MainWindow::ExitApplication() {
     m_exiting = true;
     if (m_settings.clear_on_quit) {
-        try {
-            m_database.DeleteUnpinned();
-        } catch (...) {
-        }
+        m_storage.Post([](StorageContext &context) {
+            try {
+                context.database.DeleteUnpinned();
+            } catch (...) {
+            }
+        });
     }
     if (m_settings.clear_on_quit && m_settings.clear_system_clipboard && ::OpenClipboard(m_hWnd)) {
         EmptyClipboard();
@@ -1048,15 +1172,7 @@ void MainWindow::SaveWindowGeometry(bool resized) {
     }
     m_settings.window_width = width;
     m_settings.window_height = height;
-    try {
-        if (persist_popup_position) {
-            m_database.SetSetting(L"appearance.windowX", std::to_wstring(m_settings.popup_x));
-            m_database.SetSetting(L"appearance.windowY", std::to_wstring(m_settings.popup_y));
-        }
-        m_database.SetSetting(L"appearance.windowWidth", std::to_wstring(width));
-        m_database.SetSetting(L"appearance.windowHeight", std::to_wstring(height));
-    } catch (...) {
-    }
+    PersistSettings();
 }
 
 void MainWindow::HideMainWindow() {
@@ -1079,7 +1195,11 @@ void MainWindow::ScheduleSearchFromCurrentEdit() {
 }
 
 void MainWindow::UpdateTrayTooltip() {
-    m_clipboardMonitor.UpdateTrayTooltip(m_notifyIcon, m_trayIconAdded);
+    ::lstrcpynW(m_notifyIcon.szTip, L"剪贴板历史", ARRAYSIZE(m_notifyIcon.szTip));
+    if (m_trayIconAdded) {
+        m_notifyIcon.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
+        ::Shell_NotifyIconW(NIM_MODIFY, &m_notifyIcon);
+    }
 }
 
 void MainWindow::UpdateTrayIcon() {
@@ -1163,13 +1283,6 @@ void MainWindow::ApplyPendingState() {
         return;
     }
 
-    if ((updates & AppConstants::UiUpdate::kIgnoreRules) != 0 &&
-        (updates & AppConstants::UiUpdate::kSettings) == 0) {
-        m_clipboardMonitor.ReloadIgnoreLists();
-    }
-    if ((updates & AppConstants::UiUpdate::kSettings) != 0) {
-        updates |= ApplySettings(updates);
-    }
     if ((updates & AppConstants::UiUpdate::kHistory) != 0) {
         RefreshHistory(m_search != nullptr ? ReadWindowText(m_search) : m_searchQuery);
     }
@@ -1187,17 +1300,18 @@ void MainWindow::ApplyPendingState() {
     }
 }
 
-std::uint32_t MainWindow::ApplySettings(std::uint32_t requestedUpdates) {
+std::uint32_t MainWindow::ApplySettings(
+    const AppSettings &settings,
+    std::uint32_t requestedUpdates
+) {
     const AppSettings previous = m_settings;
-    m_settings = AppSettings::Load(m_database);
+    m_settings = settings;
 
-    std::uint32_t updates = 0;
-    const bool ignoreRulesChanged =
-        (requestedUpdates & AppConstants::UiUpdate::kIgnoreRules) != 0 ||
-        previous.ignore_all_apps_except_listed != m_settings.ignore_all_apps_except_listed;
-    if (ignoreRulesChanged) {
-        m_clipboardMonitor.ReloadIgnoreLists();
-    }
+    std::uint32_t updates = requestedUpdates &
+        (AppConstants::UiUpdate::kHistory |
+         AppConstants::UiUpdate::kLayout |
+         AppConstants::UiUpdate::kTray |
+         AppConstants::UiUpdate::kFooter);
 
     const bool previewTipChanged = !SameHotKey(previous.preview_hotkey, m_settings.preview_hotkey);
     if (previewTipChanged && m_tooltips != nullptr) {
@@ -1261,6 +1375,19 @@ std::uint32_t MainWindow::ApplySettings(std::uint32_t requestedUpdates) {
         updates |= AppConstants::UiUpdate::kLayout;
     }
     return updates;
+}
+
+void MainWindow::PersistSettings() {
+    const AppSettings snapshot = m_settings;
+    m_storage.Post([snapshot](StorageContext &context) {
+        snapshot.Save(context.database);
+        context.settings = snapshot;
+    });
+}
+
+void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates) {
+    const std::uint32_t updates = ApplySettings(settings, requestedUpdates);
+    RequestUiUpdate(updates);
 }
 
 // Callback implementations for KeyboardHandler
@@ -1329,6 +1456,17 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         return FALSE;
     }
 
+    m_pasteController.SetOwner(m_hWnd);
+    m_storage.SetUiWindow(m_hWnd);
+    m_previewWorker.SetUiWindow(m_hWnd);
+    m_storage.SetHistoryChangedHandler([this] {
+        RequestUiUpdate(AppConstants::UiUpdate::kTray |
+                        (m_popupVisible ? AppConstants::UiUpdate::kHistory : 0));
+    });
+    m_storage.SetSettingsChangedHandler([this](const AppSettings &settings) {
+        OnSettingsChanged(settings, AppConstants::UiUpdate::kSettings);
+    });
+
     m_keyboardHandler.Initialize(m_hWnd, m_search, m_historyList, m_pinsList, FooterButtons());
     m_keyboardHandler.SetCallbacks(
         this,
@@ -1344,9 +1482,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         OnHideWindowCallback
     );
 
-    m_clipboardMonitor.ReloadIgnoreLists();
     if (!m_isolated) {
-        m_clipboardMonitor.Initialize(m_hWnd);
         m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
     }
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout |
@@ -1554,10 +1690,7 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
         if (!m_settings.ignore_events) {
             m_settings.ignore_only_next_event = false;
         }
-        try {
-            m_settings.Save(m_database);
-        } catch (...) {
-        }
+        PersistSettings();
         RequestUiUpdate(AppConstants::UiUpdate::kFooter);
         return 0;
     }
@@ -1640,7 +1773,7 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
 LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     if (wParam == AppConstants::Timer::kPaste) {
         handled = TRUE;
-        m_clipboardMonitor.OnPasteTimer(m_hWnd);
+        m_pasteController.OnPasteTimer();
         return 0;
     }
     if (wParam == AppConstants::Timer::kSearch) {
@@ -1656,16 +1789,6 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         return 0;
     }
     handled = FALSE;
-    return 0;
-}
-
-LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL&) {
-    if (m_clipboardMonitor.OnClipboardUpdate()) {
-        RequestUiUpdate(AppConstants::UiUpdate::kTray);
-        if (m_popupVisible) {
-            RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-        }
-    }
     return 0;
 }
 
@@ -1724,14 +1847,14 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
         if (GetKeyState(VK_MENU) & 0x8000) {
             m_settings.ignore_events = !m_settings.ignore_events;
             m_settings.ignore_only_next_event = false;
-            m_settings.Save(m_database);
+            PersistSettings();
         } else {
             ShowMainWindow(PopupPosition::StatusItem);
         }
         break;
     case WM_RBUTTONUP:
     case WM_CONTEXTMENU:
-        m_clipboardMonitor.CaptureTargetWindow();
+        m_pasteController.CaptureTargetWindow();
         ShowTrayMenu();
         break;
     default:
@@ -1747,12 +1870,28 @@ LRESULT MainWindow::OnUiUpdate(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     return 0;
 }
 
+LRESULT MainWindow::OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    m_storage.DrainUiCallbacks();
+    return 0;
+}
+
+LRESULT MainWindow::OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    m_previewWorker.DrainUiCallbacks();
+    return 0;
+}
+
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
     KillTimer(AppConstants::Timer::kSearch);
     KillTimer(AppConstants::Timer::kPreview);
+    m_pasteController.StopPasteTimer();
     m_keyboardHandler.Shutdown();
-    m_clipboardMonitor.Shutdown();
+    m_previewWorker.SetUiWindow(nullptr);
+    m_storage.SetUiWindow(nullptr);
+    m_previewWorker.Stop();
+    m_storage.Stop();
     if (m_previewWindow.Window() != nullptr && ::IsWindow(m_previewWindow.Window())) {
         m_previewWindow.DestroyWindow();
     }
@@ -1796,7 +1935,7 @@ void MainWindow::ShowMainWindow() {
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_activePopupPosition = popup_position;
     m_keyboardHandler.ClearHistoryHover();
-    m_clipboardMonitor.CaptureTargetWindow();
+    m_pasteController.CaptureTargetWindow();
     m_previewSuppressed = false;
     ::SetWindowTextW(m_search, L"");
     KillTimer(AppConstants::Timer::kSearch);

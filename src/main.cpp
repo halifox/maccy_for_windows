@@ -10,11 +10,12 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
-#include "Database.h"
 #include "MainWindow.h"
-#include "Settings.h"
 #include "Constants.h"
+#include "PreviewWorker.h"
+#include "StorageWorker.h"
 
 CAppModule _Module;
 
@@ -68,8 +69,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     try {
-        Database database(GetDatabasePath());
-        MainWindow window(database);
+        StorageWorker storage(GetDatabasePath());
+        StorageInitialState initial_state = storage.Start();
+        PreviewWorker preview(storage.Path());
+        preview.Start();
+        MainWindow window(storage, preview, std::move(initial_state));
         if (!window.Create(nullptr)) {
             _Module.Term();
             CoUninitialize();

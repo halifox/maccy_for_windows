@@ -3,24 +3,16 @@
 #include "UiFont.h"
 
 #include <dwmapi.h>
-#include <wincodec.h>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
-#include <cwctype>
-#include <cstring>
 #include <ctime>
-#include <limits>
 #include <string>
-
-#include <atlbase.h>
 
 namespace {
 
 constexpr UINT kFallbackPreviewWidth = 194;
 constexpr UINT kFallbackPreviewHeight = 98;
-constexpr std::uint64_t kMaximumSourcePixels = 64ULL * 1024ULL * 1024ULL;
 constexpr size_t kMaximumPreviewTextCharacters = 4ULL * 1024ULL * 1024ULL;
 
 void ApplySystemRoundedCorners(HWND window) {
@@ -96,334 +88,6 @@ std::wstring FullText(const ClipboardItem &item) {
     return item.preview;
 }
 
-bool IsEncodedImageName(std::wstring_view name) {
-    constexpr std::wstring_view names[] = {
-        L"PNG",
-        L"image/png",
-        L"JFIF",
-        L"image/jpeg",
-        L"TIFF",
-        L"image/tiff",
-        L"HEIC",
-        L"image/heic",
-    };
-    return std::any_of(names, names + ARRAYSIZE(names), [name](std::wstring_view expected) {
-        if (name.size() != expected.size()) {
-            return false;
-        }
-        for (size_t index = 0; index < name.size(); ++index) {
-            if (std::towlower(name[index]) != std::towlower(expected[index])) {
-                return false;
-            }
-        }
-        return true;
-    });
-}
-
-bool IsDib(const ClipboardFormatData &data) {
-    return data.format == CF_DIBV5 || data.format == CF_DIB;
-}
-
-bool FitSize(
-    UINT source_width,
-    UINT source_height,
-    UINT maximum_width,
-    UINT maximum_height,
-    UINT &width,
-    UINT &height
-) {
-    if (source_width == 0 || source_height == 0 || maximum_width == 0 || maximum_height == 0) {
-        return false;
-    }
-
-    const double scale = std::min({
-        1.0,
-        static_cast<double>(maximum_width) / source_width,
-        static_cast<double>(maximum_height) / source_height,
-    });
-    width = std::max(1u, static_cast<UINT>(std::floor(source_width * scale)));
-    height = std::max(1u, static_cast<UINT>(std::floor(source_height * scale)));
-    return static_cast<std::uint64_t>(width) * height <= kMaximumSourcePixels;
-}
-
-bool ReadDibLayout(
-    const std::vector<unsigned char> &bytes,
-    BITMAPINFOHEADER &header,
-    size_t &bits_offset,
-    UINT &width,
-    UINT &height
-) {
-    if (bytes.size() < sizeof(BITMAPINFOHEADER)) {
-        return false;
-    }
-    std::memcpy(&header, bytes.data(), sizeof(header));
-    if (header.biSize < sizeof(BITMAPINFOHEADER) ||
-        header.biSize > bytes.size() ||
-        header.biWidth <= 0 || header.biHeight == 0 ||
-        header.biPlanes != 1 ||
-        (header.biBitCount != 1 && header.biBitCount != 4 &&
-         header.biBitCount != 8 && header.biBitCount != 16 &&
-         header.biBitCount != 24 && header.biBitCount != 32) ||
-        (header.biCompression != BI_RGB && header.biCompression != BI_BITFIELDS)) {
-        return false;
-    }
-
-    std::uint64_t offset = header.biSize;
-    if (header.biBitCount <= 8) {
-        const std::uint64_t colors = header.biClrUsed != 0
-            ? header.biClrUsed
-            : (1ULL << header.biBitCount);
-        offset += colors * sizeof(RGBQUAD);
-    } else if (header.biCompression == BI_BITFIELDS &&
-               header.biSize == sizeof(BITMAPINFOHEADER)) {
-        offset += 3 * sizeof(DWORD);
-    }
-    if (offset >= bytes.size()) {
-        return false;
-    }
-
-    const std::uint64_t source_width = static_cast<std::uint64_t>(header.biWidth);
-    const std::uint64_t source_height = static_cast<std::uint64_t>(
-        header.biHeight < 0 ? -static_cast<LONGLONG>(header.biHeight) : header.biHeight
-    );
-    if (source_width == 0 || source_height == 0 ||
-        source_width * source_height > kMaximumSourcePixels) {
-        return false;
-    }
-
-    const std::uint64_t row_bits = source_width * header.biBitCount;
-    const std::uint64_t row_bytes = ((row_bits + 31) / 32) * 4;
-    const std::uint64_t image_bytes = row_bytes * source_height;
-    if (image_bytes > bytes.size() - offset) {
-        return false;
-    }
-
-    bits_offset = static_cast<size_t>(offset);
-    width = static_cast<UINT>(source_width);
-    height = static_cast<UINT>(source_height);
-    return true;
-}
-
-HBITMAP CreateOutputBitmap(UINT width, UINT height, void **bits) {
-    if (width == 0 || height == 0 ||
-        static_cast<std::uint64_t>(width) * height > kMaximumSourcePixels) {
-        return nullptr;
-    }
-    BITMAPINFO info{};
-    info.bmiHeader.biSize = sizeof(info.bmiHeader);
-    info.bmiHeader.biWidth = static_cast<LONG>(width);
-    info.bmiHeader.biHeight = -static_cast<LONG>(height);
-    info.bmiHeader.biPlanes = 1;
-    info.bmiHeader.biBitCount = 32;
-    info.bmiHeader.biCompression = BI_RGB;
-    return ::CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, bits, nullptr, 0);
-}
-
-HBITMAP CreateBitmapFromDib(
-    const std::vector<unsigned char> &bytes,
-    UINT maximum_width,
-    UINT maximum_height
-) {
-    BITMAPINFOHEADER header{};
-    size_t bits_offset = 0;
-    UINT source_width = 0;
-    UINT source_height = 0;
-    if (!ReadDibLayout(bytes, header, bits_offset, source_width, source_height)) {
-        return nullptr;
-    }
-
-    UINT width = 0;
-    UINT height = 0;
-    if (!FitSize(source_width, source_height, maximum_width, maximum_height, width, height)) {
-        return nullptr;
-    }
-
-    void *destination = nullptr;
-    HBITMAP bitmap = CreateOutputBitmap(width, height, &destination);
-    if (bitmap == nullptr || destination == nullptr) {
-        if (bitmap != nullptr) {
-            ::DeleteObject(bitmap);
-        }
-        return nullptr;
-    }
-
-    HDC dc = ::CreateCompatibleDC(nullptr);
-    if (dc == nullptr) {
-        ::DeleteObject(bitmap);
-        return nullptr;
-    }
-    const HGDIOBJ previous = ::SelectObject(dc, bitmap);
-    ::SetStretchBltMode(dc, HALFTONE);
-    ::SetBrushOrgEx(dc, 0, 0, nullptr);
-    const int result = ::StretchDIBits(
-        dc,
-        0,
-        0,
-        static_cast<int>(width),
-        static_cast<int>(height),
-        0,
-        0,
-        static_cast<int>(source_width),
-        static_cast<int>(source_height),
-        bytes.data() + bits_offset,
-        reinterpret_cast<const BITMAPINFO *>(bytes.data()),
-        DIB_RGB_COLORS,
-        SRCCOPY
-    );
-    ::SelectObject(dc, previous);
-    ::DeleteDC(dc);
-    if (result == GDI_ERROR) {
-        ::DeleteObject(bitmap);
-        return nullptr;
-    }
-    return bitmap;
-}
-
-HBITMAP CreateBitmapFromEncoded(
-    const std::vector<unsigned char> &bytes,
-    UINT maximum_width,
-    UINT maximum_height
-) {
-    if (bytes.empty()) {
-        return nullptr;
-    }
-
-    CComPtr<IWICImagingFactory> factory;
-    if (FAILED(::CoCreateInstance(
-        CLSID_WICImagingFactory,
-        nullptr,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&factory)
-    ))) {
-        return nullptr;
-    }
-
-    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes.size());
-    if (memory == nullptr) {
-        return nullptr;
-    }
-    void *destination = ::GlobalLock(memory);
-    if (destination == nullptr) {
-        ::GlobalFree(memory);
-        return nullptr;
-    }
-    std::memcpy(destination, bytes.data(), bytes.size());
-    ::GlobalUnlock(memory);
-
-    CComPtr<IStream> stream;
-    if (FAILED(::CreateStreamOnHGlobal(memory, TRUE, &stream))) {
-        ::GlobalFree(memory);
-        return nullptr;
-    }
-
-    CComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(factory->CreateDecoderFromStream(
-        stream,
-        nullptr,
-        WICDecodeMetadataCacheOnLoad,
-        &decoder
-    ))) {
-        return nullptr;
-    }
-
-    CComPtr<IWICBitmapFrameDecode> frame;
-    if (FAILED(decoder->GetFrame(0, &frame))) {
-        return nullptr;
-    }
-
-    UINT source_width = 0;
-    UINT source_height = 0;
-    if (FAILED(frame->GetSize(&source_width, &source_height)) ||
-        source_width == 0 || source_height == 0 ||
-        static_cast<std::uint64_t>(source_width) * source_height > kMaximumSourcePixels) {
-        return nullptr;
-    }
-
-    UINT width = 0;
-    UINT height = 0;
-    if (!FitSize(source_width, source_height, maximum_width, maximum_height, width, height)) {
-        return nullptr;
-    }
-
-    IWICBitmapSource *source = frame;
-    CComPtr<IWICBitmapScaler> scaler;
-    if (width != source_width || height != source_height) {
-        if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
-            FAILED(scaler->Initialize(
-                frame,
-                width,
-                height,
-                WICBitmapInterpolationModeFant
-            ))) {
-            return nullptr;
-        }
-        source = scaler;
-    }
-
-    CComPtr<IWICFormatConverter> converter;
-    if (FAILED(factory->CreateFormatConverter(&converter)) ||
-        FAILED(converter->Initialize(
-            source,
-            GUID_WICPixelFormat32bppPBGRA,
-            WICBitmapDitherTypeNone,
-            nullptr,
-            0.0,
-            WICBitmapPaletteTypeCustom
-        ))) {
-        return nullptr;
-    }
-
-    if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0) {
-        return nullptr;
-    }
-
-    void *bits = nullptr;
-    HBITMAP bitmap = CreateOutputBitmap(width, height, &bits);
-    if (bitmap == nullptr || bits == nullptr) {
-        if (bitmap != nullptr) {
-            ::DeleteObject(bitmap);
-        }
-        return nullptr;
-    }
-
-    const std::uint64_t stride_value = static_cast<std::uint64_t>(width) * 4;
-    const std::uint64_t buffer_size_value = stride_value * height;
-    if (stride_value > std::numeric_limits<UINT>::max() ||
-        buffer_size_value > std::numeric_limits<UINT>::max()) {
-        ::DeleteObject(bitmap);
-        return nullptr;
-    }
-    const UINT stride = static_cast<UINT>(stride_value);
-    const UINT buffer_size = static_cast<UINT>(buffer_size_value);
-    if (FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(bits)))) {
-        ::DeleteObject(bitmap);
-        return nullptr;
-    }
-    return bitmap;
-}
-
-HBITMAP CreateBitmapForItem(
-    const ClipboardItem &item,
-    UINT maximum_width,
-    UINT maximum_height
-) {
-    for (const ClipboardFormatData &data : item.data) {
-        if (IsEncodedImageName(data.name)) {
-            if (HBITMAP bitmap = CreateBitmapFromEncoded(data.bytes, maximum_width, maximum_height)) {
-                return bitmap;
-            }
-        }
-    }
-    for (const ClipboardFormatData &data : item.data) {
-        if (IsDib(data)) {
-            if (HBITMAP bitmap = CreateBitmapFromDib(data.bytes, maximum_width, maximum_height)) {
-                return bitmap;
-            }
-        }
-    }
-    return nullptr;
-}
-
 std::wstring FormatCopyTime(sqlite3_int64 milliseconds) {
     if (milliseconds <= 0) {
         return L"未知";
@@ -468,33 +132,19 @@ void PreviewWindow::ClearBitmap() {
     m_bitmapHeight = 0;
 }
 
-bool PreviewWindow::LoadBitmapForItem(const ClipboardItem &item) {
-    ClearBitmap();
-    if (!item.has_image) {
-        return false;
-    }
+void PreviewWindow::GetImageSize(UINT &width, UINT &height) const noexcept {
     RECT client{};
-    if (m_image != nullptr) {
-        ::GetClientRect(m_image, &client);
+    if (m_image != nullptr && ::GetClientRect(m_image, &client)) {
+        width = client.right > client.left
+            ? static_cast<UINT>(client.right - client.left)
+            : kFallbackPreviewWidth;
+        height = client.bottom > client.top
+            ? static_cast<UINT>(client.bottom - client.top)
+            : kFallbackPreviewHeight;
+        return;
     }
-    const UINT maximum_width = client.right > client.left
-        ? static_cast<UINT>(client.right - client.left)
-        : kFallbackPreviewWidth;
-    const UINT maximum_height = client.bottom > client.top
-        ? static_cast<UINT>(client.bottom - client.top)
-        : kFallbackPreviewHeight;
-    m_bitmap = CreateBitmapForItem(item, maximum_width, maximum_height);
-    if (m_bitmap == nullptr) {
-        return false;
-    }
-    BITMAP bitmap{};
-    if (::GetObjectW(m_bitmap, sizeof(bitmap), &bitmap) != sizeof(bitmap)) {
-        ClearBitmap();
-        return false;
-    }
-    m_bitmapWidth = bitmap.bmWidth;
-    m_bitmapHeight = std::abs(bitmap.bmHeight);
-    return m_bitmapWidth > 0 && m_bitmapHeight > 0;
+    width = kFallbackPreviewWidth;
+    height = kFallbackPreviewHeight;
 }
 
 void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
@@ -509,9 +159,13 @@ void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
     ::SetWindowTextW(m_status, status.c_str());
 }
 
-void PreviewWindow::SetItem(const ClipboardItem &item) {
+void PreviewWindow::SetItem(const ClipboardItem &item, PreviewBitmap bitmap) {
     ::SetWindowTextW(::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN), item.pinned ? L"取消置顶" : L"置顶");
-    const bool image_loaded = LoadBitmapForItem(item);
+    ClearBitmap();
+    m_bitmapWidth = bitmap.width;
+    m_bitmapHeight = bitmap.height;
+    m_bitmap = bitmap.Release();
+    const bool image_loaded = m_bitmap != nullptr && m_bitmapWidth > 0 && m_bitmapHeight > 0;
     const std::wstring text = FullText(item);
     ::SetWindowTextW(m_text, text.c_str());
     ::SendMessageW(m_text, EM_SETSEL, 0, 0);

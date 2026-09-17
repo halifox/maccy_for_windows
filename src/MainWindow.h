@@ -14,13 +14,14 @@
 #include <string_view>
 #include <vector>
 
-#include "ClipboardMonitor.h"
-#include "Database.h"
 #include "HistoryRenderer.h"
 #include "KeyboardHandler.h"
+#include "PasteController.h"
+#include "PreviewWorker.h"
 #include "PreviewWindow.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
+#include "StorageWorker.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -30,7 +31,8 @@ class MainWindow : public CDialogImpl<MainWindow> {
 public:
     enum { IDD = IDD_HISTORY };
 
-    explicit MainWindow(Database& database, bool isolated = false);
+    MainWindow(StorageWorker &storage, PreviewWorker &preview,
+               StorageInitialState initial_state, bool isolated = false);
     ~MainWindow();
 
     BEGIN_MSG_MAP(MainWindow)
@@ -52,7 +54,6 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
-        MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
         MESSAGE_HANDLER(WM_KEYDOWN, OnKeyDown)
         MESSAGE_HANDLER(WM_CHAR, OnChar)
@@ -64,6 +65,8 @@ public:
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
+        MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
+        MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
     END_MSG_MAP()
 
     bool AddTrayIcon();
@@ -99,6 +102,8 @@ private:
 
     // History management
     void RefreshHistory(std::wstring_view query);
+    void ApplyHistoryItems(std::uint64_t generation, std::wstring query,
+                           std::vector<ClipboardItem> items);
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
 
@@ -139,9 +144,11 @@ private:
     void RemoveTrayIcon();
 
     // Settings
-    std::uint32_t ApplySettings(std::uint32_t requestedUpdates);
+    std::uint32_t ApplySettings(const AppSettings &settings, std::uint32_t requestedUpdates);
+    void PersistSettings();
     void RequestUiUpdate(std::uint32_t updateMask);
     void ApplyPendingState();
+    void OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates);
 
     // Message handlers
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -162,7 +169,6 @@ private:
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled);
-    LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnKeyUp(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -171,6 +177,8 @@ private:
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
     // Callback handlers for KeyboardHandler
@@ -185,11 +193,14 @@ private:
     static void OnExitCallback(void* context);
     static void OnHideWindowCallback(void* context);
 
-    Database& m_database;
+    StorageWorker &m_storage;
+    PreviewWorker &m_previewWorker;
     AppSettings m_settings;
+    bool m_suppressClearAlert = false;
+    std::array<std::vector<std::wstring>, 3> m_ignoredLists;
 
     // Components
-    ClipboardMonitor m_clipboardMonitor;
+    PasteController m_pasteController;
     HistoryRenderer m_historyRenderer;
     KeyboardHandler m_keyboardHandler;
     PreviewWindow m_previewWindow;
@@ -224,6 +235,7 @@ private:
     bool m_loadingList = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;
+    std::uint64_t m_historyGeneration = 0;
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};
@@ -232,6 +244,8 @@ private:
 
     // Preview state
     std::wstring m_previewTip;
+    std::uint64_t m_previewGeneration = 0;
+    bool m_pasteInProgress = false;
 
     // Tray icon
     NOTIFYICONDATAW m_notifyIcon{};
