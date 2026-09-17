@@ -1,4 +1,4 @@
-# maccy for Windows
+# Maccy for Windows
 
 一个独立的 Windows 剪贴板历史工具，受 macOS 版 [Maccy](https://github.com/p0deje/Maccy) 启发。
 
