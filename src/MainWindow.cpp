@@ -840,11 +840,10 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
     }
     KillTimer(AppConstants::Timer::kPreview);
     const std::uint64_t generation = ++m_previewGeneration;
+    const bool preview_was_visible = m_previewWindow.IsVisible();
     UINT maximum_width = 0;
     UINT maximum_height = 0;
     m_previewWindow.GetImageSize(maximum_width, maximum_height);
-    m_previewWindow.Hide();
-    m_previewItemId = 0;
     m_previewCandidateId = item_id;
     if (!m_previewWorker.Request(
             item_id,
@@ -870,7 +869,10 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
                 PositionPreviewWindow();
             }
         )) {
-        HidePreview();
+        m_previewCandidateId = 0;
+        if (!preview_was_visible) {
+            HidePreview();
+        }
     }
 }
 
