@@ -128,11 +128,7 @@ std::wstring TrimWhitespace(std::wstring value) {
 
 const std::vector<std::wstring> &DefaultIgnoredFormats() {
     static const std::vector<std::wstring> values = {
-        L"Pasteboard generator type",
-        L"com.agilebits.onepassword",
-        L"com.typeit4me.clipping",
-        L"de.petermaurer.TransientPasteboardType",
-        L"net.antelle.keeweb",
+        L"CF_CLIPBOARD_VIEWER_IGNORE",
     };
     return values;
 }
