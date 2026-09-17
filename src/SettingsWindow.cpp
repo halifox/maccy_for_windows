@@ -14,6 +14,7 @@
 #include <string>
 
 #include "PinKeys.h"
+#include "TrayIcon.h"
 
 std::wstring PinTextContent(const ClipboardItem &item) {
     for (const ClipboardFormatData &data : item.data) {
@@ -1400,6 +1401,11 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     // Keep preferences as a normal top-level window so it remains visible in
     // the taskbar and Alt+Tab without inheriting the main window's topmost state.
     ::SetWindowTextW(m_hWnd, L"偏好设置");
+    m_windowIcon = LoadApplicationIcon();
+    if (m_windowIcon != nullptr) {
+        ::SendMessageW(m_hWnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(m_windowIcon));
+        ::SendMessageW(m_hWnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_windowIcon));
+    }
     const LONG_PTR extended_style = ::GetWindowLongPtrW(m_hWnd, GWL_EXSTYLE);
     ::SetWindowLongPtrW(
         m_hWnd,
@@ -1608,6 +1614,12 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    if (m_windowIcon != nullptr) {
+        ::SendMessageW(m_hWnd, WM_SETICON, ICON_BIG, 0);
+        ::SendMessageW(m_hWnd, WM_SETICON, ICON_SMALL, 0);
+        ::DestroyIcon(m_windowIcon);
+        m_windowIcon = nullptr;
+    }
     if (m_ignoreImageList != nullptr) {
         ImageList_Destroy(m_ignoreImageList);
         m_ignoreImageList = nullptr;

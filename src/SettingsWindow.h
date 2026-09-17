@@ -217,6 +217,7 @@ private:
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;
+    HICON m_windowIcon = nullptr;
 
     AppSettings m_settings{};
 

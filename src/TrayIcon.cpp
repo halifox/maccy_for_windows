@@ -214,6 +214,11 @@ HICON CreateFallbackIcon() noexcept {
 
 } // namespace
 
+HICON LoadApplicationIcon() {
+    HICON icon = CreateIconFromPngResource(IDR_APP_MACCY_ICON);
+    return icon != nullptr ? icon : CreateFallbackIcon();
+}
+
 HICON LoadTrayIcon(std::wstring_view name) {
     const TrayIconResources& resources = ResourcesForName(name);
     const bool use_large_icon = GetSystemMetrics(SM_CXSMICON) > 16;

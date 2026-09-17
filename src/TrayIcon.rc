@@ -3,6 +3,8 @@
 #include <winresrc.h>
 #include "resource.h"
 
+IDR_APP_MACCY_ICON RCDATA "assets\\app\\maccy_settings.png"
+
 IDR_TRAY_MACCY_LIGHT_16 RCDATA "assets\\tray\\maccy_light_16.png"
 IDR_TRAY_MACCY_DARK_16 RCDATA "assets\\tray\\maccy_dark_16.png"
 IDR_TRAY_MACCY_LIGHT_32 RCDATA "assets\\tray\\maccy_light_32.png"
