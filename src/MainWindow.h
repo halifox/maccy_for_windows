@@ -22,7 +22,8 @@
 #include "PreviewWindow.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
-#include "StorageWorker.h"
+#include "ClipboardAgent.h"
+#include "DatabaseActor.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -32,8 +33,8 @@ class MainWindow : public CDialogImpl<MainWindow> {
 public:
     enum { IDD = IDD_HISTORY };
 
-    MainWindow(StorageWorker &storage, PreviewWorker &preview,
-               StorageInitialState initial_state, bool isolated = false);
+    MainWindow(DatabaseActor &database, ClipboardAgent &clipboard, PreviewWorker &preview,
+               DatabaseInitialState initial_state, bool isolated = false);
     ~MainWindow();
 
     BEGIN_MSG_MAP(MainWindow)
@@ -66,7 +67,7 @@ public:
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
-        MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
+        MESSAGE_HANDLER(AppConstants::kDatabaseActorResultMessage, OnDatabaseActorResult)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
     END_MSG_MAP()
 
@@ -178,7 +179,7 @@ private:
     LRESULT OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnDatabaseActorResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
@@ -194,7 +195,8 @@ private:
     static void OnExitCallback(void* context);
     static void OnHideWindowCallback(void* context);
 
-    StorageWorker &m_storage;
+    DatabaseActor &m_database;
+    ClipboardAgent &m_clipboard;
     PreviewWorker &m_previewWorker;
     AppSettings m_settings;
     bool m_suppressClearAlert = false;

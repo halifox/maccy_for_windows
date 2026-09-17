@@ -22,7 +22,7 @@ struct ClipboardFormatData {
     std::vector<unsigned char> bytes;
 };
 
-struct ClipboardCapture {
+struct ClipboardSnapshot {
     std::wstring fingerprint;
     std::wstring title;
     std::wstring preview;
@@ -97,7 +97,7 @@ public:
     void ReplaceList(DatabaseList list, const std::vector<std::wstring> &values) const;
     void ResetIgnoredFormats() const;
 
-    void SaveClipboard(const ClipboardCapture &capture, int max_unpinned) const;
+    void SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned) const;
     void TrimUnpinned(int max_unpinned) const;
     std::vector<ClipboardItem> SearchHistory(
         std::wstring_view query,

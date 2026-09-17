@@ -16,7 +16,7 @@
 #include <atlwin.h>
 
 #include "Settings.h"
-#include "StorageWorker.h"
+#include "DatabaseActor.h"
 #include "resource.h"
 
 class EditPinDialog : public CDialogImpl<EditPinDialog> {
@@ -83,7 +83,7 @@ class IgnorePageBase {
 public:
     virtual ~IgnorePageBase() = default;
 
-    virtual void Initialize(HWND page_window, StorageWorker &storage,
+    virtual void Initialize(HWND page_window, DatabaseActor &database,
                             std::vector<std::wstring> values) = 0;
     virtual void Show() = 0;
     virtual void Hide() = 0;
@@ -101,13 +101,13 @@ protected:
     HWND m_pageWindow = nullptr;
     HWND m_list = nullptr;
     HWND m_description = nullptr;
-    StorageWorker *m_storage = nullptr;
+    DatabaseActor *m_database = nullptr;
     std::vector<std::wstring> m_values;
 };
 
 class IgnoreApplicationsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, StorageWorker &storage,
+    void Initialize(HWND page_window, DatabaseActor &database,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -124,7 +124,7 @@ private:
 
 class IgnoreFormatsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, StorageWorker &storage,
+    void Initialize(HWND page_window, DatabaseActor &database,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -141,7 +141,7 @@ private:
 
 class IgnoreRegexpsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, StorageWorker &storage,
+    void Initialize(HWND page_window, DatabaseActor &database,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -161,10 +161,14 @@ public:
     enum { IDD = IDD_SETTINGS };
 
     using SettingsChangedCallback = std::function<void(const AppSettings &, std::uint32_t)>;
+    using IgnoreRulesChangedCallback = std::function<void(
+        const std::array<std::vector<std::wstring>, 3> &
+    )>;
 
-    SettingsWindow(StorageWorker &storage, HWND owner, AppSettings settings,
+    SettingsWindow(DatabaseActor &database, HWND owner, AppSettings settings,
                    std::array<std::vector<std::wstring>, 3> ignored_lists,
-                   SettingsChangedCallback on_changed);
+                   SettingsChangedCallback on_changed,
+                   IgnoreRulesChangedCallback on_ignore_rules_changed);
 
     bool CreateOrShow();
     void DestroyForOwner();
@@ -214,9 +218,10 @@ private:
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
 
-    StorageWorker &m_storage;
+    DatabaseActor &m_database;
     HWND m_owner = nullptr;
     SettingsChangedCallback m_onChanged;
+    IgnoreRulesChangedCallback m_onIgnoreRulesChanged;
     CTabCtrl m_tabs;
     std::array<HWND, AppConstants::SettingsUI::kPageCount> m_pages{};
     std::array<HWND, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePages{};

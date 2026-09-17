@@ -1,5 +1,4 @@
 #include "SettingsWindow.h"
-#include "ClipboardMonitor.h"
 #include "Constants.h"
 
 #include <windows.h>
@@ -503,15 +502,17 @@ HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
 }
 
 SettingsWindow::SettingsWindow(
-    StorageWorker &storage,
+    DatabaseActor &database,
     HWND owner,
     AppSettings settings,
     std::array<std::vector<std::wstring>, 3> ignored_lists,
-    SettingsChangedCallback on_changed
+    SettingsChangedCallback on_changed,
+    IgnoreRulesChangedCallback on_ignore_rules_changed
 )
-    : m_storage(storage),
+    : m_database(database),
       m_owner(owner),
       m_onChanged(std::move(on_changed)),
+      m_onIgnoreRulesChanged(std::move(on_ignore_rules_changed)),
       m_settings(std::move(settings)),
       m_ignoredLists(std::move(ignored_lists)) {}
 
@@ -635,7 +636,7 @@ bool SettingsWindow::CreatePageWindows() {
         if (m_ignorePageObjects[page] != nullptr) {
             m_ignorePageObjects[page]->Initialize(
                 m_ignorePages[page],
-                m_storage,
+                m_database,
                 m_ignoredLists[page]
             );
         }
@@ -868,10 +869,10 @@ void SettingsWindow::LoadStorageControls() {
     SetCheck(m_sSaveText, m_settings.save_text);
     ::SetWindowTextW(m_sHistorySize, std::to_wstring(m_settings.history_size).c_str());
     SelectCombo(m_sSortBy, m_settings.sort_by);
-    m_storage.Post([this](StorageContext &context) {
+    m_database.Post([this](DatabaseContext &context) {
         const std::uintmax_t storage_bytes = context.database.StorageBytes();
         const sqlite3_int64 current_count = context.database.CountItems();
-        m_storage.PostToUi([this, storage_bytes, current_count] {
+        m_database.PostToUi([this, storage_bytes, current_count] {
             if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
                 return;
             }
@@ -922,7 +923,7 @@ void SettingsWindow::RefreshPinsList() {
             ? m_pins[static_cast<size_t>(selected)].id
             : 0;
     }();
-    m_storage.Post([this, previous_selection](StorageContext &context) {
+    m_database.Post([this, previous_selection](DatabaseContext &context) {
         auto pins = context.database.GetPinnedItems(PayloadMode::Metadata);
         std::stable_sort(pins.begin(), pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
             if (lhs.first_copied_at != rhs.first_copied_at) {
@@ -930,7 +931,7 @@ void SettingsWindow::RefreshPinsList() {
             }
             return lhs.id < rhs.id;
         });
-        m_storage.PostToUi([this, previous_selection, pins = std::move(pins)]() mutable {
+        m_database.PostToUi([this, previous_selection, pins = std::move(pins)]() mutable {
             if (m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_pList == nullptr) {
                 return;
             }
@@ -1096,7 +1097,7 @@ void SettingsWindow::SaveCurrentPage() {
                 ::MessageBoxA(m_hWnd, message.c_str(), "无法保存设置", MB_OK | MB_ICONERROR);
             }
         };
-        const bool posted = m_storage.Post([snapshot, previous](StorageContext &context) {
+        const bool posted = m_database.Post([snapshot, previous](DatabaseContext &context) {
             snapshot.Save(context.database);
             if (previous.history_size != snapshot.history_size) {
                 context.database.TrimUnpinned(snapshot.history_size);
@@ -1129,6 +1130,9 @@ void SettingsWindow::NotifyOwner(std::uint32_t updateMask) {
         m_ignorePageObjects[static_cast<size_t>(m_ignorePage)] != nullptr) {
         m_ignoredLists[static_cast<size_t>(m_ignorePage)] =
             m_ignorePageObjects[static_cast<size_t>(m_ignorePage)]->Values();
+        if (m_onIgnoreRulesChanged) {
+            m_onIgnoreRulesChanged(m_ignoredLists);
+        }
     }
     if (m_onChanged) {
         m_onChanged(m_settings, updateMask);
@@ -1142,12 +1146,12 @@ void SettingsWindow::EditSelectedPin() {
     }
 
     const sqlite3_int64 item_id = m_pins[selected].id;
-    m_storage.Post([this, item_id](StorageContext &context) {
+    m_database.Post([this, item_id](DatabaseContext &context) {
         const auto item = context.database.GetItem(item_id, PayloadMode::Full);
         if (!item.has_value()) {
             return;
         }
-        m_storage.PostToUi([this, item = std::move(*item)]() mutable {
+        m_database.PostToUi([this, item = std::move(*item)]() mutable {
             if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
                 return;
             }
@@ -1160,13 +1164,13 @@ void SettingsWindow::EditSelectedPin() {
             const std::wstring title = dialog.GetTitle();
             const bool content_modified = dialog.ContentModified();
             const std::wstring content = dialog.GetContent();
-            m_storage.Post([this, item_id, key, title, content_modified, content](StorageContext &context) {
+            m_database.Post([this, item_id, key, title, content_modified, content](DatabaseContext &context) {
                 if (content_modified) {
                     context.database.UpdatePinnedItem(item_id, key, title, content);
                 } else {
                     context.database.UpdatePinnedMetadata(item_id, key, title);
                 }
-                m_storage.PostToUi([this] {
+                m_database.PostToUi([this] {
                     RefreshPinsList();
                     NotifyOwner();
                 });
@@ -1184,9 +1188,9 @@ void SettingsWindow::DeleteSelectedPin() {
         return;
     }
     const sqlite3_int64 item_id = m_pins[selected].id;
-    m_storage.Post([this, item_id](StorageContext &context) {
+    m_database.Post([this, item_id](DatabaseContext &context) {
         context.database.DeleteItem(item_id);
-        m_storage.PostToUi([this] {
+        m_database.PostToUi([this] {
             RefreshPinsList();
             NotifyOwner();
         });
@@ -1232,7 +1236,7 @@ void SettingsWindow::ResetPopupPosition() {
             ::MessageBoxA(m_hWnd, message.c_str(), "无法保存设置", MB_OK | MB_ICONERROR);
         }
     };
-    if (!m_storage.Post([snapshot](StorageContext &context) {
+    if (!m_database.Post([snapshot](DatabaseContext &context) {
         snapshot.Save(context.database);
         context.settings = snapshot;
     }, restore_previous, [this, snapshot, save_generation] {
@@ -1482,11 +1486,11 @@ void SetIgnoreListViewColumnWidth(HWND list, int width) {
 
 void IgnoreApplicationsPage::Initialize(
     HWND page_window,
-    StorageWorker &storage,
+    DatabaseActor &database,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
-    m_storage = &storage;
+    m_database = &database;
     m_values = std::move(values);
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
@@ -1614,13 +1618,12 @@ bool IgnoreApplicationsPage::ResetToDefaults() {
 }
 
 bool IgnoreApplicationsPage::SaveList() {
-    if (m_storage == nullptr) {
+    if (m_database == nullptr) {
         return false;
     }
     const auto values = m_values;
-    return m_storage->Post([values](StorageContext &context) {
+    return m_database->Post([values](DatabaseContext &context) {
         context.database.ReplaceList(DatabaseList::IgnoredApplications, values);
-        context.clipboard.ReloadIgnoreLists();
     });
 }
 
@@ -1635,11 +1638,11 @@ void IgnoreApplicationsPage::UpdateDescription() {
 
 void IgnoreFormatsPage::Initialize(
     HWND page_window,
-    StorageWorker &storage,
+    DatabaseActor &database,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
-    m_storage = &storage;
+    m_database = &database;
     m_values = std::move(values);
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
@@ -1770,13 +1773,12 @@ bool IgnoreFormatsPage::ResetToDefaults() {
 }
 
 bool IgnoreFormatsPage::SaveList() {
-    if (m_storage == nullptr) {
+    if (m_database == nullptr) {
         return false;
     }
     const auto values = m_values;
-    return m_storage->Post([values](StorageContext &context) {
+    return m_database->Post([values](DatabaseContext &context) {
         context.database.ReplaceList(DatabaseList::IgnoredFormats, values);
-        context.clipboard.ReloadIgnoreLists();
     });
 }
 
@@ -1791,11 +1793,11 @@ void IgnoreFormatsPage::UpdateDescription() {
 
 void IgnoreRegexpsPage::Initialize(
     HWND page_window,
-    StorageWorker &storage,
+    DatabaseActor &database,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
-    m_storage = &storage;
+    m_database = &database;
     m_values = std::move(values);
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
@@ -1921,13 +1923,12 @@ bool IgnoreRegexpsPage::ResetToDefaults() {
 }
 
 bool IgnoreRegexpsPage::SaveList() {
-    if (m_storage == nullptr) {
+    if (m_database == nullptr) {
         return false;
     }
     const auto values = m_values;
-    return m_storage->Post([values](StorageContext &context) {
+    return m_database->Post([values](DatabaseContext &context) {
         context.database.ReplaceList(DatabaseList::IgnoredRegexps, values);
-        context.clipboard.ReloadIgnoreLists();
     });
 }
 

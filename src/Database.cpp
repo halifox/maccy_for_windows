@@ -1095,7 +1095,7 @@ void Database::ResetIgnoredFormats() const {
     ReplaceList(DatabaseList::IgnoredFormats, DefaultIgnoredFormats());
 }
 
-void Database::SaveClipboard(const ClipboardCapture &capture, int max_unpinned) const {
+void Database::SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned) const {
     if (capture.fingerprint.empty() || capture.data.empty()) {
         return;
     }

@@ -13,9 +13,10 @@
 #include <utility>
 
 #include "MainWindow.h"
+#include "ClipboardAgent.h"
 #include "Constants.h"
+#include "DatabaseActor.h"
 #include "PreviewWorker.h"
-#include "StorageWorker.h"
 
 CAppModule _Module;
 
@@ -69,11 +70,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     try {
-        StorageWorker storage(GetDatabasePath());
-        StorageInitialState initial_state = storage.Start();
-        PreviewWorker preview(storage.Path());
+        DatabaseActor database(GetDatabasePath());
+        DatabaseInitialState initial_state = database.Start();
+        ClipboardAgent clipboard(
+            [&database](ClipboardSnapshot snapshot) {
+                return database.PostClipboardSnapshot(std::move(snapshot));
+            },
+            [&database](const ClipboardAgentSettings &settings) {
+                database.Post([settings](DatabaseContext &context) {
+                    context.settings.ignore_events = settings.ignore_events;
+                    context.settings.ignore_only_next_event = settings.ignore_only_next_event;
+                    context.settings.Save(context.database);
+                });
+            }
+        );
+        clipboard.Start(
+            ClipboardAgentSettings::FromAppSettings(initial_state.settings),
+            initial_state.ignored_lists
+        );
+        PreviewWorker preview(database.Path());
         preview.Start();
-        MainWindow window(storage, preview, std::move(initial_state));
+        MainWindow window(database, clipboard, preview, std::move(initial_state));
         if (!window.Create(nullptr)) {
             _Module.Term();
             CoUninitialize();

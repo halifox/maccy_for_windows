@@ -17,10 +17,12 @@ namespace AppConstants {
     // ========================================================================
     constexpr UINT kTrayIconMessage = WM_APP + 1;
     constexpr UINT kUiUpdateMessage = WM_APP + 2;
-    constexpr UINT kStorageWorkerCommandMessage = WM_APP + 3;
-    constexpr UINT kStorageWorkerShutdownMessage = WM_APP + 4;
-    constexpr UINT kStorageWorkerResultMessage = WM_APP + 5;
+    constexpr UINT kDatabaseActorCommandMessage = WM_APP + 3;
+    constexpr UINT kDatabaseActorShutdownMessage = WM_APP + 4;
+    constexpr UINT kDatabaseActorResultMessage = WM_APP + 5;
     constexpr UINT kPreviewWorkerResultMessage = WM_APP + 6;
+    constexpr UINT kClipboardAgentCommandMessage = WM_APP + 7;
+    constexpr UINT kClipboardAgentShutdownMessage = WM_APP + 8;
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;

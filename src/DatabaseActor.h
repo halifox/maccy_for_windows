@@ -14,45 +14,50 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 #include "Database.h"
 #include "Settings.h"
 
-class ClipboardMonitor;
-
-struct StorageContext {
+struct DatabaseContext {
     Database &database;
-    ClipboardMonitor &clipboard;
     AppSettings &settings;
 };
 
-struct StorageInitialState {
+struct DatabaseInitialState {
     AppSettings settings;
     bool suppress_clear_alert = false;
     std::array<std::vector<std::wstring>, 3> ignored_lists;
 };
 
-class StorageWorker {
+struct ClipboardQueueStats {
+    std::uint64_t accepted = 0;
+    std::uint64_t saved = 0;
+    std::uint64_t dropped = 0;
+};
+
+class DatabaseActor {
 public:
-    using Task = std::function<void(StorageContext &)>;
+    using Task = std::function<void(DatabaseContext &)>;
     using UiCallback = std::function<void()>;
     using ErrorHandler = std::function<void(const std::string &)>;
     using SuccessHandler = std::function<void()>;
     using SettingsChangedCallback = std::function<void(const AppSettings &)>;
 
-    explicit StorageWorker(std::filesystem::path path, bool monitor_clipboard = true);
-    ~StorageWorker();
+    explicit DatabaseActor(std::filesystem::path path);
+    ~DatabaseActor();
 
-    StorageWorker(const StorageWorker &) = delete;
-    StorageWorker &operator=(const StorageWorker &) = delete;
+    DatabaseActor(const DatabaseActor &) = delete;
+    DatabaseActor &operator=(const DatabaseActor &) = delete;
 
-    StorageInitialState Start();
+    DatabaseInitialState Start();
     void Stop();
 
     void SetUiWindow(HWND window) noexcept;
     bool Post(Task task, ErrorHandler on_error = {}, SuccessHandler on_success = {});
     bool PostLatestSearch(Task task, ErrorHandler on_error = {}, SuccessHandler on_success = {});
+    bool PostClipboardSnapshot(ClipboardSnapshot snapshot);
     bool PostToUi(UiCallback callback);
     void DrainUiCallbacks();
 
@@ -60,6 +65,7 @@ public:
     void SetSettingsChangedHandler(SettingsChangedCallback callback);
     void SetErrorHandler(ErrorHandler callback);
 
+    ClipboardQueueStats ClipboardStats() const noexcept;
     const std::filesystem::path &Path() const noexcept { return m_path; }
 
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -71,19 +77,22 @@ private:
         SuccessHandler on_success;
     };
 
+    using Operation = std::variant<QueuedTask, ClipboardSnapshot>;
+
     void ThreadMain(std::stop_token stop_token);
     bool Enqueue(QueuedTask task, bool latest_search);
-    void ProcessTasks(bool include_latest_search = true);
-    void HandleClipboardUpdate();
+    void ProcessOperations(bool include_latest_search = true);
     void HandleShutdown();
-    void SignalReady(StorageInitialState state);
+    void SignalReady(DatabaseInitialState state);
     void SignalStartupFailure(std::exception_ptr error);
     void NotifyHistoryChanged();
     void NotifySettingsChanged(const AppSettings &settings);
     void ReportError(ErrorHandler on_error, std::string message);
 
+    static constexpr size_t kMaximumQueuedTasks = 256;
+    static constexpr size_t kMaximumQueuedSnapshots = 1024;
+
     std::filesystem::path m_path;
-    bool m_monitorClipboard = true;
     std::jthread m_thread;
 
     std::atomic<bool> m_accepting{false};
@@ -91,11 +100,14 @@ private:
     std::atomic<HWND> m_uiWindow{nullptr};
 
     std::mutex m_commandMutex;
-    std::deque<QueuedTask> m_commands;
+    std::deque<Operation> m_operations;
     std::optional<QueuedTask> m_latestSearch;
+    size_t m_queuedTasks = 0;
+    size_t m_queuedSnapshots = 0;
 
     std::mutex m_resultMutex;
     std::deque<UiCallback> m_uiCallbacks;
+    bool m_uiResultMessagePosted = false;
 
     std::mutex m_handlerMutex;
     UiCallback m_historyChangedHandler;
@@ -106,7 +118,11 @@ private:
     std::condition_variable m_readyCondition;
     bool m_ready = false;
     std::exception_ptr m_startupError;
-    StorageInitialState m_initialState;
+    DatabaseInitialState m_initialState;
 
-    StorageContext *m_context = nullptr;
+    DatabaseContext *m_context = nullptr;
+    std::atomic<bool> m_historyNotificationPending{false};
+    std::atomic<std::uint64_t> m_acceptedSnapshots{0};
+    std::atomic<std::uint64_t> m_savedSnapshots{0};
+    std::atomic<std::uint64_t> m_droppedSnapshots{0};
 };
