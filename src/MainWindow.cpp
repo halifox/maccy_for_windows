@@ -984,7 +984,12 @@ void MainWindow::OpenAbout() {
     m_modalShowing = true;
     std::wstring about = L"maccy ";
     about += AppConstants::kAppVersion;
-    about += L"\n\n轻量 Windows 剪贴板历史工具\n布局和交互参考 Maccy 2.7.1\n\n使用 C++、WTL 和 SQLite 构建。";
+    about += L"\n\n轻量 Windows 剪贴板历史工具"
+             L"\n这是一个独立的 Windows 项目，受 macOS 版 Maccy 启发。"
+             L"\n本项目不是 Maccy 官方 Windows 版本，也不隶属于或代表 Maccy 官方项目。"
+             L"\n布局和交互参考 Maccy 2.7.1。"
+             L"\n部分视觉资源来自 Maccy 项目，按 MIT 许可证使用。"
+             L"\n\n使用 C++、WTL 和 SQLite 构建。";
     const std::wstring caption = L"关于 maccy";
     MessageBoxW(about.c_str(), caption.c_str(), MB_OK | MB_ICONINFORMATION);
     m_modalShowing = false;
