@@ -8,9 +8,8 @@ from PIL import Image, ImageDraw
 
 
 def set_text(text: str):
-    win32clipboard.OpenClipboard()
-
     try:
+        win32clipboard.OpenClipboard()
         win32clipboard.EmptyClipboard()
         win32clipboard.SetClipboardText(
             text,
