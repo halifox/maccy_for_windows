@@ -163,7 +163,6 @@ public:
 
     BEGIN_MSG_MAP(SettingsWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
-        MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
@@ -175,15 +174,11 @@ private:
     void CreateTabs();
     bool CreatePageWindows();
     void BindControls();
-    void PositionPages();
-    void LayoutFlexibleControls();
     void ConfigureIgnoreList();
     void ConfigurePinsList();
 
     void SetPage(int page);
     void SetIgnorePage(int page);
-    RECT PageRect() const;
-    RECT IgnorePageRect() const;
 
     void LoadControlsFromSettings();
     void LoadGeneralControls();
@@ -202,7 +197,6 @@ private:
     void ResetPopupPosition();
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
-    LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);

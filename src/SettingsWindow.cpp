@@ -406,31 +406,6 @@ int SelectedListViewItem(HWND list) {
     return list == nullptr ? -1 : ListView_GetNextItem(list, -1, LVNI_SELECTED);
 }
 
-void MoveControl(HWND control, int x, int y, int width, int height) {
-    if (control == nullptr) {
-        return;
-    }
-    ::SetWindowPos(
-        control,
-        nullptr,
-        x,
-        y,
-        std::max(width, 0),
-        std::max(height, 0),
-        SWP_NOZORDER | SWP_NOACTIVATE
-    );
-}
-
-int DialogUnitWidth(HWND dialog, int units) {
-    RECT rect{0, 0, units, 0};
-    return ::MapDialogRect(dialog, &rect) ? rect.right : units;
-}
-
-int DialogUnitHeight(HWND dialog, int units) {
-    RECT rect{0, 0, 0, units};
-    return ::MapDialogRect(dialog, &rect) ? rect.bottom : units;
-}
-
 void ConfigureListView(HWND list, bool allow_label_editing, bool show_column_header) {
     if (list == nullptr) {
         return;
@@ -472,12 +447,6 @@ void AddListViewColumn(HWND list, int index, int width, const wchar_t *title) {
     column.cx = width;
     column.pszText = const_cast<wchar_t *>(title);
     ListView_InsertColumn(list, index, &column);
-}
-
-void SetListViewColumnWidth(HWND list, int width) {
-    if (list != nullptr) {
-        ListView_SetColumnWidth(list, 0, std::max(width - 4, 0));
-    }
 }
 
 struct PageDefinition {
@@ -662,7 +631,6 @@ bool SettingsWindow::CreatePageWindows() {
         }
     }
 
-    PositionPages();
     return true;
 }
 
@@ -776,226 +744,9 @@ void SettingsWindow::ConfigureIgnoreList() {
 
 void SettingsWindow::ConfigurePinsList() {
     ConfigureListView(m_pList, false, true);
-    AddListViewColumn(m_pList, 0, 58, L"键位");
-    AddListViewColumn(m_pList, 1, 150, L"别名");
-    AddListViewColumn(m_pList, 2, 260, L"内容");
-}
-
-RECT SettingsWindow::PageRect() const {
-    RECT page{};
-    if (m_tabs.m_hWnd == nullptr) {
-        return page;
-    }
-    ::GetClientRect(m_tabs.m_hWnd, &page);
-    TabCtrl_AdjustRect(m_tabs.m_hWnd, FALSE, &page);
-    page.right = std::max(page.left, page.right);
-    page.bottom = std::max(page.top, page.bottom);
-    return page;
-}
-
-RECT SettingsWindow::IgnorePageRect() const {
-    RECT page{};
-    if (m_ignoreTabs.m_hWnd == nullptr) {
-        return page;
-    }
-    ::GetClientRect(m_ignoreTabs.m_hWnd, &page);
-    TabCtrl_AdjustRect(m_ignoreTabs.m_hWnd, FALSE, &page);
-    page.right = std::max(page.left, page.right);
-    page.bottom = std::max(page.top, page.bottom);
-    return page;
-}
-
-void SettingsWindow::LayoutFlexibleControls() {
-    if (m_pList != nullptr) {
-        const HWND page_window = m_pages[kPagePins];
-        RECT page{};
-        ::GetClientRect(page_window, &page);
-        const int width = std::max(0L, page.right - page.left);
-        const int height = std::max(0L, page.bottom - page.top);
-        const int left_margin = DialogUnitWidth(page_window, 8);
-        const int right_margin = DialogUnitWidth(page_window, 8);
-        const int hint_height = DialogUnitHeight(page_window, 14);
-        const int top_margin = DialogUnitHeight(page_window, 5);
-        const int bottom_margin = DialogUnitHeight(page_window, 8);
-        const int hint_y = std::max(top_margin, height - bottom_margin - hint_height);
-        const int list_height = std::max(0, hint_y - DialogUnitHeight(page_window, 2) - top_margin);
-
-        MoveControl(
-            m_pList,
-            left_margin,
-            top_margin,
-            width - left_margin - right_margin,
-            list_height
-        );
-
-        MoveControl(
-            ::GetDlgItem(page_window, IDC_P_LIST_HINT),
-            left_margin,
-            hint_y,
-            width - left_margin - right_margin,
-            hint_height
-        );
-
-        RECT list_client{};
-        ::GetClientRect(m_pList, &list_client);
-        const int key_width = DialogUnitWidth(page_window, 36);
-        const int alias_width = DialogUnitWidth(page_window, 90);
-        ListView_SetColumnWidth(m_pList, 0, key_width);
-        ListView_SetColumnWidth(m_pList, 1, alias_width);
-        ListView_SetColumnWidth(
-            m_pList,
-            2,
-            std::max(0L, list_client.right - key_width - alias_width)
-        );
-    }
-
-    for (size_t index = 0; index < m_ignorePages.size(); ++index) {
-        const HWND page_window = m_ignorePages[index];
-        const HWND list = ::GetDlgItem(page_window, kIList);
-        if (page_window == nullptr || list == nullptr) {
-            continue;
-        }
-
-        RECT page{};
-        ::GetClientRect(page_window, &page);
-        const int width = std::max(0L, page.right - page.left);
-        const int height = std::max(0L, page.bottom - page.top);
-        const int left_margin = DialogUnitWidth(page_window, 8);
-        const int right_margin = DialogUnitWidth(page_window, 8);
-        const int button_height = DialogUnitHeight(page_window, 14);
-        const int description_height = DialogUnitHeight(page_window, 36);
-        const int bottom_margin = DialogUnitHeight(page_window, 8);
-        const int description_y = std::max(bottom_margin, height - description_height - bottom_margin);
-        const int button_y = std::max(bottom_margin, description_y - button_height - DialogUnitHeight(page_window, 2));
-        const int list_bottom = std::max(DialogUnitHeight(page_window, 80), button_y - DialogUnitHeight(page_window, 2));
-
-        MoveControl(
-            list,
-            left_margin,
-            DialogUnitHeight(page_window, 8),
-            width - left_margin - right_margin,
-            list_bottom - DialogUnitHeight(page_window, 8)
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, kIAdd),
-            left_margin,
-            button_y,
-            DialogUnitWidth(page_window, 28),
-            button_height
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, kIRemove),
-            DialogUnitWidth(page_window, 40),
-            button_y,
-            DialogUnitWidth(page_window, 28),
-            button_height
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, kIWhitelist),
-            DialogUnitWidth(page_window, 78),
-            button_y + DialogUnitHeight(page_window, 2),
-            width - DialogUnitWidth(page_window, 86),
-            DialogUnitHeight(page_window, 10)
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, kIReset),
-            width - DialogUnitWidth(page_window, 58),
-            button_y,
-            DialogUnitWidth(page_window, 50),
-            button_height
-        );
-        MoveControl(
-            ::GetDlgItem(page_window, IDC_I_DESCRIPTION),
-            left_margin,
-            description_y,
-            width - left_margin - right_margin,
-            description_height
-        );
-        SetListViewColumnWidth(list, width - left_margin - right_margin);
-    }
-}
-
-void SettingsWindow::PositionPages() {
-    if (m_tabs.m_hWnd == nullptr) {
-        return;
-    }
-
-    RECT client{};
-    ::GetClientRect(m_hWnd, &client);
-    MoveControl(m_tabs.m_hWnd, 0, 0, client.right, client.bottom);
-
-    const RECT page = PageRect();
-    const int width = std::max(0L, page.right - page.left);
-    const int height = std::max(0L, page.bottom - page.top);
-
-    for (size_t index = 0; index < m_pages.size(); ++index) {
-        if (m_pages[index] != nullptr) {
-            ::SetWindowPos(
-                m_pages[index],
-                nullptr,
-                page.left,
-                page.top,
-                width,
-                height,
-                SWP_NOZORDER | SWP_NOACTIVATE
-            );
-            ::ShowWindow(
-                m_pages[index],
-                static_cast<int>(index) == m_currentPage ? SW_SHOW : SW_HIDE
-            );
-        }
-    }
-
-    for (HWND page_window : m_pages) {
-        if (page_window == nullptr) {
-            continue;
-        }
-        for (HWND control = ::GetWindow(page_window, GW_CHILD);
-             control != nullptr; control = ::GetWindow(control, GW_HWNDNEXT)) {
-            wchar_t class_name[16]{};
-            ::GetClassNameW(control, class_name, 16);
-            if (::lstrcmpiW(class_name, L"Static") != 0 ||
-                (::GetWindowLongPtrW(control, GWL_STYLE) & SS_TYPEMASK) != SS_ETCHEDHORZ) {
-                continue;
-            }
-            RECT rect{};
-            ::GetWindowRect(control, &rect);
-            ::MapWindowPoints(HWND_DESKTOP, page_window, reinterpret_cast<POINT *>(&rect), 2);
-            MoveControl(control, rect.left, rect.top,
-                        width - rect.left - DialogUnitWidth(page_window, 8),
-                        rect.bottom - rect.top);
-        }
-    }
-
-    const HWND ignore_window = m_pages[kPageIgnore];
-    if (ignore_window != nullptr) {
-        MoveControl(m_ignoreTabs.m_hWnd,
-                    DialogUnitWidth(ignore_window, 8), DialogUnitHeight(ignore_window, 5),
-                    width - DialogUnitWidth(ignore_window, 16),
-                    height - DialogUnitHeight(ignore_window, 12));
-    }
-    const RECT ignore_page = IgnorePageRect();
-    const int ignore_width = std::max(0L, ignore_page.right - ignore_page.left);
-    const int ignore_height = std::max(0L, ignore_page.bottom - ignore_page.top);
-    for (size_t index = 0; index < m_ignorePages.size(); ++index) {
-        if (m_ignorePages[index] != nullptr) {
-            ::SetWindowPos(
-                m_ignorePages[index],
-                nullptr,
-                ignore_page.left,
-                ignore_page.top,
-                ignore_width,
-                ignore_height,
-                SWP_NOZORDER | SWP_NOACTIVATE
-            );
-            ::ShowWindow(
-                m_ignorePages[index],
-                static_cast<int>(index) == m_ignorePage ? SW_SHOW : SW_HIDE
-            );
-        }
-    }
-
-    LayoutFlexibleControls();
+    AddListViewColumn(m_pList, 0, 63, L"键位");
+    AddListViewColumn(m_pList, 1, 158, L"别名");
+    AddListViewColumn(m_pList, 2, 300, L"内容");
 }
 
 void SettingsWindow::SetPage(int page) {
@@ -1004,12 +755,19 @@ void SettingsWindow::SetPage(int page) {
         m_tabs.SetCurSel(m_currentPage);
     }
 
+    for (size_t index = 0; index < m_pages.size(); ++index) {
+        if (m_pages[index] != nullptr) {
+            ::ShowWindow(
+                m_pages[index],
+                static_cast<int>(index) == m_currentPage ? SW_SHOW : SW_HIDE
+            );
+        }
+    }
+
     // 如果切换到忽略页面，需要初始化当前忽略子标签页
     if (m_currentPage == kPageIgnore) {
         SetIgnorePage(m_ignorePage);
     }
-
-    PositionPages();
 }
 
 void SettingsWindow::SetIgnorePage(int page) {
@@ -1029,8 +787,6 @@ void SettingsWindow::SetIgnorePage(int page) {
     if (m_ignorePageObjects[m_ignorePage] != nullptr) {
         m_ignorePageObjects[m_ignorePage]->Show();
     }
-
-    PositionPages();
 }
 
 void SettingsWindow::LoadGeneralControls() {
@@ -1435,12 +1191,6 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     return TRUE;
 }
 
-LRESULT SettingsWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
-    handled = TRUE;
-    PositionPages();
-    return 0;
-}
-
 LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     SetControlFont(m_tabs.m_hWnd);
@@ -1449,7 +1199,6 @@ LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
     if (m_currentPage == kPageIgnore && m_ignorePageObjects[m_ignorePage] != nullptr) {
         m_ignorePageObjects[m_ignorePage]->Refresh();
     }
-    PositionPages();
     return 0;
 }
 
