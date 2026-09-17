@@ -215,7 +215,7 @@ HICON CreateFallbackIcon() noexcept {
 } // namespace
 
 HICON LoadApplicationIcon() {
-    HICON icon = CreateIconFromPngResource(IDR_APP_MACCY_ICON);
+    HICON icon = CreateIconFromPngResource(IDR_APP_MACCY_PNG);
     return icon != nullptr ? icon : CreateFallbackIcon();
 }
 

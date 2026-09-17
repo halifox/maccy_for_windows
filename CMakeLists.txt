@@ -2,9 +2,19 @@ cmake_minimum_required(VERSION 3.25)
 
 project(maccy VERSION 1.0.0 LANGUAGES C CXX)
 
+if(NOT WIN32)
+    message(FATAL_ERROR "maccy is a Windows application.")
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
 if(MSVC)
-    # Preserve the compiler's actual output bytes. Some installations only
-    # have a Chinese language pack, so forcing VSLANG=1033 does not work.
+    # CMake must know the localized /showIncludes prefix so Ninja can track
+    # headers when the installed Visual Studio language is not English.
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/clipboard_include_probe.h" "\n")
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/clipboard_include_probe.cpp" "#include \"clipboard_include_probe.h\"\n")
     execute_process(COMMAND "${CMAKE_CXX_COMPILER}" /nologo /showIncludes /EP /utf-8
@@ -17,50 +27,82 @@ if(MSVC)
     endif()
 endif()
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(MACCY_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set(MACCY_ASSET_DIR "${MACCY_SOURCE_DIR}/assets")
+set(MACCY_APP_ICON_PNG "${MACCY_ASSET_DIR}/app/maccy.png")
+set(MACCY_APP_ICON_ICO "${MACCY_ASSET_DIR}/app/maccy.ico")
+set(MACCY_RESOURCE_FILE "${MACCY_SOURCE_DIR}/TrayIcon.rc")
 
-add_library(sqlite3 STATIC
-        third_party/sqlite/sqlite3.c
+set(MACCY_SOURCES
+        "${MACCY_SOURCE_DIR}/main.cpp"
+        "${MACCY_SOURCE_DIR}/MainWindow.cpp"
+        "${MACCY_SOURCE_DIR}/ClipboardMonitor.cpp"
+        "${MACCY_SOURCE_DIR}/HistoryRenderer.cpp"
+        "${MACCY_SOURCE_DIR}/KeyboardHandler.cpp"
+        "${MACCY_SOURCE_DIR}/Database.cpp"
+        "${MACCY_SOURCE_DIR}/PinKeys.cpp"
+        "${MACCY_SOURCE_DIR}/Settings.cpp"
+        "${MACCY_SOURCE_DIR}/SettingsWindow.cpp"
+        "${MACCY_SOURCE_DIR}/PreviewWindow.cpp"
+        "${MACCY_SOURCE_DIR}/TrayIcon.cpp"
+        "${MACCY_SOURCE_DIR}/SettingsWindow.rc"
+        "${MACCY_SOURCE_DIR}/MainWindow.rc"
+        "${MACCY_RESOURCE_FILE}"
 )
 
-target_include_directories(sqlite3 PUBLIC
+set(MACCY_RESOURCE_ASSETS
+        "${MACCY_APP_ICON_PNG}"
+        "${MACCY_APP_ICON_ICO}"
+        "${MACCY_ASSET_DIR}/tray/scissors_light_32.png"
+        "${MACCY_ASSET_DIR}/tray/scissors_light_16.png"
+        "${MACCY_ASSET_DIR}/tray/scissors_dark_32.png"
+        "${MACCY_ASSET_DIR}/tray/scissors_dark_16.png"
+        "${MACCY_ASSET_DIR}/tray/paperclip_light_32.png"
+        "${MACCY_ASSET_DIR}/tray/paperclip_light_16.png"
+        "${MACCY_ASSET_DIR}/tray/paperclip_dark_32.png"
+        "${MACCY_ASSET_DIR}/tray/paperclip_dark_16.png"
+        "${MACCY_ASSET_DIR}/tray/maccy_light_32.png"
+        "${MACCY_ASSET_DIR}/tray/maccy_light_16.png"
+        "${MACCY_ASSET_DIR}/tray/maccy_dark_32.png"
+        "${MACCY_ASSET_DIR}/tray/maccy_dark_16.png"
+        "${MACCY_ASSET_DIR}/tray/clipboard_light_32.png"
+        "${MACCY_ASSET_DIR}/tray/clipboard_light_16.png"
+        "${MACCY_ASSET_DIR}/tray/clipboard_dark_32.png"
+        "${MACCY_ASSET_DIR}/tray/clipboard_dark_16.png"
+)
+
+foreach(MACCY_ASSET IN LISTS MACCY_RESOURCE_ASSETS)
+    if(NOT EXISTS "${MACCY_ASSET}")
+        message(FATAL_ERROR "Missing application resource: ${MACCY_ASSET}")
+    endif()
+endforeach()
+
+set_source_files_properties(
+        "${MACCY_RESOURCE_FILE}"
+        PROPERTIES OBJECT_DEPENDS "${MACCY_RESOURCE_ASSETS}"
+)
+
+add_library(maccy_sqlite STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite/sqlite3.c"
+)
+
+target_include_directories(maccy_sqlite PUBLIC
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite"
 )
 
-target_compile_definitions(sqlite3 PRIVATE
+target_compile_definitions(maccy_sqlite PRIVATE
         SQLITE_THREADSAFE=1
         SQLITE_ENABLE_FTS5
 )
 
-add_executable(maccy WIN32
-        src/main.cpp
-        src/MainWindow.cpp
-        src/ClipboardMonitor.cpp
-        src/HistoryRenderer.cpp
-        src/KeyboardHandler.cpp
-        src/Database.cpp
-        src/PinKeys.cpp
-        src/Settings.cpp
-        src/SettingsWindow.cpp
-        src/PreviewWindow.cpp
-        src/TrayIcon.cpp
-        src/SettingsWindow.rc
-        src/MainWindow.rc
-        src/TrayIcon.rc
-)
-
-set_target_properties(maccy PROPERTIES
-        OUTPUT_NAME "maccy"
-)
+add_executable(maccy WIN32 ${MACCY_SOURCES})
 
 target_include_directories(maccy PRIVATE
-        "third_party/wtl"
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wtl"
 )
 
 target_link_libraries(maccy PRIVATE
-        sqlite3
+        maccy_sqlite
         user32
         imm32
         gdi32
@@ -76,76 +118,60 @@ target_link_libraries(maccy PRIVATE
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
-    target_compile_options(sqlite3 PRIVATE /utf-8)
+    target_compile_options(maccy_sqlite PRIVATE /utf-8)
     target_compile_options(maccy PRIVATE /utf-8)
     target_link_options(maccy PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()
 
 include(GNUInstallDirs)
 
-#include(CTest)
-#if(BUILD_TESTING)
-#    set_property(SOURCE tests/PopupTests.cpp APPEND PROPERTY OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
-#    add_executable(popup_tests tests/PopupTests.cpp src/Database.cpp src/PinKeys.cpp src/Settings.cpp
-#        src/SettingsWindow.cpp src/PreviewWindow.cpp src/MainWindow.rc src/SettingsWindow.rc)
-#    target_include_directories(popup_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/WTL10_01_Release/Include")
-#    target_compile_definitions(popup_tests PRIVATE UNICODE _UNICODE)
-#    target_link_libraries(popup_tests PRIVATE sqlite3 user32 imm32 gdi32 shell32 advapi32 comdlg32 comctl32 windowscodecs ole32)
-#    if(MSVC)
-#        target_compile_options(popup_tests PRIVATE /utf-8)
-#        target_link_options(popup_tests PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
-#    endif()
-#    add_test(NAME popup_regressions COMMAND popup_tests)
-#endif()
-
 install(TARGETS maccy
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
-# Include the MSVC runtime DLLs used by the /MD build in the installer.  The
-# bundled CMake module currently assumes an older VC redist folder name for
-# this toolchain, so locate the matching redist directory from cl.exe instead.
-if(MSVC AND WIN32)
+if(MSVC)
+    # The bundled CMake module can assume an older VC redist folder name, so
+    # locate the runtime next to the active compiler toolset instead.
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(_app_msvc_arch "x64")
+        set(MACCY_MSVC_ARCH "x64")
     else()
-        set(_app_msvc_arch "x86")
+        set(MACCY_MSVC_ARCH "x86")
     endif()
 
-    get_filename_component(_app_msvc_bin_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    get_filename_component(_app_msvc_host_bin_dir "${_app_msvc_bin_dir}" DIRECTORY)
-    get_filename_component(_app_msvc_toolset_bin_dir "${_app_msvc_host_bin_dir}" DIRECTORY)
-    get_filename_component(_app_msvc_toolset_dir "${_app_msvc_toolset_bin_dir}" DIRECTORY)
-    get_filename_component(_app_msvc_tools_dir "${_app_msvc_toolset_dir}" DIRECTORY)
-    get_filename_component(_app_vc_tools_dir "${_app_msvc_tools_dir}" DIRECTORY)
-    get_filename_component(_app_vc_dir "${_app_vc_tools_dir}" DIRECTORY)
+    get_filename_component(MACCY_MSVC_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    get_filename_component(MACCY_MSVC_HOST_BIN_DIR "${MACCY_MSVC_BIN_DIR}" DIRECTORY)
+    get_filename_component(MACCY_MSVC_TOOLSET_BIN_DIR "${MACCY_MSVC_HOST_BIN_DIR}" DIRECTORY)
+    get_filename_component(MACCY_MSVC_TOOLSET_DIR "${MACCY_MSVC_TOOLSET_BIN_DIR}" DIRECTORY)
+    get_filename_component(MACCY_MSVC_TOOLS_DIR "${MACCY_MSVC_TOOLSET_DIR}" DIRECTORY)
+    get_filename_component(MACCY_VC_TOOLS_DIR "${MACCY_MSVC_TOOLS_DIR}" DIRECTORY)
+    get_filename_component(MACCY_VC_DIR "${MACCY_VC_TOOLS_DIR}" DIRECTORY)
 
-    file(GLOB _app_msvc_runtime_dirs LIST_DIRECTORIES true
-         "${_app_vc_dir}/Redist/MSVC/*/${_app_msvc_arch}/Microsoft.VC*.CRT")
+    file(GLOB MACCY_MSVC_RUNTIME_DIRS LIST_DIRECTORIES true
+         "${MACCY_VC_DIR}/Redist/MSVC/*/${MACCY_MSVC_ARCH}/Microsoft.VC*.CRT")
 
-    set(_app_msvc_runtime_dir "")
-    foreach(_runtime_dir IN LISTS _app_msvc_runtime_dirs)
-        if(EXISTS "${_runtime_dir}/vcruntime140.dll")
-            set(_app_msvc_runtime_dir "${_runtime_dir}")
+    set(MACCY_MSVC_RUNTIME_DIR "")
+    foreach(MACCY_RUNTIME_DIR IN LISTS MACCY_MSVC_RUNTIME_DIRS)
+        if(EXISTS "${MACCY_RUNTIME_DIR}/vcruntime140.dll")
+            set(MACCY_MSVC_RUNTIME_DIR "${MACCY_RUNTIME_DIR}")
             break()
         endif()
     endforeach()
 
-    if(_app_msvc_runtime_dir)
-        file(GLOB _app_msvc_runtime_files LIST_DIRECTORIES false
-             "${_app_msvc_runtime_dir}/concrt140*.dll"
-             "${_app_msvc_runtime_dir}/msvcp140*.dll"
-             "${_app_msvc_runtime_dir}/vcruntime140*.dll")
-        install(FILES ${_app_msvc_runtime_files}
-                DESTINATION ${CMAKE_INSTALL_BINDIR}
+    if(MACCY_MSVC_RUNTIME_DIR)
+        file(GLOB MACCY_MSVC_RUNTIME_FILES LIST_DIRECTORIES false
+             "${MACCY_MSVC_RUNTIME_DIR}/concrt140*.dll"
+             "${MACCY_MSVC_RUNTIME_DIR}/msvcp140*.dll"
+             "${MACCY_MSVC_RUNTIME_DIR}/vcruntime140*.dll")
+        install(FILES ${MACCY_MSVC_RUNTIME_FILES}
+                DESTINATION "${CMAKE_INSTALL_BINDIR}"
         )
     else()
-        message(WARNING "MSVC runtime redistributable DLLs were not found; the installer will require the x64 VC runtime on the target machine.")
+        message(WARNING "MSVC runtime redistributable DLLs were not found; the package will require the Visual C++ runtime on the target machine.")
     endif()
 endif()
 
 set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
-set(CPACK_PACKAGE_VENDOR "${PROJECT_NAME}")
+set(CPACK_PACKAGE_VENDOR "maccy")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_NAME} system tray application")
 set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "${PROJECT_NAME}")
@@ -156,14 +182,22 @@ else()
 endif()
 set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-${_app_package_platform}")
 
-set(CPACK_GENERATOR "NSIS")
+set(CPACK_GENERATOR "NSIS;ZIP")
 set(CPACK_NSIS_DISPLAY_NAME "${PROJECT_NAME}")
 set(CPACK_NSIS_PACKAGE_NAME "${PROJECT_NAME}")
-set(CPACK_NSIS_EXECUTABLES_DIRECTORY "bin")
+set(CPACK_NSIS_EXECUTABLES_DIRECTORY "${CMAKE_INSTALL_BINDIR}")
+set(CPACK_NSIS_INSTALLED_ICON_NAME "${CMAKE_INSTALL_BINDIR}/maccy.exe")
+set(CPACK_NSIS_MUI_ICON "${MACCY_APP_ICON_ICO}")
+set(CPACK_NSIS_MUI_UNIICON "${MACCY_APP_ICON_ICO}")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MODIFY_PATH OFF)
+if(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+else()
+    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
+endif()
 
-# Create a Start Menu shortcut and a desktop shortcut for the installed app.
+# Create Start Menu and desktop shortcuts that use the icon embedded in maccy.exe.
 set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")
 set(CPACK_CREATE_DESKTOP_LINKS "${PROJECT_NAME}")
 
