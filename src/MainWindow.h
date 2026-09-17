@@ -8,6 +8,7 @@
 #include <atlwin.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -235,7 +236,7 @@ private:
     bool m_loadingList = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;
-    std::uint64_t m_historyGeneration = 0;
+    std::atomic<std::uint64_t> m_historyGeneration{0};
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};

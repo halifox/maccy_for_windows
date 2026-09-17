@@ -59,14 +59,15 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         m_originalContent = item.preview;
     }
 
-    // 填充键位下拉框
-    for (wchar_t ch = L'a'; ch <= L'z'; ++ch) {
+    // 只展示策略允许且当前项目可以使用的键位。
+    for (const wchar_t ch : PinKeyPolicy::Available(m_pins, m_settings, m_itemId)) {
         std::wstring key(1, ch);
         ::SendMessageW(keyCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(key.c_str()));
     }
-    for (wchar_t ch = L'0'; ch <= L'9'; ++ch) {
-        std::wstring key(1, ch);
-        ::SendMessageW(keyCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(key.c_str()));
+    if (m_key.size() == 1 &&
+        ::SendMessageW(keyCombo, CB_FINDSTRINGEXACT, static_cast<WPARAM>(-1),
+                       reinterpret_cast<LPARAM>(m_key.c_str())) == CB_ERR) {
+        ::SendMessageW(keyCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(m_key.c_str()));
     }
 
     // 设置当前键位
@@ -1002,7 +1003,7 @@ void SettingsWindow::RefreshPinsList() {
     });
 }
 
-void SettingsWindow::SaveCurrentPage(bool notify) {
+void SettingsWindow::SaveCurrentPage() {
     if (m_loading) {
         return;
     }
@@ -1084,20 +1085,39 @@ void SettingsWindow::SaveCurrentPage(bool notify) {
         }
 
         const AppSettings snapshot = m_settings;
-        m_storage.Post([snapshot, previous](StorageContext &context) {
+        const std::uint64_t save_generation = ++m_saveGeneration;
+        const auto restore_previous = [this, previous, save_generation](const std::string &message) {
+            if (save_generation != m_saveGeneration) {
+                return;
+            }
+            m_settings = previous;
+            if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+                LoadControlsFromSettings();
+                ::MessageBoxA(m_hWnd, message.c_str(), "无法保存设置", MB_OK | MB_ICONERROR);
+            }
+        };
+        const bool posted = m_storage.Post([snapshot, previous](StorageContext &context) {
             snapshot.Save(context.database);
-            context.settings = snapshot;
             if (previous.history_size != snapshot.history_size) {
                 context.database.TrimUnpinned(snapshot.history_size);
             }
             if (previous.show_special_symbols != snapshot.show_special_symbols) {
                 context.database.RegenerateTitles(snapshot.show_special_symbols);
             }
-        });
-        UpdateDependencies();
-        if (notify) {
+            context.settings = snapshot;
+        }, restore_previous, [this, snapshot, save_generation] {
+            if (save_generation != m_saveGeneration) {
+                return;
+            }
+            m_settings = snapshot;
+            UpdateDependencies();
             NotifyOwner();
+        });
+        if (!posted) {
+            restore_previous("存储线程当前不可用");
+            return;
         }
+        UpdateDependencies();
     } catch (const std::exception &error) {
         MessageBoxA(m_hWnd, error.what(), "Unable to save settings", MB_OK | MB_ICONERROR);
     }
@@ -1178,25 +1198,52 @@ void SettingsWindow::OpenNotificationsSettings() {
 }
 
 void SettingsWindow::CheckForUpdatesNow() {
-    ShellExecuteW(
+    const HINSTANCE result = ShellExecuteW(
         m_hWnd,
         L"open",
-        L"https://github.com/p0deje/Maccy/releases/latest",
+        L"https://github.com/halifox/maccy_for_windows",
         nullptr,
         nullptr,
         SW_SHOWNORMAL
     );
+    if (reinterpret_cast<INT_PTR>(result) <= 32) {
+        ::MessageBoxW(
+            m_hWnd,
+            L"无法打开更新页面，请检查默认浏览器设置。",
+            L"检查更新",
+            MB_OK | MB_ICONERROR
+        );
+    }
 }
 
 void SettingsWindow::ResetPopupPosition() {
+    const AppSettings previous = m_settings;
     m_settings.popup_x = 0;
     m_settings.popup_y = 0;
     const AppSettings snapshot = m_settings;
-    m_storage.Post([snapshot](StorageContext &context) {
+    const std::uint64_t save_generation = ++m_saveGeneration;
+    const auto restore_previous = [this, previous, save_generation](const std::string &message) {
+        if (save_generation != m_saveGeneration) {
+            return;
+        }
+        m_settings = previous;
+        if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+            LoadControlsFromSettings();
+            ::MessageBoxA(m_hWnd, message.c_str(), "无法保存设置", MB_OK | MB_ICONERROR);
+        }
+    };
+    if (!m_storage.Post([snapshot](StorageContext &context) {
         snapshot.Save(context.database);
         context.settings = snapshot;
-    });
-    NotifyOwner();
+    }, restore_previous, [this, snapshot, save_generation] {
+        if (save_generation != m_saveGeneration) {
+            return;
+        }
+        m_settings = snapshot;
+        NotifyOwner();
+    })) {
+        restore_previous("存储线程当前不可用");
+    }
 }
 
 LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
@@ -1250,7 +1297,7 @@ LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT SettingsWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    SaveCurrentPage(false);
+    SaveCurrentPage();
     if (!m_destroying) {
         ShowWindow(SW_HIDE);
     } else {
@@ -1275,7 +1322,6 @@ LRESULT SettingsWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
         OpenNotificationsSettings();
         return 0;
     }
-
     if (id == kAResetPosition && notification == BN_CLICKED) {
         ResetPopupPosition();
         return 0;
@@ -1409,6 +1455,7 @@ LRESULT SettingsWindow::OnNotify(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    ++m_saveGeneration;
     if (m_windowIcon != nullptr) {
         ::SendMessageW(m_hWnd, WM_SETICON, ICON_BIG, 0);
         ::SendMessageW(m_hWnd, WM_SETICON, ICON_SMALL, 0);

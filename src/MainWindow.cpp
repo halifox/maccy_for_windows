@@ -686,20 +686,32 @@ void MainWindow::PositionPreviewWindow() {
 }
 
 void MainWindow::RefreshHistory(std::wstring_view query) {
-    const std::uint64_t generation = ++m_historyGeneration;
+    const std::uint64_t generation =
+        m_historyGeneration.fetch_add(1, std::memory_order_acq_rel) + 1;
     const std::wstring owned_query(query);
     const int search_mode = static_cast<int>(m_settings.search_mode);
     const int sort_by = m_settings.sort_by;
     const bool pins_at_bottom = m_settings.pin_to == PinPosition::Bottom;
-    m_storage.Post([this, generation, owned_query, search_mode, sort_by, pins_at_bottom](
+    const Database::SearchCancellation is_cancelled = [this, generation] {
+        return m_historyGeneration.load(std::memory_order_acquire) != generation;
+    };
+    m_storage.PostLatestSearch([this, generation, owned_query, search_mode, sort_by, pins_at_bottom,
+                                is_cancelled](
         StorageContext &context
     ) {
+        if (is_cancelled()) {
+            return;
+        }
         auto items = context.database.SearchHistory(
             owned_query,
             search_mode,
             sort_by,
-            pins_at_bottom
+            pins_at_bottom,
+            is_cancelled
         );
+        if (is_cancelled()) {
+            return;
+        }
         m_storage.PostToUi([this, generation, owned_query, items = std::move(items)]() mutable {
             ApplyHistoryItems(generation, owned_query, std::move(items));
         });
@@ -711,7 +723,8 @@ void MainWindow::ApplyHistoryItems(
     std::wstring query,
     std::vector<ClipboardItem> items
 ) {
-    if (generation != m_historyGeneration || m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+    if (generation != m_historyGeneration.load(std::memory_order_acquire) ||
+        m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
         return;
     }
     try {
@@ -721,6 +734,7 @@ void MainWindow::ApplyHistoryItems(
         const bool previewOpen = m_previewWindow.IsVisible();
         const std::wstring ownedQuery = query;
         m_items = std::move(items);
+        m_historyRenderer.PrepareHistory(m_items);
 
         KillTimer(AppConstants::Timer::kPreview);
         m_previewCandidateId = 0;
@@ -855,6 +869,11 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
                     result->item_id != m_selectedItemId || !m_popupVisible || m_previewSuppressed) {
                     return;
                 }
+                if (!result->error.empty()) {
+                    ::MessageBoxA(m_hWnd, result->error.c_str(), "无法加载预览", MB_OK | MB_ICONERROR);
+                    HidePreview();
+                    return;
+                }
                 if (!result->item.has_value()) {
                     HidePreview();
                     return;
@@ -933,7 +952,13 @@ void MainWindow::PasteItem(int index) {
         std::string error;
         try {
             const auto item = context.database.GetItem(id, PayloadMode::Full);
-            success = item.has_value() && context.clipboard.WriteClipboardItem(*item, plain);
+            if (!item.has_value()) {
+                error = "剪贴板项目不存在";
+            } else if (!context.clipboard.WriteClipboardItem(*item, plain)) {
+                error = "无法写入系统剪贴板";
+            } else {
+                success = true;
+            }
             if (success) {
                 context.database.MarkCopied(id);
             }
@@ -946,10 +971,8 @@ void MainWindow::PasteItem(int index) {
                             error = std::move(error)]() {
             m_pasteInProgress = false;
             if (!success) {
-                if (!error.empty()) {
-                    ::OutputDebugStringA(error.c_str());
-                    ::OutputDebugStringA("\n");
-                }
+                const char *message = error.empty() ? "无法粘贴剪贴板项目" : error.c_str();
+                ::MessageBoxA(m_hWnd, message, "无法粘贴", MB_OK | MB_ICONERROR);
                 return;
             }
             HideMainWindow();
@@ -976,37 +999,31 @@ void MainWindow::ToggleSelectedPin() {
     const ClipboardItem item = m_items[static_cast<size_t>(index)];
     const AppSettings settings = m_settings;
     if (!m_storage.Post([this, item, settings](StorageContext &context) {
-        try {
-            if (item.pinned) {
-                context.database.TogglePin(item.id, {}, false);
-            } else {
-                const std::wstring key = PinKeyPolicy::Next(
-                    context.database.SearchHistory({}, 0, 0, false),
-                    settings
-                );
-                if (key.empty()) {
-                    m_storage.PostToUi([this] {
-                        ::MessageBoxW(
-                            m_hWnd,
-                            L"没有可用的置顶快捷键，请先取消一个置顶项目。",
-                            L"置顶",
-                            MB_OK
-                        );
-                    });
-                    return;
-                }
-                context.database.TogglePin(item.id, key, true);
+        if (item.pinned) {
+            context.database.TogglePin(item.id, {}, false);
+        } else {
+            const std::wstring key = PinKeyPolicy::Next(
+                context.database.GetPinnedItems(),
+                settings
+            );
+            if (key.empty()) {
+                m_storage.PostToUi([this] {
+                    ::MessageBoxW(
+                        m_hWnd,
+                        L"没有可用的置顶快捷键，请先取消一个置顶项目。",
+                        L"置顶",
+                        MB_OK
+                    );
+                });
+                return;
             }
-            m_storage.PostToUi([this] {
-                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-            });
-        } catch (const std::exception &error) {
-            const std::string message = error.what();
-            m_storage.PostToUi([this, message] {
-                ::OutputDebugStringA(message.c_str());
-                ::OutputDebugStringA("\n");
-            });
+            context.database.TogglePin(item.id, key, true);
         }
+        m_storage.PostToUi([this] {
+            RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+        });
+    }, [this](const std::string &message) {
+        ::MessageBoxA(m_hWnd, message.c_str(), "无法修改置顶", MB_OK | MB_ICONERROR);
     })) {
         return;
     }
@@ -1019,18 +1036,12 @@ void MainWindow::DeleteSelectedItem() {
     }
     const sqlite3_int64 item_id = m_items[static_cast<size_t>(index)].id;
     m_storage.Post([this, item_id](StorageContext &context) {
-        try {
-            context.database.DeleteItem(item_id);
-            m_storage.PostToUi([this] {
-                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-            });
-        } catch (const std::exception &error) {
-            const std::string message = error.what();
-            m_storage.PostToUi([message] {
-                ::OutputDebugStringA(message.c_str());
-                ::OutputDebugStringA("\n");
-            });
-        }
+        context.database.DeleteItem(item_id);
+        m_storage.PostToUi([this] {
+            RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+        });
+    }, [this](const std::string &message) {
+        ::MessageBoxA(m_hWnd, message.c_str(), "无法删除剪贴板项目", MB_OK | MB_ICONERROR);
     });
 }
 
@@ -1460,6 +1471,11 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
 
     m_pasteController.SetOwner(m_hWnd);
     m_storage.SetUiWindow(m_hWnd);
+    m_storage.SetErrorHandler([this](const std::string &message) {
+        if (!m_exiting && m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+            ::MessageBoxA(m_hWnd, message.c_str(), "maccy", MB_OK | MB_ICONERROR);
+        }
+    });
     m_previewWorker.SetUiWindow(m_hWnd);
     m_storage.SetHistoryChangedHandler([this] {
         RequestUiUpdate(AppConstants::UiUpdate::kTray |
@@ -1886,11 +1902,13 @@ LRESULT MainWindow::OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
+    m_historyGeneration.fetch_add(1, std::memory_order_acq_rel);
     KillTimer(AppConstants::Timer::kSearch);
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
     m_keyboardHandler.Shutdown();
     m_previewWorker.SetUiWindow(nullptr);
+    m_storage.SetErrorHandler({});
     m_storage.SetUiWindow(nullptr);
     m_previewWorker.Stop();
     m_storage.Stop();

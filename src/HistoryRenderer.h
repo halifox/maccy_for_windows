@@ -2,6 +2,9 @@
 
 #include "PlatformConfig.h"
 
+#include <list>
+#include <optional>
+#include <regex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -23,6 +26,7 @@ public:
     bool Initialize(HWND owner);
     bool UpdateFonts(UINT dpi);
     void Shutdown();
+    void PrepareHistory(const std::vector<ClipboardItem> &items);
 
     // Drawing operations
     void DrawHistoryItem(DRAWITEMSTRUCT* draw,
@@ -66,11 +70,17 @@ private:
     void DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_view text,
                                 bool selected, std::wstring_view searchQuery);
     std::vector<std::pair<size_t, size_t>> HighlightRanges(std::wstring_view text,
-                                                            std::wstring_view searchQuery) const;
+                                                            std::wstring_view searchQuery);
+    void PrepareHighlightPattern(std::wstring_view searchQuery);
     HFONT FontForHighlight(HighlightMatch match) const;
 
     // Icon management
     HICON IconForApplication(std::wstring_view application);
+
+    struct IconCacheEntry {
+        HICON icon = nullptr;
+        std::list<std::wstring>::iterator lru;
+    };
 
     AppSettings& m_settings;
     HWND m_owner = nullptr;
@@ -81,5 +91,11 @@ private:
     HFONT m_italicFont = nullptr;
     HFONT m_underlineFont = nullptr;
 
-    std::unordered_map<std::wstring, HICON> m_iconCache;
+    std::unordered_map<std::wstring, IconCacheEntry> m_iconCache;
+    std::list<std::wstring> m_iconLru;
+    std::vector<int> m_unpinnedShortcutNumbers;
+    std::wstring m_highlightQuery;
+    SearchMode m_highlightMode = SearchMode::Exact;
+    std::optional<std::wregex> m_highlightRegex;
+    bool m_highlightPatternReady = false;
 };

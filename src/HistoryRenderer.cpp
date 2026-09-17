@@ -154,13 +154,31 @@ void HistoryRenderer::Shutdown() {
     m_italicFont = nullptr;
     m_underlineFont = nullptr;
 
-    for (auto& [path, icon] : m_iconCache) {
+    for (auto& [path, entry] : m_iconCache) {
         (void)path;
-        if (icon != nullptr) {
-            DestroyIcon(icon);
+        if (entry.icon != nullptr) {
+            DestroyIcon(entry.icon);
         }
     }
     m_iconCache.clear();
+    m_iconLru.clear();
+    m_unpinnedShortcutNumbers.clear();
+    m_highlightQuery.clear();
+    m_highlightRegex.reset();
+    m_highlightPatternReady = false;
+}
+
+void HistoryRenderer::PrepareHistory(const std::vector<ClipboardItem> &items) {
+    m_unpinnedShortcutNumbers.assign(items.size(), 0);
+    int number = 0;
+    for (size_t index = 0; index < items.size(); ++index) {
+        if (!items[index].pinned) {
+            ++number;
+            if (number <= 9) {
+                m_unpinnedShortcutNumbers[index] = number;
+            }
+        }
+    }
 }
 
 std::wstring HistoryRenderer::MakeTitle(std::wstring value, bool show_special_symbols) {
@@ -274,8 +292,29 @@ HFONT HistoryRenderer::FontForHighlight(HighlightMatch match) const {
     }
 }
 
+void HistoryRenderer::PrepareHighlightPattern(std::wstring_view searchQuery) {
+    if (m_highlightPatternReady && m_highlightQuery == searchQuery &&
+        m_highlightMode == m_settings.search_mode) {
+        return;
+    }
+
+    m_highlightQuery.assign(searchQuery);
+    m_highlightMode = m_settings.search_mode;
+    m_highlightRegex.reset();
+    if (!searchQuery.empty() &&
+        (m_highlightMode == SearchMode::Regexp || m_highlightMode == SearchMode::Mixed)) {
+        try {
+            m_highlightRegex.emplace(std::wstring(searchQuery));
+        } catch (const std::regex_error&) {
+            m_highlightRegex.reset();
+        }
+    }
+    m_highlightPatternReady = true;
+}
+
 std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
-    std::wstring_view text, std::wstring_view searchQuery) const {
+    std::wstring_view text, std::wstring_view searchQuery) {
+    PrepareHighlightPattern(searchQuery);
     std::vector<std::pair<size_t, size_t>> ranges;
     if (searchQuery.empty()) {
         return ranges;
@@ -293,17 +332,17 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
         }
     };
     const auto add_regex = [&]() {
-        try {
-            const std::wregex expression{std::wstring(searchQuery)};
-            const std::wstring value(text);
-            for (std::wsregex_iterator it(value.begin(), value.end(), expression), end; it != end; ++it) {
-                const auto match = *it;
-                ranges.emplace_back(
-                    static_cast<size_t>(match.position()),
-                    static_cast<size_t>(match.position() + match.length())
-                );
-            }
-        } catch (const std::regex_error&) {
+        if (!m_highlightRegex) {
+            return;
+        }
+        const std::wstring value(text);
+        for (std::wsregex_iterator it(value.begin(), value.end(), *m_highlightRegex), end;
+             it != end; ++it) {
+            const auto match = *it;
+            ranges.emplace_back(
+                static_cast<size_t>(match.position()),
+                static_cast<size_t>(match.position() + match.length())
+            );
         }
     };
     const auto add_fuzzy = [&]() {
@@ -447,7 +486,8 @@ HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
     }
     const std::wstring key = NormalizePath(std::wstring(application));
     if (const auto found = m_iconCache.find(key); found != m_iconCache.end()) {
-        return found->second;
+        m_iconLru.splice(m_iconLru.begin(), m_iconLru, found->second.lru);
+        return found->second.icon;
     }
     SHFILEINFOW info{};
     if (SHGetFileInfoW(
@@ -457,14 +497,21 @@ HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
         sizeof(info),
         SHGFI_ICON | SHGFI_SMALLICON
     ) == 0) {
-        return nullptr;
+        info.hIcon = nullptr;
     }
     if (m_iconCache.size() >= 32) {
-        auto first = m_iconCache.begin();
-        DestroyIcon(first->second);
-        m_iconCache.erase(first);
+        const std::wstring evicted_key = m_iconLru.back();
+        m_iconLru.pop_back();
+        const auto evicted = m_iconCache.find(evicted_key);
+        if (evicted != m_iconCache.end()) {
+            if (evicted->second.icon != nullptr) {
+                DestroyIcon(evicted->second.icon);
+            }
+            m_iconCache.erase(evicted);
+        }
     }
-    m_iconCache.emplace(key, info.hIcon);
+    m_iconLru.push_front(key);
+    m_iconCache.emplace(key, IconCacheEntry{info.hIcon, m_iconLru.begin()});
     return info.hIcon;
 }
 
@@ -476,6 +523,9 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     if (draw == nullptr || draw->itemID == static_cast<UINT>(-1) ||
         static_cast<size_t>(draw->itemData) >= items.size()) {
         return;
+    }
+    if (m_unpinnedShortcutNumbers.size() != items.size()) {
+        PrepareHistory(items);
     }
     const int index = static_cast<int>(draw->itemData);
     const ClipboardItem& item = items[index];
@@ -556,10 +606,10 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
 
     std::wstring shortcut;
     if (item.pinned) shortcut = L"Ctrl+" + item.pin;
-    else {
-        int number = 0;
-        for (int i = 0; i <= index; ++i) if (!items[i].pinned) ++number;
-        if (number <= 9) shortcut = L"Ctrl+" + std::to_wstring(number);
+    else if (m_unpinnedShortcutNumbers[static_cast<size_t>(index)] > 0) {
+        shortcut = L"Ctrl+" + std::to_wstring(
+            m_unpinnedShortcutNumbers[static_cast<size_t>(index)]
+        );
     }
     RECT keyRect = layout.shortcut;
     SetBkMode(draw->hDC, TRANSPARENT);

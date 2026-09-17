@@ -57,7 +57,7 @@ private:
     HWND m_owner = nullptr;
 
     bool m_clipboardListenerAdded = false;
-    bool m_skipNextClipboardEvent = false;
+    std::optional<std::wstring> m_expectedClipboardFingerprint;
 
     std::vector<std::wstring> m_ignoredApps;
     std::vector<std::wstring> m_ignoredFormats;

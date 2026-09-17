@@ -690,11 +690,37 @@ void Database::CreateHistoryTables() {
         ");"
     );
     Exec(
+        "CREATE TABLE IF NOT EXISTS history_search_documents ("
+        "item_id INTEGER PRIMARY KEY REFERENCES history_items(id) ON DELETE CASCADE,"
+        "body TEXT NOT NULL DEFAULT '',"
+        "paths TEXT NOT NULL DEFAULT ''"
+        ");"
+    );
+    Exec(
         "CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5("
         "body, paths, content='', contentless_delete=1, "
         "tokenize='trigram'"
         ");"
     );
+
+    bool has_missing_documents = false;
+    {
+        Statement missing(
+            m_db,
+            "SELECT 1 FROM history_items AS items "
+            "LEFT JOIN history_search_documents AS documents ON documents.item_id = items.id "
+            "WHERE documents.item_id IS NULL LIMIT 1;"
+        );
+        const int result = sqlite3_step(missing.get());
+        if (result == SQLITE_ROW) {
+            has_missing_documents = true;
+        } else if (result != SQLITE_DONE) {
+            throw MakeSqliteError(m_db, "Unable to inspect search documents");
+        }
+    }
+    if (has_missing_documents) {
+        RebuildSearchDocuments();
+    }
 }
 
 void Database::ReplaceFormats(
@@ -756,6 +782,34 @@ void Database::ReplaceSearchIndex(
     std::wstring_view body,
     std::wstring_view paths
 ) const {
+    Statement remove_document(
+        m_db,
+        "DELETE FROM history_search_documents WHERE item_id = ?1;"
+    );
+    CheckSqliteResult(
+        m_db,
+        sqlite3_bind_int64(remove_document.get(), 1, item_id),
+        "Unable to bind search document id"
+    );
+    if (sqlite3_step(remove_document.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to replace search document");
+    }
+
+    Statement insert_document(
+        m_db,
+        "INSERT INTO history_search_documents(item_id, body, paths) VALUES(?1, ?2, ?3);"
+    );
+    CheckSqliteResult(
+        m_db,
+        sqlite3_bind_int64(insert_document.get(), 1, item_id),
+        "Unable to bind search document id"
+    );
+    BindText16(m_db, insert_document.get(), 2, body);
+    BindText16(m_db, insert_document.get(), 3, paths);
+    if (sqlite3_step(insert_document.get()) != SQLITE_DONE) {
+        throw MakeSqliteError(m_db, "Unable to insert search document");
+    }
+
     Statement remove(m_db, "DELETE FROM history_fts WHERE rowid = ?1;");
     CheckSqliteResult(m_db, sqlite3_bind_int64(remove.get(), 1, item_id), "Unable to bind search item id");
     if (sqlite3_step(remove.get()) != SQLITE_DONE) {
@@ -777,7 +831,10 @@ void Database::ReplaceSearchIndex(
     }
 }
 
-std::vector<sqlite3_int64> Database::SearchIndexIds(std::wstring_view query) const {
+std::vector<sqlite3_int64> Database::SearchIndexIds(
+    std::wstring_view query,
+    const SearchCancellation &is_cancelled
+) const {
     if (query.size() < 3) {
         return {};
     }
@@ -790,6 +847,9 @@ std::vector<sqlite3_int64> Database::SearchIndexIds(std::wstring_view query) con
     BindText16(m_db, statement.get(), 1, phrase);
     std::vector<sqlite3_int64> ids;
     while (true) {
+        if (is_cancelled && is_cancelled()) {
+            return {};
+        }
         const int result = sqlite3_step(statement.get());
         if (result == SQLITE_DONE) {
             break;
@@ -802,8 +862,9 @@ std::vector<sqlite3_int64> Database::SearchIndexIds(std::wstring_view query) con
     return ids;
 }
 
-void Database::ForEachSearchDocument(
-    const std::function<void(const SearchDocument &)> &callback
+void Database::ForEachRawSearchDocument(
+    const std::function<void(const SearchDocument &)> &callback,
+    const SearchCancellation &is_cancelled
 ) const {
     Statement statement(
         m_db,
@@ -817,6 +878,9 @@ void Database::ForEachSearchDocument(
     bool has_item = false;
     sqlite3_int64 item_id = 0;
     SearchAccumulator accumulator;
+    const auto cancelled = [&]() {
+        return is_cancelled && is_cancelled();
+    };
     const auto emit = [&]() {
         if (!has_item) {
             return;
@@ -834,9 +898,14 @@ void Database::ForEachSearchDocument(
     };
 
     while (true) {
+        if (cancelled()) {
+            return;
+        }
         const int result = sqlite3_step(statement.get());
         if (result == SQLITE_DONE) {
-            emit();
+            if (!cancelled()) {
+                emit();
+            }
             break;
         }
         if (result != SQLITE_ROW) {
@@ -849,6 +918,9 @@ void Database::ForEachSearchDocument(
             item_id = row_item_id;
         } else if (row_item_id != item_id) {
             emit();
+            if (cancelled()) {
+                return;
+            }
             item_id = row_item_id;
         }
 
@@ -857,6 +929,63 @@ void Database::ForEachSearchDocument(
         format.name = ColumnText16(statement.get(), 2);
         format.bytes = ColumnBlob(statement.get(), 3);
         AccumulateSearchFormat(accumulator, format);
+    }
+}
+
+void Database::RebuildSearchDocuments() const {
+    auto transaction = BeginTransaction();
+    Exec("DELETE FROM history_search_documents;");
+
+    Statement insert(
+        m_db,
+        "INSERT INTO history_search_documents(item_id, body, paths) VALUES(?1, ?2, ?3);"
+    );
+    ForEachRawSearchDocument([&](const SearchDocument &document) {
+        sqlite3_reset(insert.get());
+        sqlite3_clear_bindings(insert.get());
+        CheckSqliteResult(
+            m_db,
+            sqlite3_bind_int64(insert.get(), 1, document.id),
+            "Unable to bind search document id"
+        );
+        BindText16(m_db, insert.get(), 2, document.body);
+        BindText16(m_db, insert.get(), 3, document.paths);
+        if (sqlite3_step(insert.get()) != SQLITE_DONE) {
+            throw MakeSqliteError(m_db, "Unable to rebuild search documents");
+        }
+    }, {});
+
+    Exec(
+        "INSERT OR IGNORE INTO history_search_documents(item_id, body, paths) "
+        "SELECT id, '', '' FROM history_items;"
+    );
+    transaction.Commit();
+}
+
+void Database::ForEachSearchDocument(
+    const std::function<void(const SearchDocument &)> &callback,
+    const SearchCancellation &is_cancelled
+) const {
+    Statement statement(
+        m_db,
+        "SELECT item_id, body, paths FROM history_search_documents ORDER BY item_id DESC;"
+    );
+    while (true) {
+        if (is_cancelled && is_cancelled()) {
+            return;
+        }
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            return;
+        }
+        if (result != SQLITE_ROW) {
+            throw MakeSqliteError(m_db, "Unable to load clipboard search text");
+        }
+        SearchDocument document;
+        document.id = sqlite3_column_int64(statement.get(), 0);
+        document.body = ColumnText16(statement.get(), 1);
+        document.paths = ColumnText16(statement.get(), 2);
+        callback(document);
     }
 }
 
@@ -1108,8 +1237,16 @@ std::vector<ClipboardItem> Database::SearchHistory(
     std::wstring_view query,
     int search_mode,
     int sort_by,
-    bool pins_at_bottom
+    bool pins_at_bottom,
+    SearchCancellation is_cancelled
 ) const {
+    const auto cancelled = [&]() {
+        return is_cancelled && is_cancelled();
+    };
+    if (cancelled()) {
+        return {};
+    }
+
     Statement statement(
         m_db,
         "SELECT id, title, preview, application, COALESCE(pin, ''), pinned, "
@@ -1119,6 +1256,9 @@ std::vector<ClipboardItem> Database::SearchHistory(
 
     std::vector<ClipboardItem> all;
     while (true) {
+        if (cancelled()) {
+            return {};
+        }
         const int result = sqlite3_step(statement.get());
         if (result == SQLITE_DONE) {
             break;
@@ -1154,7 +1294,10 @@ std::vector<ClipboardItem> Database::SearchHistory(
     }
     std::unordered_set<sqlite3_int64> indexed_ids;
     if (!query.empty() && query.size() >= 3 && (search_mode == 0 || search_mode == 3)) {
-        for (const sqlite3_int64 id : SearchIndexIds(query)) {
+        for (const sqlite3_int64 id : SearchIndexIds(query, is_cancelled)) {
+            if (cancelled()) {
+                return {};
+            }
             indexed_ids.insert(id);
         }
     }
@@ -1200,9 +1343,15 @@ std::vector<ClipboardItem> Database::SearchHistory(
                     document_matches[*index] = ContainsExact(document.body, query) ||
                         ContainsExact(document.paths, query);
                 }
-            });
+            }, is_cancelled);
+            if (cancelled()) {
+                return;
+            }
         }
         for (size_t index = 0; index < all.size(); ++index) {
+            if (cancelled()) {
+                return;
+            }
             const ClipboardItem &item = all[index];
             const bool matches_metadata = ContainsExact(item.title, query) ||
                 ContainsExact(item.preview, query);
@@ -1223,9 +1372,15 @@ std::vector<ClipboardItem> Database::SearchHistory(
                     document_matches[*index] = matchesRegex(document.body) ||
                         matchesRegex(document.paths);
                 }
-            });
+            }, is_cancelled);
+            if (cancelled()) {
+                return;
+            }
         }
         for (size_t index = 0; index < all.size(); ++index) {
+            if (cancelled()) {
+                return;
+            }
             const ClipboardItem &item = all[index];
             if (matchesRegex(item.title) || matchesRegex(item.preview) ||
                 document_matches[index] != 0) {
@@ -1237,6 +1392,9 @@ std::vector<ClipboardItem> Database::SearchHistory(
         fuzzyResults = true;
         std::vector<std::optional<double>> best_scores(all.size());
         for (size_t index = 0; index < all.size(); ++index) {
+            if (cancelled()) {
+                return;
+            }
             considerFuzzyScore(best_scores[index], all[index].title);
             considerFuzzyScore(best_scores[index], all[index].preview);
         }
@@ -1247,11 +1405,17 @@ std::vector<ClipboardItem> Database::SearchHistory(
             }
             considerFuzzyScore(best_scores[*index], document.body);
             considerFuzzyScore(best_scores[*index], document.paths);
-        });
+        }, is_cancelled);
+        if (cancelled()) {
+            return;
+        }
 
         std::vector<std::pair<double, size_t>> fuzzy;
         fuzzy.reserve(all.size());
         for (size_t index = 0; index < all.size(); ++index) {
+            if (cancelled()) {
+                return;
+            }
             if (best_scores[index].has_value()) {
                 fuzzy.emplace_back(*best_scores[index], index);
             }
@@ -1266,6 +1430,9 @@ std::vector<ClipboardItem> Database::SearchHistory(
 
     if (query.empty()) {
         for (size_t index = 0; index < all.size(); ++index) {
+            if (cancelled()) {
+                return {};
+            }
             selected.push_back(index);
         }
     } else if (search_mode == 0) {
@@ -1287,6 +1454,9 @@ std::vector<ClipboardItem> Database::SearchHistory(
     std::vector<ClipboardItem> filtered;
     filtered.reserve(selected.size());
     for (const size_t index : selected) {
+        if (cancelled()) {
+            return {};
+        }
         filtered.push_back(std::move(all[index]));
     }
 

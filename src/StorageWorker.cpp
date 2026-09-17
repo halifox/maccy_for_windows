@@ -11,6 +11,7 @@
 namespace {
 
 constexpr wchar_t kStorageWorkerWindowClass[] = L"maccy.StorageWorkerWindow";
+constexpr size_t kMaximumQueuedTasks = 256;
 
 void RegisterWorkerWindowClass() {
     WNDCLASSEXW window_class{sizeof(window_class)};
@@ -77,6 +78,7 @@ void StorageWorker::Stop() {
     {
         std::lock_guard lock(m_commandMutex);
         m_commands.clear();
+        m_latestSearch.reset();
     }
     {
         std::lock_guard lock(m_resultMutex);
@@ -88,42 +90,100 @@ void StorageWorker::SetUiWindow(HWND window) noexcept {
     m_uiWindow.store(window, std::memory_order_release);
 }
 
-bool StorageWorker::Post(Task task) {
-    if (!task || !m_accepting.load(std::memory_order_acquire)) {
+bool StorageWorker::Enqueue(QueuedTask task, bool latest_search) {
+    if (!task.task || !m_accepting.load(std::memory_order_acquire)) {
         return false;
     }
 
-    {
-        std::lock_guard lock(m_commandMutex);
-        if (!m_accepting.load(std::memory_order_relaxed)) {
-            return false;
-        }
-        m_commands.push_back(std::move(task));
+    std::lock_guard lock(m_commandMutex);
+    if (!m_accepting.load(std::memory_order_relaxed)) {
+        return false;
     }
 
     const HWND window = m_workerWindow.load(std::memory_order_acquire);
-    return window != nullptr &&
-        ::PostMessageW(window, AppConstants::kStorageWorkerCommandMessage, 0, 0) != FALSE;
+    if (window == nullptr) {
+        return false;
+    }
+
+    if (latest_search) {
+        std::optional<QueuedTask> previous = std::move(m_latestSearch);
+        m_latestSearch = std::move(task);
+        if (::PostMessageW(window, AppConstants::kStorageWorkerCommandMessage, 0, 0) != FALSE) {
+            return true;
+        }
+        m_latestSearch = std::move(previous);
+        return false;
+    }
+
+    if (m_commands.size() >= kMaximumQueuedTasks) {
+        return false;
+    }
+    m_commands.push_back(std::move(task));
+    if (::PostMessageW(window, AppConstants::kStorageWorkerCommandMessage, 0, 0) != FALSE) {
+        return true;
+    }
+    m_commands.pop_back();
+    return false;
 }
 
-void StorageWorker::PostToUi(UiCallback callback) {
+bool StorageWorker::Post(Task task, ErrorHandler on_error, SuccessHandler on_success) {
+    return Enqueue(
+        QueuedTask{std::move(task), std::move(on_error), std::move(on_success)},
+        false
+    );
+}
+
+bool StorageWorker::PostLatestSearch(
+    Task task,
+    ErrorHandler on_error,
+    SuccessHandler on_success
+) {
+    return Enqueue(
+        QueuedTask{std::move(task), std::move(on_error), std::move(on_success)},
+        true
+    );
+}
+
+bool StorageWorker::PostToUi(UiCallback callback) {
     if (!callback) {
-        return;
+        return false;
     }
     const HWND window = m_uiWindow.load(std::memory_order_acquire);
     if (window == nullptr) {
+        return false;
+    }
+
+    std::lock_guard lock(m_resultMutex);
+    m_uiCallbacks.push_back(std::move(callback));
+    if (::PostMessageW(window, AppConstants::kStorageWorkerResultMessage, 0, 0)) {
+        return true;
+    }
+    m_uiCallbacks.pop_back();
+    return false;
+}
+
+void StorageWorker::SetErrorHandler(ErrorHandler callback) {
+    std::lock_guard lock(m_handlerMutex);
+    m_errorHandler = std::move(callback);
+}
+
+void StorageWorker::ReportError(ErrorHandler on_error, std::string message) {
+    if (!on_error) {
+        std::lock_guard lock(m_handlerMutex);
+        on_error = m_errorHandler;
+    }
+    if (!on_error) {
+        ::OutputDebugStringA(message.c_str());
+        ::OutputDebugStringA("\n");
         return;
     }
 
-    {
-        std::lock_guard lock(m_resultMutex);
-        m_uiCallbacks.push_back(std::move(callback));
-    }
-    if (!::PostMessageW(window, AppConstants::kStorageWorkerResultMessage, 0, 0)) {
-        std::lock_guard lock(m_resultMutex);
-        if (!m_uiCallbacks.empty()) {
-            m_uiCallbacks.pop_back();
-        }
+    const std::string error_message = message;
+    if (!PostToUi([on_error = std::move(on_error), message = error_message]() {
+        on_error(message);
+    })) {
+        ::OutputDebugStringA(error_message.c_str());
+        ::OutputDebugStringA("\n");
     }
 }
 
@@ -186,7 +246,12 @@ LRESULT CALLBACK StorageWorker::WindowProc(
 }
 
 void StorageWorker::ThreadMain(std::stop_token stop_token) {
-    (void)stop_token;
+    const std::stop_callback wake_on_stop(stop_token, [this] {
+        if (const HWND window = m_workerWindow.load(std::memory_order_acquire);
+            window != nullptr) {
+            ::PostMessageW(window, AppConstants::kStorageWorkerShutdownMessage, 0, 0);
+        }
+    });
     try {
         RegisterWorkerWindowClass();
         const HWND window = ::CreateWindowExW(
@@ -247,24 +312,30 @@ void StorageWorker::ThreadMain(std::stop_token stop_token) {
     }
 }
 
-void StorageWorker::ProcessTasks() {
+void StorageWorker::ProcessTasks(bool include_latest_search) {
     if (m_context == nullptr) {
         return;
     }
 
-    std::deque<Task> tasks;
+    std::deque<QueuedTask> tasks;
     {
         std::lock_guard lock(m_commandMutex);
         tasks.swap(m_commands);
+        if (include_latest_search && m_latestSearch.has_value()) {
+            tasks.push_back(std::move(*m_latestSearch));
+        }
+        m_latestSearch.reset();
     }
-    for (Task &task : tasks) {
+    for (QueuedTask &queued : tasks) {
         try {
-            task(*m_context);
+            queued.task(*m_context);
+            if (queued.on_success) {
+                PostToUi(std::move(queued.on_success));
+            }
         } catch (const std::exception &error) {
-            ::OutputDebugStringA(error.what());
-            ::OutputDebugStringA("\n");
+            ReportError(std::move(queued.on_error), error.what());
         } catch (...) {
-            ::OutputDebugStringA("Unhandled storage worker exception\n");
+            ReportError(std::move(queued.on_error), "Unhandled storage worker exception");
         }
     }
 }
@@ -279,8 +350,9 @@ void StorageWorker::HandleClipboardUpdate() {
     try {
         saved = m_context->clipboard.OnClipboardUpdate();
     } catch (const std::exception &error) {
-        ::OutputDebugStringA(error.what());
-        ::OutputDebugStringA("\n");
+        ReportError({}, error.what());
+    } catch (...) {
+        ReportError({}, "Unhandled clipboard update exception");
     }
     if (before.ignore_events != m_context->settings.ignore_events ||
         before.ignore_only_next_event != m_context->settings.ignore_only_next_event) {
@@ -292,7 +364,7 @@ void StorageWorker::HandleClipboardUpdate() {
 }
 
 void StorageWorker::HandleShutdown() {
-    ProcessTasks();
+    ProcessTasks(false);
     ::PostQuitMessage(0);
 }
 

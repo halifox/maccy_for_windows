@@ -4,6 +4,7 @@
 #include "Constants.h"
 
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -198,7 +199,7 @@ private:
     void UpdateDependencies();
     void RefreshPinsList();
 
-    void SaveCurrentPage(bool notify = true);
+    void SaveCurrentPage();
     void NotifyOwner(std::uint32_t updateMask = AppConstants::UiUpdate::kSettings);
     void EditSelectedPin();
     void DeleteSelectedPin();
@@ -222,6 +223,7 @@ private:
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;
+    std::uint64_t m_saveGeneration = 0;
     HICON m_windowIcon = nullptr;
 
     AppSettings m_settings{};

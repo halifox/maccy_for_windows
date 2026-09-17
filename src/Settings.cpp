@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cwchar>
+#include <stdexcept>
 #include <sstream>
 
 namespace {
@@ -116,7 +117,6 @@ AppSettings AppSettings::Load(const Database &database) {
     const auto launch = database.GetSetting(L"general.launchAtLogin");
     settings.launch_at_login = launch ? (*launch == L"1") : IsLaunchAtLogin();
     settings.check_for_updates = ReadBool(database, L"general.checkForUpdates", settings.check_for_updates);
-
     settings.clear_on_quit = ReadBool(database, L"advanced.clearOnQuit", settings.clear_on_quit);
     settings.clear_system_clipboard = ReadBool(database, L"advanced.clearSystemClipboard", settings.clear_system_clipboard);
     settings.respect_windows_clipboard_history_markers = ReadBool(
@@ -249,7 +249,6 @@ void AppSettings::Save(const Database &database) const {
     auto transaction = database.BeginTransaction();
         WriteBool(database, L"general.launchAtLogin", launch_at_login);
         WriteBool(database, L"general.checkForUpdates", check_for_updates);
-
         WriteBool(database, L"advanced.clearOnQuit", clear_on_quit);
         WriteBool(database, L"advanced.clearSystemClipboard", clear_system_clipboard);
         WriteBool(
@@ -299,7 +298,9 @@ void AppSettings::Save(const Database &database) const {
         WriteInt(database, L"appearance.windowY", popup_y);
     transaction.Commit();
 
-    SetLaunchAtLogin(launch_at_login);
+    if (!SetLaunchAtLogin(launch_at_login)) {
+        throw std::runtime_error("Unable to update launch-at-login setting");
+    }
 }
 
 std::wstring HotKeyToText(const HotKeyConfig &hotkey) {

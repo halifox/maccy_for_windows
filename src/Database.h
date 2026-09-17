@@ -63,6 +63,8 @@ enum class DatabaseList {
 
 class Database {
 public:
+    using SearchCancellation = std::function<bool()>;
+
     class Transaction {
     public:
         explicit Transaction(const Database& database);
@@ -101,7 +103,8 @@ public:
         std::wstring_view query,
         int search_mode,
         int sort_by,
-        bool pins_at_bottom
+        bool pins_at_bottom,
+        SearchCancellation is_cancelled = {}
     ) const;
     std::optional<ClipboardItem> GetItem(
         sqlite3_int64 id,
@@ -151,8 +154,19 @@ private:
         std::wstring_view body,
         std::wstring_view paths
     ) const;
-    std::vector<sqlite3_int64> SearchIndexIds(std::wstring_view query) const;
-    void ForEachSearchDocument(const std::function<void(const SearchDocument &)> &callback) const;
+    void RebuildSearchDocuments() const;
+    std::vector<sqlite3_int64> SearchIndexIds(
+        std::wstring_view query,
+        const SearchCancellation &is_cancelled = {}
+    ) const;
+    void ForEachRawSearchDocument(
+        const std::function<void(const SearchDocument &)> &callback,
+        const SearchCancellation &is_cancelled
+    ) const;
+    void ForEachSearchDocument(
+        const std::function<void(const SearchDocument &)> &callback,
+        const SearchCancellation &is_cancelled = {}
+    ) const;
 
     sqlite3 *m_db = nullptr;
     std::filesystem::path m_path;
