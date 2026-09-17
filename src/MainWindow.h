@@ -48,6 +48,7 @@ public:
         MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
+        MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
@@ -129,6 +130,7 @@ private:
     void HideMainWindow();
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
+    void HandlePopupActivation(HWND activating_window);
 
     // Tray icon
     void UpdateTrayTooltip();
@@ -156,6 +158,7 @@ private:
     LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
+    LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled);

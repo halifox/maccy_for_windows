@@ -1,4 +1,5 @@
 #include "PreviewWindow.h"
+#include "Constants.h"
 #include "UiFont.h"
 
 #include <dwmapi.h>
@@ -388,6 +389,20 @@ bool PreviewWindow::UpdateFont(UINT dpi) {
 LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     handled = TRUE;
     UpdateFont(HIWORD(wParam));
+    return 0;
+}
+
+LRESULT PreviewWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
+    if (LOWORD(wParam) != WA_INACTIVE) {
+        handled = FALSE;
+        return 0;
+    }
+
+    handled = TRUE;
+    const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
+    if (owner != nullptr) {
+        ::SendMessageW(owner, AppConstants::kPopupActivationMessage, wParam, lParam);
+    }
     return 0;
 }
 

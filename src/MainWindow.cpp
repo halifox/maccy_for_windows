@@ -470,6 +470,20 @@ bool MainWindow::IsOurWindow(HWND window) const {
         (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
 }
 
+void MainWindow::HandlePopupActivation(HWND activating_window) {
+    if (m_modalShowing) {
+        return;
+    }
+
+    const bool outside_popup = !IsOurWindow(activating_window);
+    if (activating_window != nullptr && !m_trayMenuShowing && outside_popup) {
+        m_clipboardMonitor.CaptureTargetWindow(activating_window);
+    }
+    if (m_popupVisible && !m_exiting && !m_trayMenuShowing && outside_popup) {
+        HideMainWindow();
+    }
+}
+
 int MainWindow::PopupWidth() const {
     return std::clamp(m_settings.window_width, kMinimumPopupWidth, kMaximumPopupWidth);
 }
@@ -1476,14 +1490,16 @@ LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
 }
 
 LRESULT MainWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
-    if (LOWORD(wParam) == WA_INACTIVE && !m_modalShowing) {
-        const HWND activating_window = reinterpret_cast<HWND>(lParam);
-        if (activating_window != nullptr && !m_trayMenuShowing && !IsOurWindow(activating_window)) {
-            m_clipboardMonitor.CaptureTargetWindow(activating_window);
-        }
-        if (m_popupVisible && !m_exiting && !m_trayMenuShowing && !IsOurWindow(activating_window)) {
-            HideMainWindow();
-        }
+    if (LOWORD(wParam) == WA_INACTIVE) {
+        HandlePopupActivation(reinterpret_cast<HWND>(lParam));
+    }
+    return 0;
+}
+
+LRESULT MainWindow::OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
+    handled = TRUE;
+    if (LOWORD(wParam) == WA_INACTIVE) {
+        HandlePopupActivation(reinterpret_cast<HWND>(lParam));
     }
     return 0;
 }

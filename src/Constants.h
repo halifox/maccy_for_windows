@@ -20,6 +20,7 @@ namespace AppConstants {
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
+    constexpr UINT kPopupActivationMessage = kCustomMessageBase + 1;
 
     // ========================================================================
     // 定时器ID
