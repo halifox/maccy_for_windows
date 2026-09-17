@@ -10,13 +10,16 @@ from PIL import Image, ImageDraw
 def set_text(text: str):
     try:
         win32clipboard.OpenClipboard()
-        win32clipboard.EmptyClipboard()
-        win32clipboard.SetClipboardText(
-            text,
-            win32clipboard.CF_UNICODETEXT,
-        )
-    finally:
-        win32clipboard.CloseClipboard()
+        try:
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(
+                text,
+                win32clipboard.CF_UNICODETEXT,
+            )
+        finally:
+            win32clipboard.CloseClipboard()
+    except:
+        print("设置数据失败。")
 
 
 def set_image(image: Image.Image):
