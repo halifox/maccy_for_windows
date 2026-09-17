@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -46,6 +47,12 @@ struct ClipboardItem {
     bool has_image = false;
     bool has_files = false;
     std::vector<ClipboardFormatData> data;
+};
+
+enum class PayloadMode {
+    Metadata,
+    Preview,
+    Full,
 };
 
 enum class DatabaseList {
@@ -96,8 +103,13 @@ public:
         int sort_by,
         bool pins_at_bottom
     ) const;
-    std::optional<ClipboardItem> GetItem(sqlite3_int64 id, bool load_payload = false) const;
-    std::vector<ClipboardItem> GetPinnedItems(bool load_payload = false) const;
+    std::optional<ClipboardItem> GetItem(
+        sqlite3_int64 id,
+        PayloadMode payload_mode = PayloadMode::Metadata
+    ) const;
+    std::vector<ClipboardItem> GetPinnedItems(
+        PayloadMode payload_mode = PayloadMode::Metadata
+    ) const;
 
     void MarkCopied(sqlite3_int64 id) const;
     void DeleteItem(sqlite3_int64 id) const;
@@ -132,7 +144,7 @@ private:
     void CreateHistoryTables();
     sqlite3_int64 CountRows(const char *table) const;
     const char *ListTable(DatabaseList list) const;
-    void LoadPayload(ClipboardItem &item) const;
+    void LoadPayload(ClipboardItem &item, PayloadMode payload_mode) const;
     void ReplaceFormats(sqlite3_int64 item_id, const std::vector<ClipboardFormatData> &data) const;
     void ReplaceSearchIndex(
         sqlite3_int64 item_id,
@@ -140,7 +152,7 @@ private:
         std::wstring_view paths
     ) const;
     std::vector<sqlite3_int64> SearchIndexIds(std::wstring_view query) const;
-    std::vector<SearchDocument> LoadSearchDocuments() const;
+    void ForEachSearchDocument(const std::function<void(const SearchDocument &)> &callback) const;
 
     sqlite3 *m_db = nullptr;
     std::filesystem::path m_path;

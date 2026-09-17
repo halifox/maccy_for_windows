@@ -49,7 +49,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     HWND hintLabel = GetDlgItem(IDC_P_CONTENT_HINT);
 
     // 加载当前项目数据
-    std::optional<ClipboardItem> itemOpt = m_database.GetItem(m_itemId, true);
+    std::optional<ClipboardItem> itemOpt = m_database.GetItem(m_itemId, PayloadMode::Full);
     if (!itemOpt) {
         EndDialog(IDCANCEL);
         return TRUE;
@@ -906,7 +906,7 @@ void SettingsWindow::RefreshPinsList() {
         previous_selection = m_pins[current_selected].id;
     }
 
-    m_pins = m_database.GetPinnedItems(false);
+    m_pins = m_database.GetPinnedItems(PayloadMode::Metadata);
     std::stable_sort(m_pins.begin(), m_pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
         if (lhs.first_copied_at != rhs.first_copied_at) {
             return lhs.first_copied_at < rhs.first_copied_at;

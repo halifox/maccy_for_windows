@@ -9,7 +9,6 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -803,46 +802,62 @@ std::vector<sqlite3_int64> Database::SearchIndexIds(std::wstring_view query) con
     return ids;
 }
 
-std::vector<Database::SearchDocument> Database::LoadSearchDocuments() const {
+void Database::ForEachSearchDocument(
+    const std::function<void(const SearchDocument &)> &callback
+) const {
     Statement statement(
         m_db,
         "SELECT item_id, format, name, data FROM clipboard_formats "
         "WHERE format IN (1, 13, 15) "
         "OR name COLLATE NOCASE IN ("
         "'CF_TEXT', 'CF_UNICODETEXT', 'CF_HDROP', 'HTML Format', 'Rich Text Format'"
-        ") ORDER BY item_id ASC, sequence ASC;"
+        ") ORDER BY item_id DESC, sequence ASC;"
     );
-    std::unordered_map<sqlite3_int64, SearchAccumulator> accumulators;
+
+    bool has_item = false;
+    sqlite3_int64 item_id = 0;
+    SearchAccumulator accumulator;
+    const auto emit = [&]() {
+        if (!has_item) {
+            return;
+        }
+        SearchParts parts = SearchPartsFromAccumulator(std::move(accumulator));
+        accumulator = {};
+        if (parts.body.empty() && parts.paths.empty()) {
+            return;
+        }
+        callback(SearchDocument{
+            item_id,
+            std::move(parts.body),
+            std::move(parts.paths)
+        });
+    };
+
     while (true) {
         const int result = sqlite3_step(statement.get());
         if (result == SQLITE_DONE) {
+            emit();
             break;
         }
         if (result != SQLITE_ROW) {
             throw MakeSqliteError(m_db, "Unable to load clipboard search text");
         }
 
+        const sqlite3_int64 row_item_id = sqlite3_column_int64(statement.get(), 0);
+        if (!has_item) {
+            has_item = true;
+            item_id = row_item_id;
+        } else if (row_item_id != item_id) {
+            emit();
+            item_id = row_item_id;
+        }
+
         ClipboardFormatData format;
         format.format = static_cast<UINT>(sqlite3_column_int64(statement.get(), 1));
         format.name = ColumnText16(statement.get(), 2);
         format.bytes = ColumnBlob(statement.get(), 3);
-        AccumulateSearchFormat(accumulators[sqlite3_column_int64(statement.get(), 0)], format);
+        AccumulateSearchFormat(accumulator, format);
     }
-
-    std::vector<SearchDocument> documents;
-    documents.reserve(accumulators.size());
-    for (auto &[id, accumulator] : accumulators) {
-        SearchParts parts = SearchPartsFromAccumulator(std::move(accumulator));
-        if (parts.body.empty() && parts.paths.empty()) {
-            continue;
-        }
-        documents.push_back(SearchDocument{
-            id,
-            std::move(parts.body),
-            std::move(parts.paths)
-        });
-    }
-    return documents;
 }
 
 void Database::Exec(const std::string_view sql) const {
@@ -1144,95 +1159,101 @@ std::vector<ClipboardItem> Database::SearchHistory(
         }
     }
 
-    std::unordered_map<sqlite3_int64, SearchDocument> documents;
-    bool documents_loaded = false;
-    const auto ensureDocuments = [&]() {
-        if (documents_loaded) {
-            return;
-        }
-        for (SearchDocument &document : LoadSearchDocuments()) {
-            documents.emplace(document.id, std::move(document));
-        }
-        documents_loaded = true;
-    };
-    const auto documentFor = [&documents](sqlite3_int64 id) -> const SearchDocument * {
-        const auto found = documents.find(id);
-        return found == documents.end() ? nullptr : &found->second;
-    };
-
-    const auto matchesExact = [&](const ClipboardItem &item) {
-        if (ContainsExact(item.title, query) || ContainsExact(item.preview, query)) {
-            return true;
-        }
-        if (query.size() >= 3) {
-            return indexed_ids.contains(item.id);
-        }
-        ensureDocuments();
-        const SearchDocument *document = documentFor(item.id);
-        return document != nullptr &&
-            (ContainsExact(document->body, query) || ContainsExact(document->paths, query));
-    };
-
     const auto matchesRegex = [&regex](std::wstring_view text) {
         if (!regex) {
             return false;
         }
-        const std::wstring value(text);
-        return std::regex_search(value, *regex);
-    };
-    const auto matchesRegexInItem = [&](const ClipboardItem &item) {
-        if (matchesRegex(item.title) || matchesRegex(item.preview)) {
-            return true;
-        }
-        const SearchDocument *document = documentFor(item.id);
-        return document != nullptr &&
-            (matchesRegex(document->body) || matchesRegex(document->paths));
+        return std::regex_search(text.begin(), text.end(), *regex);
     };
 
-    const auto fuzzyScoreInItem = [&](const ClipboardItem &item) -> std::optional<double> {
-        std::optional<double> best;
-        const auto consider = [&best, &query](std::wstring_view text) {
-            if (const auto score = FuzzyScore(text, query)) {
-                if (!best || *score < *best) {
-                    best = *score;
-                }
+    const auto itemIndexForId = [&all](sqlite3_int64 id) -> std::optional<size_t> {
+        const auto found = std::lower_bound(
+            all.begin(),
+            all.end(),
+            id,
+            [](const ClipboardItem &item, sqlite3_int64 value) {
+                return item.id > value;
             }
-        };
-        consider(item.title);
-        consider(item.preview);
-        const SearchDocument *document = documentFor(item.id);
-        if (document != nullptr) {
-            consider(document->body);
-            consider(document->paths);
+        );
+        if (found == all.end() || found->id != id) {
+            return std::nullopt;
         }
-        return best;
+        return static_cast<size_t>(found - all.begin());
+    };
+
+    const auto considerFuzzyScore = [&query](std::optional<double> &best, std::wstring_view text) {
+        if (const auto score = FuzzyScore(text, query)) {
+            if (!best || *score < *best) {
+                best = *score;
+            }
+        }
     };
 
     std::vector<size_t> selected;
     selected.reserve(all.size());
     const auto selectExact = [&]() {
+        std::vector<unsigned char> document_matches(all.size(), 0);
+        if (query.size() < 3) {
+            ForEachSearchDocument([&](const SearchDocument &document) {
+                const auto index = itemIndexForId(document.id);
+                if (index.has_value()) {
+                    document_matches[*index] = ContainsExact(document.body, query) ||
+                        ContainsExact(document.paths, query);
+                }
+            });
+        }
         for (size_t index = 0; index < all.size(); ++index) {
-            if (matchesExact(all[index])) {
+            const ClipboardItem &item = all[index];
+            const bool matches_metadata = ContainsExact(item.title, query) ||
+                ContainsExact(item.preview, query);
+            const bool matches_payload = query.size() >= 3
+                ? indexed_ids.contains(item.id)
+                : document_matches[index] != 0;
+            if (matches_metadata || matches_payload) {
                 selected.push_back(index);
             }
         }
     };
     const auto selectRegex = [&]() {
-        ensureDocuments();
+        std::vector<unsigned char> document_matches(all.size(), 0);
+        if (regex) {
+            ForEachSearchDocument([&](const SearchDocument &document) {
+                const auto index = itemIndexForId(document.id);
+                if (index.has_value()) {
+                    document_matches[*index] = matchesRegex(document.body) ||
+                        matchesRegex(document.paths);
+                }
+            });
+        }
         for (size_t index = 0; index < all.size(); ++index) {
-            if (matchesRegexInItem(all[index])) {
+            const ClipboardItem &item = all[index];
+            if (matchesRegex(item.title) || matchesRegex(item.preview) ||
+                document_matches[index] != 0) {
                 selected.push_back(index);
             }
         }
     };
     const auto selectFuzzy = [&]() {
-        ensureDocuments();
         fuzzyResults = true;
+        std::vector<std::optional<double>> best_scores(all.size());
+        for (size_t index = 0; index < all.size(); ++index) {
+            considerFuzzyScore(best_scores[index], all[index].title);
+            considerFuzzyScore(best_scores[index], all[index].preview);
+        }
+        ForEachSearchDocument([&](const SearchDocument &document) {
+            const auto index = itemIndexForId(document.id);
+            if (!index.has_value()) {
+                return;
+            }
+            considerFuzzyScore(best_scores[*index], document.body);
+            considerFuzzyScore(best_scores[*index], document.paths);
+        });
+
         std::vector<std::pair<double, size_t>> fuzzy;
         fuzzy.reserve(all.size());
         for (size_t index = 0; index < all.size(); ++index) {
-            if (const auto score = fuzzyScoreInItem(all[index])) {
-                fuzzy.emplace_back(*score, index);
+            if (best_scores[index].has_value()) {
+                fuzzy.emplace_back(*best_scores[index], index);
             }
         }
         std::stable_sort(fuzzy.begin(), fuzzy.end(), [](const auto &lhs, const auto &rhs) {
@@ -1288,7 +1309,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
     return filtered;
 }
 
-std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_payload) const {
+std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, PayloadMode payload_mode) const {
     Statement statement(
         m_db,
         "SELECT id, title, preview, application, COALESCE(pin, ''), pinned, "
@@ -1317,33 +1338,61 @@ std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, bool load_paylo
     item.has_text = sqlite3_column_int(statement.get(), 9) != 0;
     item.has_image = sqlite3_column_int(statement.get(), 10) != 0;
     item.has_files = sqlite3_column_int(statement.get(), 11) != 0;
-    if (load_payload) {
-        LoadPayload(item);
+    if (payload_mode != PayloadMode::Metadata) {
+        LoadPayload(item, payload_mode);
     }
     return item;
 }
 
-std::vector<ClipboardItem> Database::GetPinnedItems(bool load_payload) const {
+std::vector<ClipboardItem> Database::GetPinnedItems(PayloadMode payload_mode) const {
     std::vector<ClipboardItem> pinned;
     for (ClipboardItem &metadata : SearchHistory({}, 0, 0, false)) {
         if (!metadata.pinned) {
             continue;
         }
-        if (!load_payload) {
+        if (payload_mode == PayloadMode::Metadata) {
             pinned.push_back(std::move(metadata));
-        } else if (auto item = GetItem(metadata.id, true)) {
+        } else if (auto item = GetItem(metadata.id, payload_mode)) {
             pinned.push_back(std::move(*item));
         }
     }
     return pinned;
 }
 
-void Database::LoadPayload(ClipboardItem &item) const {
-    Statement statement(
-        m_db,
-        "SELECT format, name, data FROM clipboard_formats "
-        "WHERE item_id = ?1 ORDER BY sequence ASC;"
-    );
+void Database::LoadPayload(ClipboardItem &item, PayloadMode payload_mode) const {
+    if (payload_mode == PayloadMode::Metadata) {
+        return;
+    }
+
+    const char *sql = nullptr;
+    if (payload_mode == PayloadMode::Full) {
+        sql =
+            "SELECT format, name, data FROM clipboard_formats "
+            "WHERE item_id = ?1 ORDER BY sequence ASC;";
+    } else if (item.has_image) {
+        sql =
+            "SELECT format, name, data FROM clipboard_formats "
+            "WHERE item_id = ?1 AND ("
+            "format IN (8, 17) OR name COLLATE NOCASE IN ("
+            "'PNG', 'image/png', 'JFIF', 'image/jpeg', 'TIFF', 'image/tiff', "
+            "'HEIC', 'image/heic')) "
+            "ORDER BY CASE "
+            "WHEN name COLLATE NOCASE IN ('PNG', 'image/png', 'JFIF', 'image/jpeg', "
+            "'TIFF', 'image/tiff', 'HEIC', 'image/heic') THEN 0 "
+            "WHEN format = 17 THEN 1 "
+            "WHEN format = 8 THEN 2 ELSE 3 END, sequence ASC LIMIT 1;";
+    } else if (item.has_text) {
+        sql =
+            "SELECT format, name, data FROM clipboard_formats "
+            "WHERE item_id = ?1 AND (format IN (1, 13) OR name COLLATE NOCASE IN ("
+            "'CF_TEXT', 'CF_UNICODETEXT')) "
+            "ORDER BY CASE WHEN format = 13 OR name COLLATE NOCASE = 'CF_UNICODETEXT' "
+            "THEN 0 ELSE 1 END, sequence ASC LIMIT 1;";
+    } else {
+        return;
+    }
+
+    Statement statement(m_db, sql);
     CheckSqliteResult(m_db, sqlite3_bind_int64(statement.get(), 1, item.id), "Unable to bind item id");
     while (true) {
         const int result = sqlite3_step(statement.get());

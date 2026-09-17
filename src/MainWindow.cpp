@@ -810,7 +810,7 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
     }
     KillTimer(AppConstants::Timer::kPreview);
     try {
-        const auto item = m_database.GetItem(item_id, true);
+        const auto item = m_database.GetItem(item_id, PayloadMode::Preview);
         if (!item) {
             HidePreview();
             return;
@@ -875,7 +875,7 @@ void MainWindow::PasteItem(int index) {
             (GetKeyState(VK_MENU) & 0x8000) != 0,
             (GetKeyState(VK_SHIFT) & 0x8000) != 0
         );
-        const auto item = m_database.GetItem(id, true);
+        const auto item = m_database.GetItem(id, PayloadMode::Full);
         if (!item || !m_clipboardMonitor.SetClipboardItem(*item, plain)) {
             return;
         }

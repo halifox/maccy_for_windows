@@ -7,13 +7,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cwctype>
 #include <cstring>
 #include <ctime>
+#include <limits>
 #include <string>
 
 #include <atlbase.h>
 
 namespace {
+
+constexpr UINT kFallbackPreviewWidth = 194;
+constexpr UINT kFallbackPreviewHeight = 98;
+constexpr std::uint64_t kMaximumSourcePixels = 64ULL * 1024ULL * 1024ULL;
+constexpr size_t kMaximumPreviewTextCharacters = 4ULL * 1024ULL * 1024ULL;
 
 void ApplySystemRoundedCorners(HWND window) {
     const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
@@ -39,7 +47,10 @@ std::wstring FullText(const ClipboardItem &item) {
             continue;
         }
         const auto *text = reinterpret_cast<const wchar_t *>(data.bytes.data());
-        const size_t count = data.bytes.size() / sizeof(wchar_t);
+        const size_t count = std::min(
+            data.bytes.size() / sizeof(wchar_t),
+            kMaximumPreviewTextCharacters
+        );
         size_t length = 0;
         while (length < count && text[length] != L'\0') {
             ++length;
@@ -51,9 +62,10 @@ std::wstring FullText(const ClipboardItem &item) {
         if (!IsAnsiText(data) || data.bytes.empty()) {
             continue;
         }
-        const int source_length = static_cast<int>(
-            std::min<size_t>(data.bytes.size(), static_cast<size_t>(INT_MAX))
-        );
+        const int source_length = static_cast<int>(std::min<size_t>(
+            data.bytes.size(),
+            std::min(kMaximumPreviewTextCharacters, static_cast<size_t>(INT_MAX))
+        ));
         const int length = MultiByteToWideChar(
             CP_ACP,
             0,
@@ -84,45 +96,150 @@ std::wstring FullText(const ClipboardItem &item) {
     return item.preview;
 }
 
-HBITMAP CreateBitmapFromDib(const std::vector<unsigned char> &bytes) {
+bool IsEncodedImageName(std::wstring_view name) {
+    constexpr std::wstring_view names[] = {
+        L"PNG",
+        L"image/png",
+        L"JFIF",
+        L"image/jpeg",
+        L"TIFF",
+        L"image/tiff",
+        L"HEIC",
+        L"image/heic",
+    };
+    return std::any_of(names, names + ARRAYSIZE(names), [name](std::wstring_view expected) {
+        if (name.size() != expected.size()) {
+            return false;
+        }
+        for (size_t index = 0; index < name.size(); ++index) {
+            if (std::towlower(name[index]) != std::towlower(expected[index])) {
+                return false;
+            }
+        }
+        return true;
+    });
+}
+
+bool IsDib(const ClipboardFormatData &data) {
+    return data.format == CF_DIBV5 || data.format == CF_DIB;
+}
+
+bool FitSize(
+    UINT source_width,
+    UINT source_height,
+    UINT maximum_width,
+    UINT maximum_height,
+    UINT &width,
+    UINT &height
+) {
+    if (source_width == 0 || source_height == 0 || maximum_width == 0 || maximum_height == 0) {
+        return false;
+    }
+
+    const double scale = std::min({
+        1.0,
+        static_cast<double>(maximum_width) / source_width,
+        static_cast<double>(maximum_height) / source_height,
+    });
+    width = std::max(1u, static_cast<UINT>(std::floor(source_width * scale)));
+    height = std::max(1u, static_cast<UINT>(std::floor(source_height * scale)));
+    return static_cast<std::uint64_t>(width) * height <= kMaximumSourcePixels;
+}
+
+bool ReadDibLayout(
+    const std::vector<unsigned char> &bytes,
+    BITMAPINFOHEADER &header,
+    size_t &bits_offset,
+    UINT &width,
+    UINT &height
+) {
     if (bytes.size() < sizeof(BITMAPINFOHEADER)) {
+        return false;
+    }
+    std::memcpy(&header, bytes.data(), sizeof(header));
+    if (header.biSize < sizeof(BITMAPINFOHEADER) ||
+        header.biSize > bytes.size() ||
+        header.biWidth <= 0 || header.biHeight == 0 ||
+        header.biPlanes != 1 ||
+        (header.biBitCount != 1 && header.biBitCount != 4 &&
+         header.biBitCount != 8 && header.biBitCount != 16 &&
+         header.biBitCount != 24 && header.biBitCount != 32) ||
+        (header.biCompression != BI_RGB && header.biCompression != BI_BITFIELDS)) {
+        return false;
+    }
+
+    std::uint64_t offset = header.biSize;
+    if (header.biBitCount <= 8) {
+        const std::uint64_t colors = header.biClrUsed != 0
+            ? header.biClrUsed
+            : (1ULL << header.biBitCount);
+        offset += colors * sizeof(RGBQUAD);
+    } else if (header.biCompression == BI_BITFIELDS &&
+               header.biSize == sizeof(BITMAPINFOHEADER)) {
+        offset += 3 * sizeof(DWORD);
+    }
+    if (offset >= bytes.size()) {
+        return false;
+    }
+
+    const std::uint64_t source_width = static_cast<std::uint64_t>(header.biWidth);
+    const std::uint64_t source_height = static_cast<std::uint64_t>(
+        header.biHeight < 0 ? -static_cast<LONGLONG>(header.biHeight) : header.biHeight
+    );
+    if (source_width == 0 || source_height == 0 ||
+        source_width * source_height > kMaximumSourcePixels) {
+        return false;
+    }
+
+    const std::uint64_t row_bits = source_width * header.biBitCount;
+    const std::uint64_t row_bytes = ((row_bits + 31) / 32) * 4;
+    const std::uint64_t image_bytes = row_bytes * source_height;
+    if (image_bytes > bytes.size() - offset) {
+        return false;
+    }
+
+    bits_offset = static_cast<size_t>(offset);
+    width = static_cast<UINT>(source_width);
+    height = static_cast<UINT>(source_height);
+    return true;
+}
+
+HBITMAP CreateOutputBitmap(UINT width, UINT height, void **bits) {
+    if (width == 0 || height == 0 ||
+        static_cast<std::uint64_t>(width) * height > kMaximumSourcePixels) {
+        return nullptr;
+    }
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(info.bmiHeader);
+    info.bmiHeader.biWidth = static_cast<LONG>(width);
+    info.bmiHeader.biHeight = -static_cast<LONG>(height);
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    return ::CreateDIBSection(nullptr, &info, DIB_RGB_COLORS, bits, nullptr, 0);
+}
+
+HBITMAP CreateBitmapFromDib(
+    const std::vector<unsigned char> &bytes,
+    UINT maximum_width,
+    UINT maximum_height
+) {
+    BITMAPINFOHEADER header{};
+    size_t bits_offset = 0;
+    UINT source_width = 0;
+    UINT source_height = 0;
+    if (!ReadDibLayout(bytes, header, bits_offset, source_width, source_height)) {
         return nullptr;
     }
 
-    const auto *header = reinterpret_cast<const BITMAPINFOHEADER *>(bytes.data());
-    if (header->biSize < sizeof(BITMAPINFOHEADER) ||
-        header->biSize > bytes.size() ||
-        header->biWidth <= 0 || header->biHeight == 0 ||
-        header->biPlanes != 1 ||
-        (header->biBitCount != 1 && header->biBitCount != 4 &&
-         header->biBitCount != 8 && header->biBitCount != 16 &&
-         header->biBitCount != 24 && header->biBitCount != 32)) {
-        return nullptr;
-    }
-
-    size_t bits_offset = header->biSize;
-    if (header->biBitCount <= 8) {
-        const DWORD colors = header->biClrUsed != 0
-            ? header->biClrUsed
-            : (1u << header->biBitCount);
-        bits_offset += static_cast<size_t>(colors) * sizeof(RGBQUAD);
-    } else if (header->biCompression == BI_BITFIELDS &&
-               header->biSize == sizeof(BITMAPINFOHEADER)) {
-        bits_offset += 3 * sizeof(DWORD);
-    }
-    if (bits_offset >= bytes.size()) {
+    UINT width = 0;
+    UINT height = 0;
+    if (!FitSize(source_width, source_height, maximum_width, maximum_height, width, height)) {
         return nullptr;
     }
 
     void *destination = nullptr;
-    HBITMAP bitmap = ::CreateDIBSection(
-        nullptr,
-        reinterpret_cast<const BITMAPINFO *>(bytes.data()),
-        DIB_RGB_COLORS,
-        &destination,
-        nullptr,
-        0
-    );
+    HBITMAP bitmap = CreateOutputBitmap(width, height, &destination);
     if (bitmap == nullptr || destination == nullptr) {
         if (bitmap != nullptr) {
             ::DeleteObject(bitmap);
@@ -130,18 +247,43 @@ HBITMAP CreateBitmapFromDib(const std::vector<unsigned char> &bytes) {
         return nullptr;
     }
 
-    const size_t width = static_cast<size_t>(header->biWidth);
-    const size_t height = static_cast<size_t>(
-        header->biHeight < 0 ? -static_cast<LONGLONG>(header->biHeight) : header->biHeight
+    HDC dc = ::CreateCompatibleDC(nullptr);
+    if (dc == nullptr) {
+        ::DeleteObject(bitmap);
+        return nullptr;
+    }
+    const HGDIOBJ previous = ::SelectObject(dc, bitmap);
+    ::SetStretchBltMode(dc, HALFTONE);
+    ::SetBrushOrgEx(dc, 0, 0, nullptr);
+    const int result = ::StretchDIBits(
+        dc,
+        0,
+        0,
+        static_cast<int>(width),
+        static_cast<int>(height),
+        0,
+        0,
+        static_cast<int>(source_width),
+        static_cast<int>(source_height),
+        bytes.data() + bits_offset,
+        reinterpret_cast<const BITMAPINFO *>(bytes.data()),
+        DIB_RGB_COLORS,
+        SRCCOPY
     );
-    const size_t row_bytes = ((width * header->biBitCount + 31u) / 32u) * 4u;
-    const size_t image_bytes = row_bytes * height;
-    const size_t available = bytes.size() - bits_offset;
-    std::memcpy(destination, bytes.data() + bits_offset, std::min(image_bytes, available));
+    ::SelectObject(dc, previous);
+    ::DeleteDC(dc);
+    if (result == GDI_ERROR) {
+        ::DeleteObject(bitmap);
+        return nullptr;
+    }
     return bitmap;
 }
 
-HBITMAP CreateBitmapFromEncoded(const std::vector<unsigned char> &bytes) {
+HBITMAP CreateBitmapFromEncoded(
+    const std::vector<unsigned char> &bytes,
+    UINT maximum_width,
+    UINT maximum_height
+) {
     if (bytes.empty()) {
         return nullptr;
     }
@@ -189,10 +331,39 @@ HBITMAP CreateBitmapFromEncoded(const std::vector<unsigned char> &bytes) {
         return nullptr;
     }
 
+    UINT source_width = 0;
+    UINT source_height = 0;
+    if (FAILED(frame->GetSize(&source_width, &source_height)) ||
+        source_width == 0 || source_height == 0 ||
+        static_cast<std::uint64_t>(source_width) * source_height > kMaximumSourcePixels) {
+        return nullptr;
+    }
+
+    UINT width = 0;
+    UINT height = 0;
+    if (!FitSize(source_width, source_height, maximum_width, maximum_height, width, height)) {
+        return nullptr;
+    }
+
+    IWICBitmapSource *source = frame;
+    CComPtr<IWICBitmapScaler> scaler;
+    if (width != source_width || height != source_height) {
+        if (FAILED(factory->CreateBitmapScaler(&scaler)) ||
+            FAILED(scaler->Initialize(
+                frame,
+                width,
+                height,
+                WICBitmapInterpolationModeFant
+            ))) {
+            return nullptr;
+        }
+        source = scaler;
+    }
+
     CComPtr<IWICFormatConverter> converter;
     if (FAILED(factory->CreateFormatConverter(&converter)) ||
         FAILED(converter->Initialize(
-            frame,
+            source,
             GUID_WICPixelFormat32bppPBGRA,
             WICBitmapDitherTypeNone,
             nullptr,
@@ -202,29 +373,12 @@ HBITMAP CreateBitmapFromEncoded(const std::vector<unsigned char> &bytes) {
         return nullptr;
     }
 
-    UINT width = 0;
-    UINT height = 0;
     if (FAILED(converter->GetSize(&width, &height)) || width == 0 || height == 0) {
         return nullptr;
     }
 
-    BITMAPINFO info{};
-    info.bmiHeader.biSize = sizeof(info.bmiHeader);
-    info.bmiHeader.biWidth = static_cast<LONG>(width);
-    info.bmiHeader.biHeight = -static_cast<LONG>(height);
-    info.bmiHeader.biPlanes = 1;
-    info.bmiHeader.biBitCount = 32;
-    info.bmiHeader.biCompression = BI_RGB;
-
     void *bits = nullptr;
-    HBITMAP bitmap = ::CreateDIBSection(
-        nullptr,
-        &info,
-        DIB_RGB_COLORS,
-        &bits,
-        nullptr,
-        0
-    );
+    HBITMAP bitmap = CreateOutputBitmap(width, height, &bits);
     if (bitmap == nullptr || bits == nullptr) {
         if (bitmap != nullptr) {
             ::DeleteObject(bitmap);
@@ -232,8 +386,15 @@ HBITMAP CreateBitmapFromEncoded(const std::vector<unsigned char> &bytes) {
         return nullptr;
     }
 
-    const UINT stride = width * 4u;
-    const UINT buffer_size = stride * height;
+    const std::uint64_t stride_value = static_cast<std::uint64_t>(width) * 4;
+    const std::uint64_t buffer_size_value = stride_value * height;
+    if (stride_value > std::numeric_limits<UINT>::max() ||
+        buffer_size_value > std::numeric_limits<UINT>::max()) {
+        ::DeleteObject(bitmap);
+        return nullptr;
+    }
+    const UINT stride = static_cast<UINT>(stride_value);
+    const UINT buffer_size = static_cast<UINT>(buffer_size_value);
     if (FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(bits)))) {
         ::DeleteObject(bitmap);
         return nullptr;
@@ -241,17 +402,23 @@ HBITMAP CreateBitmapFromEncoded(const std::vector<unsigned char> &bytes) {
     return bitmap;
 }
 
-HBITMAP CreateBitmapForItem(const ClipboardItem &item) {
+HBITMAP CreateBitmapForItem(
+    const ClipboardItem &item,
+    UINT maximum_width,
+    UINT maximum_height
+) {
     for (const ClipboardFormatData &data : item.data) {
-        if (data.format == CF_DIBV5 || data.format == CF_DIB) {
-            if (HBITMAP bitmap = CreateBitmapFromDib(data.bytes)) {
+        if (IsEncodedImageName(data.name)) {
+            if (HBITMAP bitmap = CreateBitmapFromEncoded(data.bytes, maximum_width, maximum_height)) {
                 return bitmap;
             }
         }
     }
     for (const ClipboardFormatData &data : item.data) {
-        if (HBITMAP bitmap = CreateBitmapFromEncoded(data.bytes)) {
-            return bitmap;
+        if (IsDib(data)) {
+            if (HBITMAP bitmap = CreateBitmapFromDib(data.bytes, maximum_width, maximum_height)) {
+                return bitmap;
+            }
         }
     }
     return nullptr;
@@ -306,7 +473,17 @@ bool PreviewWindow::LoadBitmapForItem(const ClipboardItem &item) {
     if (!item.has_image) {
         return false;
     }
-    m_bitmap = CreateBitmapForItem(item);
+    RECT client{};
+    if (m_image != nullptr) {
+        ::GetClientRect(m_image, &client);
+    }
+    const UINT maximum_width = client.right > client.left
+        ? static_cast<UINT>(client.right - client.left)
+        : kFallbackPreviewWidth;
+    const UINT maximum_height = client.bottom > client.top
+        ? static_cast<UINT>(client.bottom - client.top)
+        : kFallbackPreviewHeight;
+    m_bitmap = CreateBitmapForItem(item, maximum_width, maximum_height);
     if (m_bitmap == nullptr) {
         return false;
     }
@@ -346,6 +523,15 @@ void PreviewWindow::SetItem(const ClipboardItem &item) {
 
 void PreviewWindow::Hide() {
     if (m_hWnd != nullptr) {
+        ClearBitmap();
+        if (m_text != nullptr) {
+            ::SetWindowTextW(m_text, L"");
+        }
+        if (m_status != nullptr) {
+            ::SetWindowTextW(m_status, L"");
+        }
+        ::ShowWindow(m_image, SW_HIDE);
+        ::ShowWindow(m_text, SW_HIDE);
         ::ShowWindow(m_hWnd, SW_HIDE);
     }
 }
