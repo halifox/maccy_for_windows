@@ -12,13 +12,17 @@ macOS 上的 Maccy 非常好用：极简、高效的界面让剪贴板历史随�
 
 因此，我决定自己动手开发一个 Windows 版本的剪贴板历史工具，保留简洁的交互，并将低常驻内存作为核心设计目标。
 
-## 当前方向
+## 与原版 Maccy 的差异
 
-- 快速呼出剪贴板历史并搜索内容
-- 支持系统托盘运行和快捷键操作
-- 支持置顶、删除、历史记录管理等常用操作
-- 使用原生 Windows UI、WTL、C++20 和 SQLite 构建
-- 按需加载剪贴板数据，减少长期运行时的内存占用
+- Maccy 使用 macOS 菜单栏；本项目使用 Windows 系统托盘和全局快捷键。
+- Maccy 可以在菜单栏图标旁显示最近复制的内容；Windows 托盘无法提供同样的内联文本展示，因此该选项在本项目中不可用。
+- Maccy 定时检查剪贴板；本项目使用 Windows `WM_CLIPBOARDUPDATE` 事件监听。
+- Maccy 主要搜索生成后的项目标题；本项目还会搜索保存的文本正文和文件路径。支持精确、模糊、正则和混合模式，精确搜索使用 FTS5 加速，图片本身不参与搜索。
+- Maccy 会尝试使用 OCR 生成图片标题；本项目不进行 OCR，图片仅作为图片项目保存和预览。
+- Maccy 使用 macOS Pasteboard 和 SwiftData；本项目使用 Windows 原生剪贴板格式和 SQLite BLOB。
+- Maccy 按 Bundle ID 和 Pasteboard 类型忽略；本项目按 Windows 应用程序路径/文件名和剪贴板格式名忽略，并支持正则表达式。
+- 本项目不包含 Universal Clipboard、iCloud 或 macOS App Intents 等 macOS 集成。
+- 本项目新增“遵循 Windows 剪贴板历史记录标记”选项，来源明确标记为不应进入历史的内容将不会被记录。
 
 ## 许可证
 
