@@ -157,8 +157,20 @@ AppSettings AppSettings::Load(const Database &database) {
         0,
         1
     ));
-    settings.window_width = ReadInt(database, L"appearance.windowWidth", settings.window_width, 320, 1600);
-    settings.window_height = ReadInt(database, L"appearance.windowHeight", settings.window_height, 260, 1200);
+    settings.window_width = ReadInt(
+        database,
+        L"appearance.windowWidth",
+        settings.window_width,
+        AppConstants::UI::kMinimumPopupWidth,
+        AppConstants::UI::kMaximumPopupWidth
+    );
+    settings.window_height = ReadInt(
+        database,
+        L"appearance.windowHeight",
+        settings.window_height,
+        AppConstants::UI::kMinimumPopupHeight,
+        AppConstants::UI::kMaximumPopupHeight
+    );
     settings.image_max_height = ReadInt(database, L"appearance.imageMaxHeight", settings.image_max_height, 1, 200);
     settings.open_preview_automatically = ReadBool(
         database,

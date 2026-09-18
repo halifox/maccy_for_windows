@@ -6,7 +6,7 @@
 #include <thread>
 #include <vector>
 
-#include "Database.h"
+#include "ClipboardData.h"
 
 struct PreviewBitmap {
     HBITMAP handle = nullptr;

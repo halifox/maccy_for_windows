@@ -1,5 +1,6 @@
 #include "HistoryRenderer.h"
 #include "UiFont.h"
+#include "ClipboardRules.h"
 
 #include <algorithm>
 #include <array>
@@ -22,33 +23,6 @@ constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
-
-std::wstring Lower(std::wstring_view value) {
-    std::wstring result;
-    result.reserve(value.size());
-    for (const wchar_t character : value) {
-        result.push_back(static_cast<wchar_t>(std::towlower(character)));
-    }
-    return result;
-}
-
-std::wstring Trim(std::wstring value) {
-    const auto is_space = [](wchar_t character) { return std::iswspace(character) != 0; };
-    const auto first = std::find_if_not(value.begin(), value.end(), is_space);
-    const auto last = std::find_if_not(value.rbegin(), value.rend(), is_space).base();
-    if (first >= last) {
-        return {};
-    }
-    return std::wstring(first, last);
-}
-
-std::wstring NormalizePath(std::wstring value) {
-    value = Lower(Trim(std::move(value)));
-    while (!value.empty() && (value.back() == L'\\' || value.back() == L'/')) {
-        value.pop_back();
-    }
-    return value;
-}
 
 std::wstring ReadWindowText(HWND window) {
     if (window == nullptr) {
@@ -181,61 +155,12 @@ void HistoryRenderer::PrepareHistory(const std::vector<ClipboardItem> &items) {
     }
 }
 
-std::wstring HistoryRenderer::MakeTitle(std::wstring value, bool show_special_symbols) {
-    value.resize(std::min<size_t>(value.size(), 1000));
-    if (!show_special_symbols) {
-        return Trim(std::move(value));
-    }
-
-    size_t leading = 0;
-    while (leading < value.size() && value[leading] == L' ') {
-        value[leading++] = L'\x00b7';
-    }
-    size_t trailing = value.size();
-    while (trailing > 0 && value[trailing - 1] == L' ') {
-        value[--trailing] = L'\x00b7';
-    }
-
-    std::wstring result;
-    result.reserve(value.size() + 8);
-    for (const wchar_t character : value) {
-        switch (character) {
-        case L'\r':
-            break;
-        case L'\n':
-            result += L'\x23ce';
-            break;
-        case L'\t':
-            result += L'\x21e5';
-            break;
-        default:
-            result += character;
-            break;
-        }
-    }
-    return result;
-}
-
-std::wstring HistoryRenderer::PreviewText(std::wstring_view text) {
-    constexpr size_t kPreviewCharacters = 180;
-    std::wstring preview;
-    preview.reserve(std::min(text.size(), kPreviewCharacters + 3));
-    for (const wchar_t character : text) {
-        if (preview.size() >= kPreviewCharacters) {
-            preview += L"...";
-            break;
-        }
-        preview += (character < L' ' && character != L'\t') ? L' ' : character;
-    }
-    return preview;
-}
-
 std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
     if (!item.title.empty()) {
         return item.title;
     }
     if (!item.preview.empty()) {
-        return PreviewText(item.preview);
+        return ClipboardRules::PreviewText(item.preview);
     }
     if (item.has_image) {
         return L"[图片]";
@@ -320,8 +245,8 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
         return ranges;
     }
     const auto add_exact = [&]() {
-        const std::wstring lower_text = Lower(text);
-        const std::wstring lower_query = Lower(searchQuery);
+        const std::wstring lower_text = ClipboardRules::Lower(text);
+        const std::wstring lower_query = ClipboardRules::Lower(searchQuery);
         if (lower_query.empty()) {
             return;
         }
@@ -346,8 +271,8 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
         }
     };
     const auto add_fuzzy = [&]() {
-        const std::wstring lower_text = Lower(text);
-        const std::wstring lower_query = Lower(searchQuery);
+        const std::wstring lower_text = ClipboardRules::Lower(text);
+        const std::wstring lower_query = ClipboardRules::Lower(searchQuery);
         size_t text_position = 0;
         size_t start = std::wstring::npos;
         size_t last = std::wstring::npos;
@@ -484,7 +409,7 @@ HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
     if (application.empty()) {
         return nullptr;
     }
-    const std::wstring key = NormalizePath(std::wstring(application));
+    const std::wstring key = ClipboardRules::NormalizePath(std::wstring(application));
     if (const auto found = m_iconCache.find(key); found != m_iconCache.end()) {
         m_iconLru.splice(m_iconLru.begin(), m_iconLru, found->second.lru);
         return found->second.icon;
@@ -621,7 +546,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
 
 void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
                                     int activeFooter,
-                                    const std::array<HWND, 4>& footerButtons) {
+                                    const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons) {
     auto it = std::find(footerButtons.begin(), footerButtons.end(), draw->hwndItem);
     const int index = it == footerButtons.end() ? -1 : static_cast<int>(it - footerButtons.begin());
     const bool selected = index >= 0 && index == activeFooter;

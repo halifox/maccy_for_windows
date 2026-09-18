@@ -1,4 +1,5 @@
 #include "ClipboardMonitor.h"
+#include "ClipboardRules.h"
 #include "Constants.h"
 
 #include <algorithm>
@@ -15,8 +16,6 @@
 
 namespace {
 
-constexpr size_t kMaximumClipboardCharacters = 1024 * 1024;
-constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
 constexpr wchar_t kExcludeClipboardContentFromMonitorProcessing[] =
     L"ExcludeClipboardContentFromMonitorProcessing";
 constexpr wchar_t kCanIncludeInClipboardHistory[] = L"CanIncludeInClipboardHistory";
@@ -98,63 +97,6 @@ private:
     HGLOBAL m_handle = nullptr;
 };
 
-std::wstring Lower(std::wstring_view value) {
-    std::wstring result;
-    result.reserve(value.size());
-    for (const wchar_t character : value) {
-        result.push_back(static_cast<wchar_t>(::towlower(character)));
-    }
-    return result;
-}
-
-std::wstring Trim(std::wstring value) {
-    const auto is_space = [](wchar_t character) { return ::iswspace(character) != 0; };
-    const auto first = std::find_if_not(value.begin(), value.end(), is_space);
-    const auto last = std::find_if_not(value.rbegin(), value.rend(), is_space).base();
-    if (first >= last) {
-        return {};
-    }
-    return std::wstring(first, last);
-}
-
-std::wstring NormalizePath(std::wstring value) {
-    value = Lower(Trim(std::move(value)));
-    while (!value.empty() && (value.back() == L'\\' || value.back() == L'/')) {
-        value.pop_back();
-    }
-    return value;
-}
-
-bool EqualInsensitive(std::wstring_view lhs, std::wstring_view rhs) {
-    return Lower(lhs) == Lower(rhs);
-}
-
-std::wstring FormatName(UINT format) {
-    switch (format) {
-    case CF_UNICODETEXT:
-        return L"CF_UNICODETEXT";
-    case CF_TEXT:
-        return L"CF_TEXT";
-    case CF_HDROP:
-        return L"CF_HDROP";
-    case CF_DIB:
-        return L"CF_DIB";
-    case CF_DIBV5:
-        return L"CF_DIBV5";
-    case CF_BITMAP:
-        return L"CF_BITMAP";
-    default:
-        break;
-    }
-
-    std::array<wchar_t, 256> name{};
-    const int length = GetClipboardFormatNameW(format, name.data(), static_cast<int>(name.size()));
-    if (length > 0) {
-        return std::wstring(name.data(), static_cast<size_t>(length));
-    }
-    return L"FORMAT_" + std::to_wstring(format);
-}
-
 std::optional<DWORD> ReadClipboardDword(const wchar_t *format_name) {
     const UINT format = RegisterClipboardFormatW(format_name);
     if (format == 0) {
@@ -187,22 +129,6 @@ bool IsExcludedByWindowsClipboardHistoryMarker() {
     return can_include.has_value() && *can_include == 0;
 }
 
-bool IsHtmlOrRtf(std::wstring_view name) {
-    return EqualInsensitive(name, L"HTML Format") || EqualInsensitive(name, L"Rich Text Format");
-}
-
-bool IsImageFormat(UINT format, std::wstring_view name) {
-    return format == CF_DIB || format == CF_DIBV5 || format == CF_BITMAP ||
-        EqualInsensitive(name, L"PNG") || EqualInsensitive(name, L"image/png") ||
-        EqualInsensitive(name, L"JFIF") || EqualInsensitive(name, L"image/jpeg") ||
-        EqualInsensitive(name, L"TIFF") || EqualInsensitive(name, L"image/tiff") ||
-        EqualInsensitive(name, L"HEIC") || EqualInsensitive(name, L"image/heic");
-}
-
-bool IsTextFormat(UINT format, std::wstring_view name) {
-    return format == CF_UNICODETEXT || format == CF_TEXT || IsHtmlOrRtf(name);
-}
-
 std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
     if (bitmap == nullptr) {
         return std::nullopt;
@@ -219,11 +145,11 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
     const std::uint64_t pixel_count = width * height;
     const std::uint64_t pixel_bytes = width * sizeof(DWORD) * height;
     const std::uint64_t total_bytes = sizeof(BITMAPINFOHEADER) + pixel_bytes;
-    if (pixel_count == 0 || pixel_count > 64ULL * 1024ULL * 1024ULL ||
+    if (pixel_count == 0 || pixel_count > ClipboardRules::Limits::kMaximumImagePixels ||
         width > static_cast<std::uint64_t>(std::numeric_limits<LONG>::max()) ||
         height > static_cast<std::uint64_t>(std::numeric_limits<LONG>::max()) ||
         pixel_bytes > std::numeric_limits<DWORD>::max() ||
-        total_bytes > kMaximumClipboardBytes ||
+        total_bytes > ClipboardRules::Limits::kMaximumClipboardBytes ||
         total_bytes > std::numeric_limits<size_t>::max()) {
         return std::nullopt;
     }
@@ -260,41 +186,6 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
     return result;
 }
 
-std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
-    value.resize(std::min<size_t>(value.size(), 1000));
-    if (!show_special_symbols) {
-        return Trim(std::move(value));
-    }
-
-    size_t leading = 0;
-    while (leading < value.size() && value[leading] == L' ') {
-        value[leading++] = L'\x00b7';
-    }
-    size_t trailing = value.size();
-    while (trailing > 0 && value[trailing - 1] == L' ') {
-        value[--trailing] = L'\x00b7';
-    }
-
-    std::wstring result;
-    result.reserve(value.size() + 8);
-    for (const wchar_t character : value) {
-        switch (character) {
-        case L'\r':
-            break;
-        case L'\n':
-            result += L'\x23ce';
-            break;
-        case L'\t':
-            result += L'\x21e5';
-            break;
-        default:
-            result += character;
-            break;
-        }
-    }
-    return result;
-}
-
 class ClipboardFingerprint {
 public:
     void Add(const std::wstring& name, UINT format, const unsigned char* bytes, size_t count) noexcept {
@@ -327,8 +218,10 @@ bool IsRedundantBitmapFormat(UINT format, bool has_dib, bool has_dibv5) noexcept
 
 } // namespace
 
-ClipboardMonitor::ClipboardMonitor(Database& database, AppSettings& settings)
-    : m_database(database), m_settings(settings) {}
+ClipboardMonitor::ClipboardMonitor(AppSettings& settings, IgnoreLists ignored_lists)
+    : m_settings(settings) {
+    ReloadIgnoreLists(std::move(ignored_lists));
+}
 
 ClipboardMonitor::~ClipboardMonitor() {
     Shutdown();
@@ -349,11 +242,11 @@ void ClipboardMonitor::Shutdown() {
     m_owner = nullptr;
 }
 
-void ClipboardMonitor::ReloadIgnoreLists() {
-    m_ignoredApps = m_database.GetList(DatabaseList::IgnoredApplications);
-    m_ignoredFormats = m_database.GetList(DatabaseList::IgnoredFormats);
+void ClipboardMonitor::ReloadIgnoreLists(IgnoreLists ignored_lists) {
+    m_ignoredApps = std::move(ignored_lists[0]);
+    m_ignoredFormats = std::move(ignored_lists[1]);
     m_ignoredRegexpPatterns.clear();
-    for (const std::wstring& pattern : m_database.GetList(DatabaseList::IgnoredRegexps)) {
+    for (const std::wstring& pattern : ignored_lists[2]) {
         try {
             m_ignoredRegexpPatterns.emplace_back(pattern);
         } catch (const std::regex_error&) {
@@ -389,7 +282,7 @@ bool ClipboardMonitor::ShouldIgnoreFormat(std::wstring_view format) const {
         m_ignoredFormats.begin(),
         m_ignoredFormats.end(),
         [&format](const std::wstring& configured) {
-            return EqualInsensitive(format, configured);
+            return ClipboardRules::EqualInsensitive(format, configured);
         }
     );
 }
@@ -429,8 +322,8 @@ std::wstring ClipboardMonitor::GetSourceApplication() {
 }
 
 bool ClipboardMonitor::MatchesApplication(std::wstring_view actual, std::wstring_view configured) {
-    const std::wstring actual_path = NormalizePath(std::wstring(actual));
-    const std::wstring configured_path = NormalizePath(std::wstring(configured));
+    const std::wstring actual_path = ClipboardRules::NormalizePath(std::wstring(actual));
+    const std::wstring configured_path = ClipboardRules::NormalizePath(std::wstring(configured));
     if (actual_path.empty() || configured_path.empty()) {
         return false;
     }
@@ -449,7 +342,7 @@ std::wstring ClipboardMonitor::ExtractClipboardText() {
     }
     const SIZE_T storage_bytes = GlobalSize(data);
     const SIZE_T capacity = storage_bytes / sizeof(wchar_t);
-    if (capacity == 0 || capacity > kMaximumClipboardCharacters + 1) {
+    if (capacity == 0 || capacity > ClipboardRules::Limits::kMaximumClipboardCharacters + 1) {
         return {};
     }
     const GlobalLockGuard lock(data);
@@ -462,7 +355,7 @@ std::wstring ClipboardMonitor::ExtractClipboardText() {
         ++length;
     }
     std::wstring result;
-    if (length < capacity && length <= kMaximumClipboardCharacters) {
+    if (length < capacity && length <= ClipboardRules::Limits::kMaximumClipboardCharacters) {
         result.assign(text, length);
     }
     return result;
@@ -474,7 +367,7 @@ std::wstring ClipboardMonitor::ExtractClipboardAnsiText() {
         return {};
     }
     const SIZE_T storage_bytes = GlobalSize(data);
-    if (storage_bytes == 0 || storage_bytes > kMaximumClipboardCharacters + 1) {
+    if (storage_bytes == 0 || storage_bytes > ClipboardRules::Limits::kMaximumClipboardCharacters + 1) {
         return {};
     }
     const GlobalLockGuard lock(data);
@@ -487,7 +380,7 @@ std::wstring ClipboardMonitor::ExtractClipboardAnsiText() {
         ++length;
     }
     std::wstring result;
-    if (length > 0 && length <= kMaximumClipboardCharacters) {
+    if (length > 0 && length <= ClipboardRules::Limits::kMaximumClipboardCharacters) {
         const int wide_length = MultiByteToWideChar(
             CP_ACP,
             MB_PRECOMPOSED,
@@ -553,7 +446,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     std::wstring text;
     std::vector<std::wstring> format_names;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
-        format_names.push_back(FormatName(format));
+        format_names.push_back(ClipboardRules::FormatName(format));
     }
     if (std::any_of(
         format_names.begin(),
@@ -588,9 +481,9 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     const bool has_dib = IsClipboardFormatAvailable(CF_DIB) != FALSE;
     const bool has_dibv5 = IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
-        const std::wstring name = FormatName(format);
-        const bool is_text = IsTextFormat(format, name);
-        const bool is_image = IsImageFormat(format, name);
+        const std::wstring name = ClipboardRules::FormatName(format);
+        const bool is_text = ClipboardRules::IsTextFormat(format, name);
+        const bool is_image = ClipboardRules::IsImageFormat(format, name);
         const bool is_files = format == CF_HDROP;
         const bool enabled = (is_text && m_settings.save_text) ||
             (is_image && m_settings.save_images) ||
@@ -614,7 +507,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
                 continue;
             }
             const SIZE_T bytes = GlobalSize(handle);
-            if (bytes == 0 || bytes > kMaximumClipboardBytes) {
+            if (bytes == 0 || bytes > ClipboardRules::Limits::kMaximumClipboardBytes) {
                 continue;
             }
             const GlobalLockGuard lock(handle);
@@ -650,14 +543,14 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     if (capture.preview.empty() && capture.has_files) {
         capture.preview = L"[文件]";
     }
-    capture.title = MakeTitle(capture.preview, m_settings.show_special_symbols);
+    capture.title = ClipboardRules::MakeTitle(capture.preview, m_settings.show_special_symbols);
     if (capture.title.empty()) {
         capture.title = capture.has_image ? L"[图片]" : (capture.has_files ? L"[文件]" : L"[剪贴板项目]");
     }
     return capture;
 }
 
-bool ClipboardMonitor::ReadClipboardAndSave() {
+void ClipboardMonitor::ReadClipboardAndSave() {
     std::optional<ClipboardSnapshot> capture;
     for (int attempt = 0; attempt < 10; ++attempt) {
         ClipboardGuard clipboard(m_owner);
@@ -670,7 +563,7 @@ bool ClipboardMonitor::ReadClipboardAndSave() {
     }
     if (!capture.has_value()) {
         m_expectedClipboardFingerprint.reset();
-        return false;
+        return;
     }
 
     if (m_expectedClipboardFingerprint.has_value()) {
@@ -678,12 +571,13 @@ bool ClipboardMonitor::ReadClipboardAndSave() {
             capture->fingerprint == *m_expectedClipboardFingerprint;
         m_expectedClipboardFingerprint.reset();
         if (was_written_by_this_process) {
-            return false;
+            return;
         }
     }
 
-    m_database.SaveClipboard(*capture, m_settings.history_size);
-    return true;
+    if (m_saveCallback) {
+        m_saveCallback(std::move(*capture));
+    }
 }
 
 bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove_formatting) {
@@ -695,8 +589,7 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
         item.data.begin(),
         item.data.end(),
         [](const ClipboardFormatData& data) {
-            return data.format == CF_UNICODETEXT || data.format == CF_TEXT ||
-                data.name == L"CF_UNICODETEXT" || data.name == L"CF_TEXT";
+            return ClipboardRules::IsTextFormat(data.format, data.name);
         }
     );
     struct PendingFormat {
@@ -708,9 +601,8 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     ClipboardFingerprint fingerprint;
     bool has_text = false;
     for (const ClipboardFormatData& data : item.data) {
-        const bool is_text = data.format == CF_UNICODETEXT || data.format == CF_TEXT ||
-            data.name == L"CF_UNICODETEXT" || data.name == L"CF_TEXT";
-        const bool is_files = data.format == CF_HDROP || data.name == L"CF_HDROP";
+        const bool is_text = ClipboardRules::IsTextFormat(data.format, data.name);
+        const bool is_files = ClipboardRules::IsFilesFormat(data);
         if (remove_formatting && has_plain_text && !is_text && !is_files) {
             continue;
         }
@@ -767,14 +659,13 @@ bool ClipboardMonitor::ClearClipboard() {
     return true;
 }
 
-bool ClipboardMonitor::OnClipboardUpdate() {
+void ClipboardMonitor::OnClipboardUpdate() {
     if (m_settings.ignore_events) {
         if (m_settings.ignore_only_next_event) {
             m_settings.ignore_events = false;
             m_settings.ignore_only_next_event = false;
-            m_settings.Save(m_database);
         }
-        return false;
+        return;
     }
-    return ReadClipboardAndSave();
+    ReadClipboardAndSave();
 }

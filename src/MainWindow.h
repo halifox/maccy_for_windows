@@ -21,7 +21,8 @@
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
 #include "ClipboardMonitor.h"
-#include "Database.h"
+#include "ClipboardData.h"
+#include "StorageWorker.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -31,7 +32,8 @@ class MainWindow : public CDialogImpl<MainWindow> {
 public:
     enum { IDD = IDD_HISTORY };
 
-    MainWindow(Database &database, PreviewWorker &preview, bool isolated = false);
+    MainWindow(StorageWorker &storage, PreviewWorker &preview, AppSettings settings,
+               StorageWorker::IgnoreLists ignored_lists, bool isolated = false);
     ~MainWindow();
 
     BEGIN_MSG_MAP(MainWindow)
@@ -66,6 +68,7 @@ public:
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
+        MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
     END_MSG_MAP()
 
     bool AddTrayIcon();
@@ -90,11 +93,10 @@ private:
     void RedrawFooterButtons();
     void RestoreControlSubclass(HWND control, WNDPROC original);
     void RestoreControlSubclasses();
-    std::array<HWND, 4> FooterButtons() const;
+    std::array<HWND, AppConstants::UI::kFooterButtonCount> FooterButtons() const;
 
     // Window positioning
     void PositionPopup(PopupPosition popup_position);
-    void PositionOnMonitor(HMONITOR monitor, bool center);
     HMONITOR SelectedMonitor() const;
     int PopupWidth() const;
     int PopupHeight() const;
@@ -177,6 +179,7 @@ private:
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
     // Callback handlers for KeyboardHandler
@@ -191,10 +194,10 @@ private:
     static void OnExitCallback(void* context);
     static void OnHideWindowCallback(void* context);
 
-    Database &m_database;
+    StorageWorker &m_storage;
     AppSettings m_settings;
     bool m_suppressClearAlert = false;
-    std::array<std::vector<std::wstring>, 3> m_ignoredLists;
+    StorageWorker::IgnoreLists m_ignoredLists;
     ClipboardMonitor m_clipboard;
     PreviewWorker &m_previewWorker;
 
@@ -224,7 +227,6 @@ private:
     // History data
     std::vector<ClipboardItem> m_items;
     std::wstring m_searchQuery;
-    sqlite3_int64 m_selectedItemId = 0;
     sqlite3_int64 m_previewCandidateId = 0;
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
@@ -233,6 +235,7 @@ private:
     bool m_loadingList = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;
+    std::uint64_t m_historyGeneration = 0;
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};
@@ -254,5 +257,4 @@ private:
     bool m_exiting = false;
     bool m_trayMenuShowing = false;
     bool m_isolated = false;
-    bool m_inSizeMove = false;
 };

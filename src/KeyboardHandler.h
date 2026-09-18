@@ -1,13 +1,14 @@
 #pragma once
 
 #include "PlatformConfig.h"
+#include "Constants.h"
 
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-#include "Database.h"
+#include "ClipboardData.h"
 #include "Settings.h"
 
 // Keyboard navigation and input handling component
@@ -21,7 +22,7 @@ public:
 
     // Lifecycle
     bool Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
-                    const std::array<HWND, 4>& footerButtons);
+                    const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons);
     void Shutdown();
 
     // Hotkey management
@@ -120,7 +121,7 @@ private:
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;
     HWND m_pinsList = nullptr;
-    std::array<HWND, 4> m_footerButtons{};
+    std::array<HWND, AppConstants::UI::kFooterButtonCount> m_footerButtons{};
 
     bool m_hotkeyRegistered = false;
     bool m_keyboardNavigating = false;

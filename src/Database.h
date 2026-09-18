@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ClipboardData.h"
 #include "PlatformConfig.h"
 
 #include <cstdint>
@@ -10,56 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include <windows.h>
 #include <sqlite3.h>
-
-// A clipboard item is represented as a small metadata record until it is
-// previewed or pasted. The complete clipboard formats are kept in the
-// clipboard_formats table and loaded on demand.
-struct ClipboardFormatData {
-    std::wstring name;
-    UINT format = 0;
-    std::vector<unsigned char> bytes;
-};
-
-struct ClipboardSnapshot {
-    std::wstring fingerprint;
-    std::wstring title;
-    std::wstring preview;
-    std::wstring application;
-    bool has_text = false;
-    bool has_image = false;
-    bool has_files = false;
-    std::vector<ClipboardFormatData> data;
-};
-
-struct ClipboardItem {
-    sqlite3_int64 id = 0;
-    std::wstring title;
-    std::wstring preview;
-    std::wstring application;
-    std::wstring pin;
-    sqlite3_int64 first_copied_at = 0;
-    sqlite3_int64 copied_at = 0;
-    int copy_count = 1;
-    bool pinned = false;
-    bool has_text = false;
-    bool has_image = false;
-    bool has_files = false;
-    std::vector<ClipboardFormatData> data;
-};
-
-enum class PayloadMode {
-    Metadata,
-    Preview,
-    Full,
-};
-
-enum class DatabaseList {
-    IgnoredApplications,
-    IgnoredFormats,
-    IgnoredRegexps,
-};
 
 class Database {
 public:
@@ -93,8 +45,8 @@ public:
     std::optional<std::wstring> GetSetting(std::wstring_view key) const;
     void SetSetting(std::wstring_view key, std::wstring_view value) const;
 
-    std::vector<std::wstring> GetList(DatabaseList list) const;
-    void ReplaceList(DatabaseList list, const std::vector<std::wstring> &values) const;
+    std::vector<std::wstring> GetList(IgnoreListKind list) const;
+    void ReplaceList(IgnoreListKind list, const std::vector<std::wstring> &values) const;
     void ResetIgnoredFormats() const;
 
     void SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned) const;
@@ -146,7 +98,7 @@ private:
     void Exec(std::string_view sql) const;
     void CreateHistoryTables();
     sqlite3_int64 CountRows(const char *table) const;
-    const char *ListTable(DatabaseList list) const;
+    const char *ListTable(IgnoreListKind list) const;
     void LoadPayload(ClipboardItem &item, PayloadMode payload_mode) const;
     void ReplaceFormats(sqlite3_int64 item_id, const std::vector<ClipboardFormatData> &data) const;
     void ReplaceSearchIndex(

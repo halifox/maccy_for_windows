@@ -1,6 +1,7 @@
 #include "PreviewWorker.h"
 
 #include "Constants.h"
+#include "ClipboardRules.h"
 #include "PreviewDecoder.h"
 
 #include <atlbase.h>
@@ -15,66 +16,24 @@ namespace {
 constexpr WPARAM kRequestCommand = 1;
 constexpr WPARAM kHideCommand = 2;
 constexpr WPARAM kRepositionCommand = 3;
-constexpr size_t kMaximumPreviewTextCharacters = 4ULL * 1024ULL * 1024ULL;
-
-bool IsUnicodeText(const ClipboardFormatData &data) {
-    return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
-}
-
-bool IsAnsiText(const ClipboardFormatData &data) {
-    return data.format == CF_TEXT || data.name == L"CF_TEXT";
-}
 
 std::wstring FullText(const ClipboardItem &item) {
     for (const ClipboardFormatData &data : item.data) {
-        if (!IsUnicodeText(data) || data.bytes.size() < sizeof(wchar_t)) {
+        if (!ClipboardRules::IsUnicodeTextFormat(data)) {
             continue;
         }
-        const auto *text = reinterpret_cast<const wchar_t *>(data.bytes.data());
-        const size_t count = std::min(
-            data.bytes.size() / sizeof(wchar_t),
-            kMaximumPreviewTextCharacters
-        );
-        size_t length = 0;
-        while (length < count && text[length] != L'\0') {
-            ++length;
-        }
-        return std::wstring(text, length);
+        std::wstring text = ClipboardRules::DecodeUnicodeText(data.bytes);
+        text.resize(std::min(text.size(), ClipboardRules::Limits::kMaximumPreviewTextCharacters));
+        return text;
     }
 
     for (const ClipboardFormatData &data : item.data) {
-        if (!IsAnsiText(data) || data.bytes.empty()) {
+        if (!ClipboardRules::IsAnsiTextFormat(data)) {
             continue;
         }
-        const int source_length = static_cast<int>(std::min<size_t>(
-            data.bytes.size(),
-            std::min(kMaximumPreviewTextCharacters, static_cast<size_t>(INT_MAX))
-        ));
-        const int length = MultiByteToWideChar(
-            CP_ACP,
-            0,
-            reinterpret_cast<const char *>(data.bytes.data()),
-            source_length,
-            nullptr,
-            0
-        );
-        if (length <= 0) {
-            continue;
-        }
-        std::wstring result(static_cast<size_t>(length), L'\0');
-        MultiByteToWideChar(
-            CP_ACP,
-            0,
-            reinterpret_cast<const char *>(data.bytes.data()),
-            source_length,
-            result.data(),
-            length
-        );
-        const size_t nul = result.find(L'\0');
-        if (nul != std::wstring::npos) {
-            result.resize(nul);
-        }
-        return result;
+        std::wstring text = ClipboardRules::DecodeAnsiText(data.bytes);
+        text.resize(std::min(text.size(), ClipboardRules::Limits::kMaximumPreviewTextCharacters));
+        return text;
     }
 
     return item.preview;

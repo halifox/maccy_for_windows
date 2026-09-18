@@ -3,19 +3,26 @@
 #include "PlatformConfig.h"
 
 #include <cstdint>
+#include <array>
+#include <functional>
 #include <optional>
 #include <regex>
 #include <string>
 #include <vector>
 #include <shellapi.h>
 
-#include "Database.h"
+#include <utility>
+
+#include "ClipboardData.h"
 #include "Settings.h"
 
 // Clipboard monitoring and capture component
 class ClipboardMonitor {
 public:
-    ClipboardMonitor(Database& database, AppSettings& settings);
+    using IgnoreLists = std::array<std::vector<std::wstring>, 3>;
+    using SaveCallback = std::function<void(ClipboardSnapshot)>;
+
+    ClipboardMonitor(AppSettings& settings, IgnoreLists ignored_lists);
     ~ClipboardMonitor();
 
     ClipboardMonitor(const ClipboardMonitor&) = delete;
@@ -26,13 +33,14 @@ public:
     void Shutdown();
 
     // Clipboard operations
-    bool OnClipboardUpdate();
-    bool ReadClipboardAndSave();
+    void OnClipboardUpdate();
+    void ReadClipboardAndSave();
     bool WriteClipboardItem(const ClipboardItem &item, bool remove_formatting);
     bool ClearClipboard();
 
     // Configuration
-    void ReloadIgnoreLists();
+    void ReloadIgnoreLists(IgnoreLists ignored_lists);
+    void SetSaveCallback(SaveCallback callback) { m_saveCallback = std::move(callback); }
 
 private:
     // Clipboard capture
@@ -53,8 +61,8 @@ private:
     static std::wstring GetSourceApplication();
     static bool MatchesApplication(std::wstring_view actual, std::wstring_view configured);
 
-    Database& m_database;
     AppSettings& m_settings;
+    SaveCallback m_saveCallback;
     HWND m_owner = nullptr;
 
     bool m_clipboardListenerAdded = false;

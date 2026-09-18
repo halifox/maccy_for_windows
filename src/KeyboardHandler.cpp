@@ -1,6 +1,7 @@
 #include "KeyboardHandler.h"
 #include "Constants.h"
 
+#include <algorithm>
 #include <array>
 #include <imm.h>
 #include <windowsx.h>
@@ -13,7 +14,7 @@ KeyboardHandler::~KeyboardHandler() {
 }
 
 bool KeyboardHandler::Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
-                                 const std::array<HWND, 4>& footerButtons) {
+                                 const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons) {
     m_owner = owner;
     m_search = search;
     m_historyList = historyList;
@@ -263,7 +264,7 @@ void KeyboardHandler::NavigateHistoryFromSearch(bool forward,
     ClearHistoryHover();
 
     const int count = static_cast<int>(items.size());
-    const int total = count + (showFooter ? 4 : 0);
+    const int total = count + (showFooter ? AppConstants::UI::kFooterButtonCount : 0);
     if (!total) return;
 
     int current = m_activeFooter >= 0 ? count + m_activeFooter : m_activeItemIndex;

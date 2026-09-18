@@ -13,10 +13,9 @@
 #include <utility>
 
 #include "MainWindow.h"
-#include "Database.h"
-#include "ClipboardMonitor.h"
 #include "Constants.h"
 #include "PreviewWorker.h"
+#include "StorageWorker.h"
 
 CAppModule _Module;
 
@@ -70,10 +69,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     try {
-        Database database(GetDatabasePath());
-        PreviewWorker preview(database.Path());
-        MainWindow window(database, preview);
+        StorageWorker storage(GetDatabasePath());
+        storage.Start();
+        AppSettings settings = storage.LoadSettings();
+        StorageWorker::IgnoreLists ignored_lists = storage.LoadIgnoreLists();
+        PreviewWorker preview(storage.Path());
+        MainWindow window(storage, preview, std::move(settings), std::move(ignored_lists));
         if (!window.Create(nullptr)) {
+            storage.Stop();
             _Module.Term();
             CoUninitialize();
             return 1;
@@ -90,6 +93,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             DispatchMessageW(&message);
         }
         preview.Stop();
+        storage.Stop();
         _Module.Term();
         CoUninitialize();
         return static_cast<int>(message.wParam);

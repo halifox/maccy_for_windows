@@ -19,6 +19,7 @@ namespace AppConstants {
     constexpr UINT kUiUpdateMessage = WM_APP + 2;
     constexpr UINT kPreviewWorkerResultMessage = WM_APP + 3;
     constexpr UINT kPreviewWorkerCommandMessage = WM_APP + 4;
+    constexpr UINT kStorageWorkerResultMessage = WM_APP + 5;
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
@@ -36,12 +37,11 @@ namespace AppConstants {
     // Bitmask carried by kUiUpdateMessage. Producers only describe what
     // changed; MainWindow decides the order and granularity of the work.
     namespace UiUpdate {
-        constexpr std::uint32_t kSettings = 1u << 0;
-        constexpr std::uint32_t kIgnoreRules = 1u << 1;
-        constexpr std::uint32_t kHistory = 1u << 2;
-        constexpr std::uint32_t kLayout = 1u << 3;
-        constexpr std::uint32_t kTray = 1u << 4;
-        constexpr std::uint32_t kFooter = 1u << 5;
+        constexpr std::uint32_t kIgnoreRules = 1u << 0;
+        constexpr std::uint32_t kHistory = 1u << 1;
+        constexpr std::uint32_t kLayout = 1u << 2;
+        constexpr std::uint32_t kTray = 1u << 3;
+        constexpr std::uint32_t kFooter = 1u << 4;
     }
 
     // ========================================================================
@@ -49,17 +49,17 @@ namespace AppConstants {
     // ========================================================================
     namespace HotKey {
         constexpr int kOpenPopup = 1006;
-        constexpr int kPinItem = 2;
-        constexpr int kDeleteItem = 3;
-        constexpr int kPreview = 4;
     }
 
     // ========================================================================
     // UI 尺寸常量
     // ========================================================================
     namespace UI {
-        constexpr int kMinWindowWidth = 300;
-        constexpr int kMinWindowHeight = 400;
+        constexpr int kFooterButtonCount = 4;
+        constexpr int kMinimumPopupWidth = 320;
+        constexpr int kMaximumPopupWidth = 1600;
+        constexpr int kMinimumPopupHeight = 150;
+        constexpr int kMaximumPopupHeight = 1200;
         constexpr int kDefaultWindowWidth = 450;
         constexpr int kDefaultWindowHeight = 500;
         constexpr int kDefaultImageMaxHeight = 40;

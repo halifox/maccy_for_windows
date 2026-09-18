@@ -4,7 +4,7 @@
 #include <string_view>
 #include <vector>
 
-#include "Database.h"
+#include "ClipboardData.h"
 #include "Settings.h"
 
 namespace PinKeyPolicy {

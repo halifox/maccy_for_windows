@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlatformConfig.h"
+#include "Constants.h"
 
 #include <cstdint>
 #include <string>
@@ -58,15 +59,15 @@ struct AppSettings {
     bool save_files = true;
     bool save_images = true;
     bool save_text = true;
-    int history_size = 200;
+    int history_size = AppConstants::DB::kDefaultHistorySize;
     int sort_by = 0; // last copied, first copied, number of copies
 
     PopupPosition popup_position = PopupPosition::Cursor;
     int popup_screen = 0; // 0 = active screen, otherwise monitor index + 1
     PinPosition pin_to = PinPosition::Top;
-    int window_width = 450;
-    int window_height = 500;
-    int image_max_height = 40;
+    int window_width = AppConstants::UI::kDefaultWindowWidth;
+    int window_height = AppConstants::UI::kDefaultWindowHeight;
+    int image_max_height = AppConstants::UI::kDefaultImageMaxHeight;
     bool open_preview_automatically = true;
     int preview_delay = 1500;
     HighlightMatch highlight_match = HighlightMatch::Bold;

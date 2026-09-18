@@ -27,15 +27,10 @@ constexpr UINT kSearchDebounceMilliseconds = 200;
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
-constexpr int kMinimumPopupWidth = 320;
-constexpr int kMaximumPopupWidth = 1600;
-constexpr int kMinimumPopupHeight = 150;
-constexpr int kMaximumPopupHeight = 1200;
 constexpr int kHistoryItemHeight = 22;
 constexpr int kHistoryFooterHeight = 22;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
-constexpr int kHistoryFooterCount = 4;
 constexpr int kResizeBorder = 8;
 
 constexpr wchar_t kHistorySearchCue[] = L"搜索剪贴板内容…";
@@ -87,22 +82,46 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
 
 } // namespace
 
-MainWindow::MainWindow(Database &database, PreviewWorker &preview, bool isolated)
-    : m_database(database),
-      m_settings(AppSettings::Load(database)),
-      m_suppressClearAlert(database.GetSetting(L"behavior.suppressClearAlert").value_or(L"0") == L"1"),
-      m_ignoredLists{
-          database.GetList(DatabaseList::IgnoredApplications),
-          database.GetList(DatabaseList::IgnoredFormats),
-          database.GetList(DatabaseList::IgnoredRegexps)
-      },
-      m_clipboard(database, m_settings),
+MainWindow::MainWindow(
+    StorageWorker &storage,
+    PreviewWorker &preview,
+    AppSettings settings,
+    StorageWorker::IgnoreLists ignored_lists,
+    bool isolated
+)
+    : m_storage(storage),
+      m_settings(std::move(settings)),
+      m_suppressClearAlert(storage.LoadSuppressClearAlert()),
+      m_ignoredLists(std::move(ignored_lists)),
+      m_clipboard(m_settings, m_ignoredLists),
       m_previewWorker(preview),
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
-      m_isolated(isolated) {}
+      m_isolated(isolated) {
+    m_clipboard.SetSaveCallback([this](ClipboardSnapshot capture) {
+        m_storage.SaveClipboardAsync(
+            std::move(capture),
+            m_settings.history_size,
+            [this](bool success, std::string error) {
+                if (!success) {
+                    ::OutputDebugStringA(error.c_str());
+                    ::OutputDebugStringA("\n");
+                    return;
+                }
+                RequestUiUpdate(
+                    AppConstants::UiUpdate::kTray |
+                    (m_popupVisible ? AppConstants::UiUpdate::kHistory : 0)
+                );
+            }
+        );
+    });
+}
 
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow() {
+    m_clipboard.SetSaveCallback({});
+    m_previewWorker.SetUiWindow(nullptr);
+    m_storage.SetUiWindow(nullptr);
+}
 
 void MainWindow::DrawSearchCue(HWND window, HDC dc) const {
     if (window == nullptr || dc == nullptr || window != m_search ||
@@ -224,7 +243,7 @@ LRESULT CALLBACK MainWindow::MenuControlProc(HWND window, UINT message, WPARAM w
     return DefSubclassProc(window, message, wParam, lParam);
 }
 
-std::array<HWND, 4> MainWindow::FooterButtons() const {
+std::array<HWND, AppConstants::UI::kFooterButtonCount> MainWindow::FooterButtons() const {
     return {m_footerClear, m_footerSettings, m_footerAbout, m_footerExit};
 }
 
@@ -359,7 +378,7 @@ void MainWindow::LayoutHistoryControls() {
 
     const int top = margin + (header ? headerMetrics.height + headerMetrics.contentGap : 0);
     const int footerHeight = m_settings.show_footer
-        ? kHistoryFooterGap + kHistoryFooterHeight * kHistoryFooterCount
+        ? kHistoryFooterGap + kHistoryFooterHeight * AppConstants::UI::kFooterButtonCount
         : 0;
     const int bottom = std::max(
         top + 1,
@@ -495,30 +514,19 @@ void MainWindow::HandlePopupActivation(HWND activating_window) {
 }
 
 int MainWindow::PopupWidth() const {
-    return std::clamp(m_settings.window_width, kMinimumPopupWidth, kMaximumPopupWidth);
+    return std::clamp(
+        m_settings.window_width,
+        AppConstants::UI::kMinimumPopupWidth,
+        AppConstants::UI::kMaximumPopupWidth
+    );
 }
 
 int MainWindow::PopupHeight() const {
-    return std::clamp(m_settings.window_height, kMinimumPopupHeight, kMaximumPopupHeight);
-}
-
-void MainWindow::PositionOnMonitor(HMONITOR monitor, bool center) {
-    MONITORINFO monitor_info{sizeof(monitor_info)};
-    if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitor_info)) {
-        return;
-    }
-    const RECT& work_area = monitor_info.rcWork;
-    int x = work_area.left;
-    int y = work_area.top;
-    if (center) {
-        x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
-        y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
-    }
-    const LONG max_x = std::max<LONG>(work_area.left, work_area.right - PopupWidth());
-    const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - PopupHeight());
-    x = std::clamp(x, static_cast<int>(work_area.left), static_cast<int>(max_x));
-    y = std::clamp(y, static_cast<int>(work_area.top), static_cast<int>(max_y));
-    ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
+    return std::clamp(
+        m_settings.window_height,
+        AppConstants::UI::kMinimumPopupHeight,
+        AppConstants::UI::kMaximumPopupHeight
+    );
 }
 
 HMONITOR MainWindow::SelectedMonitor() const {
@@ -630,13 +638,30 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
     const int search_mode = static_cast<int>(m_settings.search_mode);
     const int sort_by = m_settings.sort_by;
     const bool pins_at_bottom = m_settings.pin_to == PinPosition::Bottom;
-    auto items = m_database.SearchHistory(
+    const std::uint64_t generation = ++m_historyGeneration;
+    m_loadingList = true;
+    m_storage.SearchHistoryAsync(
         owned_query,
         search_mode,
         sort_by,
-        pins_at_bottom
+        pins_at_bottom,
+        generation,
+        [this, owned_query](std::uint64_t result_generation,
+                            std::vector<ClipboardItem> items,
+                            std::string error) mutable {
+            if (result_generation != m_historyGeneration ||
+                m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+                return;
+            }
+            if (!error.empty()) {
+                m_loadingList = false;
+                ::OutputDebugStringA(error.c_str());
+                ::OutputDebugStringA("\n");
+                return;
+            }
+            ApplyHistoryItems(std::move(owned_query), std::move(items));
+        }
     );
-    ApplyHistoryItems(owned_query, std::move(items));
 }
 
 void MainWindow::ApplyHistoryItems(
@@ -723,7 +748,6 @@ void MainWindow::ApplyHistoryItems(
                 SendMessageW(list, WM_SETREDRAW, TRUE, 0);
             }
         }
-        m_selectedItemId = m_keyboardHandler.GetActiveItemId();
         RedrawHistoryLists();
         if (previewOpen && m_keyboardHandler.GetActiveItemId()) {
             ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
@@ -780,7 +804,8 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
             generation,
             [this](std::shared_ptr<PreviewResult> result) {
                 if (result == nullptr || result->generation != m_previewGeneration ||
-                    result->item_id != m_selectedItemId || !m_popupVisible || m_previewSuppressed) {
+                    result->item_id != m_keyboardHandler.GetActiveItemId() ||
+                    !m_popupVisible || m_previewSuppressed) {
                     return;
                 }
                 if (!result->error.empty()) {
@@ -805,7 +830,7 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
 
 void MainWindow::ShowPreviewForCandidate() {
     if (m_popupVisible && m_previewCandidateId &&
-        m_previewCandidateId == m_selectedItemId && !m_previewSuppressed) {
+        m_previewCandidateId == m_keyboardHandler.GetActiveItemId() && !m_previewSuppressed) {
         ShowPreviewForItem(m_previewCandidateId);
     }
 }
@@ -817,7 +842,6 @@ void MainWindow::ShowPreviewForSelection() {
         return;
     }
     m_keyboardHandler.SetActiveHistoryItem(selected, m_items, m_historyList, m_pinsList);
-    m_selectedItemId = m_keyboardHandler.GetActiveItemId();
     ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
 }
 
@@ -855,32 +879,55 @@ void MainWindow::PasteItem(int index) {
         (GetKeyState(VK_SHIFT) & 0x8000) != 0
     );
     m_pasteInProgress = true;
-    bool success = false;
-    std::string error;
     try {
-        const auto item = m_database.GetItem(id, PayloadMode::Full);
-        if (!item.has_value()) {
-            error = "剪贴板项目不存在";
-        } else if (!m_clipboard.WriteClipboardItem(*item, plain)) {
-            error = "无法写入系统剪贴板";
-        } else {
-            m_database.MarkCopied(id);
-            success = true;
-        }
+        m_storage.GetItemAsync(
+            id,
+            PayloadMode::Full,
+            [this, id, target, target_focus, paste, plain](
+                std::optional<ClipboardItem> item,
+                std::string error
+            ) mutable {
+                m_pasteInProgress = false;
+                bool success = error.empty() && item.has_value();
+                if (!success && error.empty()) {
+                    error = "剪贴板项目不存在";
+                }
+                if (success && !m_clipboard.WriteClipboardItem(*item, plain)) {
+                    success = false;
+                    error = "无法写入系统剪贴板";
+                }
+                if (success) {
+                    try {
+                        m_storage.MarkCopied(id);
+                    } catch (const std::exception &exception) {
+                        success = false;
+                        error = exception.what();
+                    } catch (...) {
+                        success = false;
+                        error = "无法更新剪贴板项目状态";
+                    }
+                }
+                if (!success) {
+                    ::MessageBoxA(
+                        m_hWnd,
+                        error.empty() ? "无法粘贴剪贴板项目" : error.c_str(),
+                        "无法粘贴",
+                        MB_OK | MB_ICONERROR
+                    );
+                    return;
+                }
+                HideMainWindow();
+                m_pasteController.RestoreTargetFocusAndPaste(target, target_focus, paste);
+                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+            }
+        );
     } catch (const std::exception &exception) {
-        error = exception.what();
+        m_pasteInProgress = false;
+        ::MessageBoxA(m_hWnd, exception.what(), "无法粘贴", MB_OK | MB_ICONERROR);
     } catch (...) {
-        error = "无法粘贴剪贴板项目";
+        m_pasteInProgress = false;
+        ::MessageBoxW(m_hWnd, L"无法粘贴剪贴板项目。", L"无法粘贴", MB_OK | MB_ICONERROR);
     }
-    m_pasteInProgress = false;
-    if (!success) {
-        ::MessageBoxA(m_hWnd, error.empty() ? "无法粘贴剪贴板项目" : error.c_str(),
-                      "无法粘贴", MB_OK | MB_ICONERROR);
-        return;
-    }
-    HideMainWindow();
-    m_pasteController.RestoreTargetFocusAndPaste(target, target_focus, paste);
-    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
 }
 
 void MainWindow::PasteSelectedItem() {
@@ -898,9 +945,9 @@ void MainWindow::ToggleSelectedPin() {
     const ClipboardItem item = m_items[static_cast<size_t>(index)];
     try {
         if (item.pinned) {
-            m_database.TogglePin(item.id, {}, false);
+            m_storage.TogglePin(item.id, {}, false);
         } else {
-            const std::wstring key = PinKeyPolicy::Next(m_database.GetPinnedItems(), m_settings);
+            const std::wstring key = PinKeyPolicy::Next(m_storage.GetPinnedItems(), m_settings);
             if (key.empty()) {
                 ::MessageBoxW(
                     m_hWnd,
@@ -910,7 +957,7 @@ void MainWindow::ToggleSelectedPin() {
                 );
                 return;
             }
-            m_database.TogglePin(item.id, key, true);
+            m_storage.TogglePin(item.id, key, true);
         }
         RequestUiUpdate(AppConstants::UiUpdate::kHistory);
     } catch (const std::exception &error) {
@@ -927,7 +974,7 @@ void MainWindow::DeleteSelectedItem() {
     }
     const sqlite3_int64 item_id = m_items[static_cast<size_t>(index)].id;
     try {
-        m_database.DeleteItem(item_id);
+        m_storage.DeleteItem(item_id);
         RequestUiUpdate(AppConstants::UiUpdate::kHistory);
     } catch (const std::exception &error) {
         ::MessageBoxA(m_hWnd, error.what(), "无法删除剪贴板项目", MB_OK | MB_ICONERROR);
@@ -967,12 +1014,12 @@ void MainWindow::ClearHistory(bool all) {
     const bool clear_clipboard = m_settings.clear_system_clipboard;
     try {
         if (remember) {
-            m_database.SetSetting(L"behavior.suppressClearAlert", L"1");
+            m_storage.SaveSuppressClearAlert(true);
         }
         if (all) {
-            m_database.DeleteAll();
+            m_storage.DeleteAll();
         } else {
-            m_database.DeleteUnpinned();
+            m_storage.DeleteUnpinned();
         }
         if (remember) {
             m_suppressClearAlert = true;
@@ -1014,7 +1061,7 @@ void MainWindow::OpenSettings() {
     HideMainWindow();
     if (m_settingsWindow == nullptr) {
         m_settingsWindow = std::make_unique<SettingsWindow>(
-            m_database,
+            m_storage,
             m_hWnd,
             m_settings,
             m_ignoredLists,
@@ -1023,7 +1070,7 @@ void MainWindow::OpenSettings() {
             }
         );
     } else {
-        m_settingsWindow->SetSettingsSnapshot(m_settings);
+        m_settingsWindow->SetStateSnapshot(m_settings, m_ignoredLists);
     }
     if (!m_settingsWindow->CreateOrShow()) {
         ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"maccy", MB_OK | MB_ICONERROR);
@@ -1034,7 +1081,7 @@ void MainWindow::ExitApplication() {
     m_exiting = true;
     if (m_settings.clear_on_quit) {
         try {
-            m_database.DeleteUnpinned();
+            m_storage.DeleteUnpinned();
         } catch (...) {
         }
     }
@@ -1056,13 +1103,13 @@ void MainWindow::SaveWindowGeometry(bool resized) {
 
     const int width = std::clamp(
         static_cast<int>(rect.right - rect.left),
-        kMinimumPopupWidth,
-        kMaximumPopupWidth
+        AppConstants::UI::kMinimumPopupWidth,
+        AppConstants::UI::kMaximumPopupWidth
     );
     const int height = std::clamp(
         resized ? static_cast<int>(rect.bottom - rect.top) : m_settings.window_height,
-        kMinimumPopupHeight,
-        kMaximumPopupHeight
+        AppConstants::UI::kMinimumPopupHeight,
+        AppConstants::UI::kMaximumPopupHeight
     );
     const bool persist_popup_position = m_activePopupPosition != PopupPosition::StatusItem;
     if (persist_popup_position) {
@@ -1277,18 +1324,17 @@ std::uint32_t MainWindow::ApplySettings(
 }
 
 void MainWindow::PersistSettings() {
-    m_settings.Save(m_database);
+    m_storage.SaveSettings(m_settings);
 }
 
 void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates) {
     const std::uint32_t updates = ApplySettings(settings, requestedUpdates);
     if ((requestedUpdates & AppConstants::UiUpdate::kIgnoreRules) != 0) {
-        m_ignoredLists = {
-            m_database.GetList(DatabaseList::IgnoredApplications),
-            m_database.GetList(DatabaseList::IgnoredFormats),
-            m_database.GetList(DatabaseList::IgnoredRegexps)
-        };
-        m_clipboard.ReloadIgnoreLists();
+        m_ignoredLists = m_storage.LoadIgnoreLists();
+        m_clipboard.ReloadIgnoreLists(m_ignoredLists);
+        if (m_settingsWindow != nullptr) {
+            m_settingsWindow->SetStateSnapshot(m_settings, m_ignoredLists);
+        }
     }
     RequestUiUpdate(updates);
 }
@@ -1296,7 +1342,6 @@ void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t re
 // Callback implementations for KeyboardHandler
 void MainWindow::OnPreviewCallback(void* context, sqlite3_int64 itemId, bool) {
     auto* window = static_cast<MainWindow*>(context);
-    window->m_selectedItemId = itemId;
     window->SchedulePreviewForItem(itemId);
 }
 
@@ -1352,6 +1397,7 @@ void MainWindow::OnHideWindowCallback(void* context) {
 // Message handlers
 LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
+    m_storage.SetUiWindow(m_hWnd);
     if (!m_historyRenderer.Initialize(m_hWnd) ||
         !BindControls()) {
         handled = FALSE;
@@ -1364,7 +1410,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         handled = FALSE;
         return FALSE;
     }
-    m_clipboard.ReloadIgnoreLists();
+    m_clipboard.ReloadIgnoreLists(m_ignoredLists);
 
     m_keyboardHandler.Initialize(m_hWnd, m_search, m_historyList, m_pinsList, FooterButtons());
     m_keyboardHandler.SetCallbacks(
@@ -1425,7 +1471,6 @@ LRESULT MainWindow::OnMove(UINT, WPARAM, LPARAM, BOOL& handled) {
 
 LRESULT MainWindow::OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    m_inSizeMove = false;
     SaveWindowGeometry(true);
     if (m_previewWorker.IsVisible()) {
         m_previewWorker.Reposition();
@@ -1434,7 +1479,6 @@ LRESULT MainWindow::OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL& handled) {
 }
 
 LRESULT MainWindow::OnEnterSizeMove(UINT, WPARAM, LPARAM, BOOL& handled) {
-    m_inSizeMove = true;
     handled = TRUE;
     return 0;
 }
@@ -1445,10 +1489,10 @@ LRESULT MainWindow::OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL& handled) 
         handled = FALSE;
         return 0;
     }
-    info->ptMinTrackSize.x = kMinimumPopupWidth;
-    info->ptMinTrackSize.y = kMinimumPopupHeight;
-    info->ptMaxTrackSize.x = kMaximumPopupWidth;
-    info->ptMaxTrackSize.y = kMaximumPopupHeight;
+    info->ptMinTrackSize.x = AppConstants::UI::kMinimumPopupWidth;
+    info->ptMinTrackSize.y = AppConstants::UI::kMinimumPopupHeight;
+    info->ptMaxTrackSize.x = AppConstants::UI::kMaximumPopupWidth;
+    info->ptMaxTrackSize.y = AppConstants::UI::kMaximumPopupHeight;
     handled = TRUE;
     return 0;
 }
@@ -1571,7 +1615,6 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
 
         const auto item_index = static_cast<int>(std::distance(m_items.begin(), item));
         m_keyboardHandler.SetActiveHistoryItem(item_index, m_items, m_historyList, m_pinsList);
-        m_selectedItemId = item_id;
         if (command == IDC_PREVIEW_PIN) ToggleSelectedPin();
         else DeleteSelectedItem();
         return 0;
@@ -1660,7 +1703,6 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
                     const bool selected_by_mouse = m_keyboardHandler.GetHoveredItemIndex() == selected_index;
                     m_keyboardHandler.SetActiveHistoryItem(selected_index, m_items, m_historyList,
                         m_pinsList, !selected_by_mouse);
-                    m_selectedItemId = m_keyboardHandler.GetActiveItemId();
                     if (!selected_by_mouse) {
                         m_keyboardHandler.ClearHistoryHover();
                         if (m_previewWorker.IsVisible()) {
@@ -1782,9 +1824,8 @@ LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     const bool previous_ignore_events = m_settings.ignore_events;
     const bool previous_ignore_only = m_settings.ignore_only_next_event;
-    bool saved = false;
     try {
-        saved = m_clipboard.OnClipboardUpdate();
+        m_clipboard.OnClipboardUpdate();
     } catch (const std::exception &error) {
         ::OutputDebugStringA(error.what());
         ::OutputDebugStringA("\n");
@@ -1793,11 +1834,8 @@ LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
     }
     if (previous_ignore_events != m_settings.ignore_events ||
         previous_ignore_only != m_settings.ignore_only_next_event) {
+        PersistSettings();
         RequestUiUpdate(AppConstants::UiUpdate::kFooter | AppConstants::UiUpdate::kTray);
-    }
-    if (saved) {
-        RequestUiUpdate(AppConstants::UiUpdate::kTray |
-                        (m_popupVisible ? AppConstants::UiUpdate::kHistory : 0));
     }
     return 0;
 }
@@ -1805,6 +1843,12 @@ LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT MainWindow::OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     m_previewWorker.DrainUiCallbacks();
+    return 0;
+}
+
+LRESULT MainWindow::OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    m_storage.DrainUiCallbacks();
     return 0;
 }
 
@@ -1816,6 +1860,8 @@ LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_keyboardHandler.Shutdown();
     m_previewWorker.SetUiWindow(nullptr);
     m_clipboard.Shutdown();
+    m_clipboard.SetSaveCallback({});
+    m_storage.SetUiWindow(nullptr);
     RestoreControlSubclasses();
     RemoveTrayIcon();
     m_historyRenderer.Shutdown();

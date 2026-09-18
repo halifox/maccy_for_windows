@@ -1,5 +1,6 @@
 #include "SettingsWindow.h"
 #include "Constants.h"
+#include "ClipboardRules.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -502,20 +503,33 @@ HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
 }
 
 SettingsWindow::SettingsWindow(
-    Database &database,
+    StorageWorker &storage,
     HWND owner,
     AppSettings settings,
     std::array<std::vector<std::wstring>, 3> ignored_lists,
     SettingsChangedCallback on_changed
 )
-    : m_database(database),
+    : m_storage(storage),
       m_owner(owner),
       m_onChanged(std::move(on_changed)),
       m_settings(std::move(settings)),
       m_ignoredLists(std::move(ignored_lists)) {}
 
 void SettingsWindow::SetSettingsSnapshot(const AppSettings &settings) {
+    SetStateSnapshot(settings, m_ignoredLists);
+}
+
+void SettingsWindow::SetStateSnapshot(
+    const AppSettings &settings,
+    StorageWorker::IgnoreLists ignored_lists
+) {
     m_settings = settings;
+    m_ignoredLists = std::move(ignored_lists);
+    for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
+        if (m_ignorePageObjects[page] != nullptr) {
+            m_ignorePageObjects[page]->SetValues(m_ignoredLists[page]);
+        }
+    }
     if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
         LoadControlsFromSettings();
     }
@@ -634,7 +648,7 @@ bool SettingsWindow::CreatePageWindows() {
         if (m_ignorePageObjects[page] != nullptr) {
             m_ignorePageObjects[page]->Initialize(
                 m_ignorePages[page],
-                m_database,
+                m_storage,
                 m_ignoredLists[page]
             );
         }
@@ -867,8 +881,8 @@ void SettingsWindow::LoadStorageControls() {
     SetCheck(m_sSaveText, m_settings.save_text);
     ::SetWindowTextW(m_sHistorySize, std::to_wstring(m_settings.history_size).c_str());
     SelectCombo(m_sSortBy, m_settings.sort_by);
-    const std::uintmax_t storage_bytes = m_database.StorageBytes();
-    const sqlite3_int64 current_count = m_database.CountItems();
+    const std::uintmax_t storage_bytes = m_storage.StorageBytes();
+    const sqlite3_int64 current_count = m_storage.CountItems();
     ::SetWindowTextW(m_sStorageSize, FormatByteCount(storage_bytes).c_str());
     const std::wstring current_size_text =
         L"（当前: " + std::to_wstring(current_count) + L" 项）";
@@ -894,9 +908,9 @@ void SettingsWindow::LoadControlsFromSettings() {
     LoadStorageControls();
     LoadAdvancedControls();
 
-    // 加载 whitelist 复选框（从 IgnoreFormatsPage 获取）
-    if (m_ignorePageObjects[1] != nullptr) {
-        HWND whitelist = ::GetDlgItem(m_ignorePageObjects[1]->GetPageWindow(), IDC_I_WHITELIST);
+    // The whitelist belongs to the applications page.
+    if (m_ignorePageObjects[0] != nullptr) {
+        HWND whitelist = ::GetDlgItem(m_ignorePageObjects[0]->GetPageWindow(), IDC_I_WHITELIST);
         SetCheck(whitelist, m_settings.ignore_all_apps_except_listed);
     }
 
@@ -914,7 +928,7 @@ void SettingsWindow::RefreshPinsList() {
             ? m_pins[static_cast<size_t>(selected)].id
             : 0;
     }();
-    auto pins = m_database.GetPinnedItems(PayloadMode::Metadata);
+    auto pins = m_storage.GetPinnedItems(PayloadMode::Metadata);
     std::stable_sort(pins.begin(), pins.end(), [](const ClipboardItem &lhs, const ClipboardItem &rhs) {
         if (lhs.first_copied_at != rhs.first_copied_at) {
             return lhs.first_copied_at < rhs.first_copied_at;
@@ -1045,8 +1059,8 @@ void SettingsWindow::SaveCurrentPage() {
             break;
         case kPageIgnore:
             // 从 IgnoreFormatsPage 获取 whitelist 复选框状态
-            if (m_ignorePageObjects[1] != nullptr) {
-                HWND whitelist = ::GetDlgItem(m_ignorePageObjects[1]->GetPageWindow(), IDC_I_WHITELIST);
+            if (m_ignorePageObjects[0] != nullptr) {
+                HWND whitelist = ::GetDlgItem(m_ignorePageObjects[0]->GetPageWindow(), IDC_I_WHITELIST);
                 m_settings.ignore_all_apps_except_listed = IsChecked(whitelist);
             }
             break;
@@ -1064,12 +1078,12 @@ void SettingsWindow::SaveCurrentPage() {
         }
 
         const AppSettings snapshot = m_settings;
-        snapshot.Save(m_database);
+        m_storage.SaveSettings(snapshot);
         if (previous.history_size != snapshot.history_size) {
-            m_database.TrimUnpinned(snapshot.history_size);
+            m_storage.TrimUnpinned(snapshot.history_size);
         }
         if (previous.show_special_symbols != snapshot.show_special_symbols) {
-            m_database.RegenerateTitles(snapshot.show_special_symbols);
+            m_storage.RegenerateTitles(snapshot.show_special_symbols);
         }
         m_settings = snapshot;
         UpdateDependencies();
@@ -1101,7 +1115,7 @@ void SettingsWindow::EditSelectedPin() {
 
     const sqlite3_int64 item_id = m_pins[selected].id;
     try {
-        const auto item = m_database.GetItem(item_id, PayloadMode::Full);
+        const auto item = m_storage.GetItem(item_id, PayloadMode::Full);
         if (!item.has_value()) {
             return;
         }
@@ -1113,9 +1127,9 @@ void SettingsWindow::EditSelectedPin() {
         const std::wstring key = dialog.GetKey();
         const std::wstring title = dialog.GetTitle();
         if (dialog.ContentModified()) {
-            m_database.UpdatePinnedItem(edited_id, key, title, dialog.GetContent());
+            m_storage.UpdatePinnedItem(edited_id, key, title, dialog.GetContent());
         } else {
-            m_database.UpdatePinnedMetadata(edited_id, key, title);
+            m_storage.UpdatePinnedMetadata(edited_id, key, title);
         }
         RefreshPinsList();
         NotifyOwner();
@@ -1137,7 +1151,7 @@ void SettingsWindow::DeleteSelectedPin() {
     }
     const sqlite3_int64 item_id = m_pins[selected].id;
     try {
-        m_database.DeleteItem(item_id);
+        m_storage.DeleteItem(item_id);
         RefreshPinsList();
         NotifyOwner();
     } catch (const std::exception &error) {
@@ -1176,7 +1190,7 @@ void SettingsWindow::ResetPopupPosition() {
     m_settings.popup_x = 0;
     m_settings.popup_y = 0;
     try {
-        m_settings.Save(m_database);
+        m_storage.SaveSettings(m_settings);
         NotifyOwner();
     } catch (const std::exception &error) {
         m_settings = previous;
@@ -1422,14 +1436,41 @@ void SetIgnoreListViewColumnWidth(HWND list, int width) {
 
 }
 
+void IgnorePageBase::SetValues(std::vector<std::wstring> values) {
+    m_values = std::move(values);
+    m_persistedValues = m_values;
+    Refresh();
+}
+
+bool IgnorePageBase::PersistValues(IgnoreListKind list) {
+    if (m_storage == nullptr) {
+        return false;
+    }
+    try {
+        m_storage->ReplaceList(list, m_values);
+        m_persistedValues = m_values;
+        return true;
+    } catch (const std::exception &error) {
+        m_values = m_persistedValues;
+        Refresh();
+        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
+        return false;
+    } catch (...) {
+        m_values = m_persistedValues;
+        Refresh();
+        ::MessageBoxW(m_pageWindow, L"无法保存忽略规则。", L"无法保存忽略规则", MB_OK | MB_ICONERROR);
+        return false;
+    }
+}
+
 void IgnoreApplicationsPage::Initialize(
     HWND page_window,
-    Database &database,
+    StorageWorker &storage,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
-    m_database = &database;
-    m_values = std::move(values);
+    m_storage = &storage;
+    SetValues(std::move(values));
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
@@ -1556,16 +1597,7 @@ bool IgnoreApplicationsPage::ResetToDefaults() {
 }
 
 bool IgnoreApplicationsPage::SaveList() {
-    if (m_database == nullptr) {
-        return false;
-    }
-    try {
-        m_database->ReplaceList(DatabaseList::IgnoredApplications, m_values);
-        return true;
-    } catch (const std::exception &error) {
-        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
-        return false;
-    }
+    return PersistValues(IgnoreListKind::Applications);
 }
 
 void IgnoreApplicationsPage::UpdateDescription() {
@@ -1579,12 +1611,12 @@ void IgnoreApplicationsPage::UpdateDescription() {
 
 void IgnoreFormatsPage::Initialize(
     HWND page_window,
-    Database &database,
+    StorageWorker &storage,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
-    m_database = &database;
-    m_values = std::move(values);
+    m_storage = &storage;
+    SetValues(std::move(values));
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
@@ -1705,7 +1737,7 @@ bool IgnoreFormatsPage::RemoveValue() {
 }
 
 bool IgnoreFormatsPage::ResetToDefaults() {
-    m_values = {L"CF_CLIPBOARD_VIEWER_IGNORE"};
+    m_values = ClipboardRules::DefaultIgnoredFormats();
     if (!SaveList()) {
         return false;
     }
@@ -1714,16 +1746,7 @@ bool IgnoreFormatsPage::ResetToDefaults() {
 }
 
 bool IgnoreFormatsPage::SaveList() {
-    if (m_database == nullptr) {
-        return false;
-    }
-    try {
-        m_database->ReplaceList(DatabaseList::IgnoredFormats, m_values);
-        return true;
-    } catch (const std::exception &error) {
-        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
-        return false;
-    }
+    return PersistValues(IgnoreListKind::Formats);
 }
 
 void IgnoreFormatsPage::UpdateDescription() {
@@ -1737,12 +1760,12 @@ void IgnoreFormatsPage::UpdateDescription() {
 
 void IgnoreRegexpsPage::Initialize(
     HWND page_window,
-    Database &database,
+    StorageWorker &storage,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
-    m_database = &database;
-    m_values = std::move(values);
+    m_storage = &storage;
+    SetValues(std::move(values));
     m_list = ::GetDlgItem(page_window, IDC_I_LIST);
     m_description = ::GetDlgItem(page_window, IDC_I_DESCRIPTION);
 
@@ -1867,16 +1890,7 @@ bool IgnoreRegexpsPage::ResetToDefaults() {
 }
 
 bool IgnoreRegexpsPage::SaveList() {
-    if (m_database == nullptr) {
-        return false;
-    }
-    try {
-        m_database->ReplaceList(DatabaseList::IgnoredRegexps, m_values);
-        return true;
-    } catch (const std::exception &error) {
-        ::MessageBoxA(m_pageWindow, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
-        return false;
-    }
+    return PersistValues(IgnoreListKind::Regexps);
 }
 
 void IgnoreRegexpsPage::UpdateDescription() {

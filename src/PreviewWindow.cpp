@@ -1,4 +1,5 @@
 #include "PreviewWindow.h"
+#include "ClipboardRules.h"
 #include "Constants.h"
 #include "UiFont.h"
 
@@ -138,7 +139,12 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_text = ::GetDlgItem(m_hWnd, IDC_PREVIEW_TEXT);
     m_status = ::GetDlgItem(m_hWnd, IDC_PREVIEW_STATUS);
     UpdateFont(UiFont::DpiForWindow(m_hWnd));
-    ::SendMessageW(m_text, EM_SETLIMITTEXT, 4 * 1024 * 1024, 0);
+    ::SendMessageW(
+        m_text,
+        EM_SETLIMITTEXT,
+        ClipboardRules::Limits::kMaximumPreviewTextCharacters,
+        0
+    );
     ::ShowWindow(m_image, SW_HIDE);
     ::ShowWindow(m_text, SW_HIDE);
     return TRUE;

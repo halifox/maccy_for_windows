@@ -1,4 +1,5 @@
 #include "PreviewDecoder.h"
+#include "ClipboardRules.h"
 
 #include <atlbase.h>
 #include <wincodec.h>
@@ -12,36 +13,6 @@
 #include <utility>
 
 namespace {
-
-constexpr std::uint64_t kMaximumSourcePixels = 64ULL * 1024ULL * 1024ULL;
-
-bool IsEncodedImageName(std::wstring_view name) {
-    constexpr std::wstring_view names[] = {
-        L"PNG",
-        L"image/png",
-        L"JFIF",
-        L"image/jpeg",
-        L"TIFF",
-        L"image/tiff",
-        L"HEIC",
-        L"image/heic",
-    };
-    return std::any_of(names, names + ARRAYSIZE(names), [name](std::wstring_view expected) {
-        if (name.size() != expected.size()) {
-            return false;
-        }
-        for (size_t index = 0; index < name.size(); ++index) {
-            if (std::towlower(name[index]) != std::towlower(expected[index])) {
-                return false;
-            }
-        }
-        return true;
-    });
-}
-
-bool IsDib(const ClipboardFormatData &data) {
-    return data.format == CF_DIBV5 || data.format == CF_DIB;
-}
 
 bool FitSize(
     UINT source_width,
@@ -62,7 +33,7 @@ bool FitSize(
     });
     width = std::max(1u, static_cast<UINT>(std::floor(source_width * scale)));
     height = std::max(1u, static_cast<UINT>(std::floor(source_height * scale)));
-    return static_cast<std::uint64_t>(width) * height <= kMaximumSourcePixels;
+    return static_cast<std::uint64_t>(width) * height <= ClipboardRules::Limits::kMaximumImagePixels;
 }
 
 bool ReadDibLayout(
@@ -106,7 +77,7 @@ bool ReadDibLayout(
         header.biHeight < 0 ? -static_cast<LONGLONG>(header.biHeight) : header.biHeight
     );
     if (source_width == 0 || source_height == 0 ||
-        source_width * source_height > kMaximumSourcePixels) {
+        source_width * source_height > ClipboardRules::Limits::kMaximumImagePixels) {
         return false;
     }
 
@@ -125,7 +96,7 @@ bool ReadDibLayout(
 
 HBITMAP CreateOutputBitmap(UINT width, UINT height, void **bits) {
     if (width == 0 || height == 0 ||
-        static_cast<std::uint64_t>(width) * height > kMaximumSourcePixels) {
+        static_cast<std::uint64_t>(width) * height > ClipboardRules::Limits::kMaximumImagePixels) {
         return nullptr;
     }
     BITMAPINFO info{};
@@ -261,7 +232,7 @@ std::optional<PreviewBitmap> CreateBitmapFromEncoded(
     UINT source_height = 0;
     if (FAILED(frame->GetSize(&source_width, &source_height)) ||
         source_width == 0 || source_height == 0 ||
-        static_cast<std::uint64_t>(source_width) * source_height > kMaximumSourcePixels) {
+        static_cast<std::uint64_t>(source_width) * source_height > ClipboardRules::Limits::kMaximumImagePixels) {
         return std::nullopt;
     }
 
@@ -383,7 +354,7 @@ std::optional<PreviewBitmap> DecodePreviewBitmap(
         if (stop_token.stop_requested()) {
             return std::nullopt;
         }
-        if (IsEncodedImageName(data.name)) {
+        if (ClipboardRules::IsEncodedImageName(data.name)) {
             if (auto bitmap = CreateBitmapFromEncoded(
                     data.bytes,
                     maximum_width,
@@ -398,7 +369,7 @@ std::optional<PreviewBitmap> DecodePreviewBitmap(
         if (stop_token.stop_requested()) {
             return std::nullopt;
         }
-        if (IsDib(data)) {
+        if (ClipboardRules::IsDib(data)) {
             if (auto bitmap = CreateBitmapFromDib(
                     data.bytes,
                     maximum_width,

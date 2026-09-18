@@ -16,7 +16,8 @@
 #include <atlwin.h>
 
 #include "Settings.h"
-#include "Database.h"
+#include "ClipboardData.h"
+#include "StorageWorker.h"
 #include "resource.h"
 
 class EditPinDialog : public CDialogImpl<EditPinDialog> {
@@ -83,7 +84,7 @@ class IgnorePageBase {
 public:
     virtual ~IgnorePageBase() = default;
 
-    virtual void Initialize(HWND page_window, Database &database,
+    virtual void Initialize(HWND page_window, StorageWorker &storage,
                             std::vector<std::wstring> values) = 0;
     virtual void Show() = 0;
     virtual void Hide() = 0;
@@ -96,18 +97,22 @@ public:
 
     HWND GetPageWindow() const { return m_pageWindow; }
     const std::vector<std::wstring> &Values() const noexcept { return m_values; }
+    void SetValues(std::vector<std::wstring> values);
 
 protected:
+    bool PersistValues(IgnoreListKind list);
+
     HWND m_pageWindow = nullptr;
     HWND m_list = nullptr;
     HWND m_description = nullptr;
-    Database *m_database = nullptr;
+    StorageWorker *m_storage = nullptr;
     std::vector<std::wstring> m_values;
+    std::vector<std::wstring> m_persistedValues;
 };
 
 class IgnoreApplicationsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, Database &database,
+    void Initialize(HWND page_window, StorageWorker &storage,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -124,7 +129,7 @@ private:
 
 class IgnoreFormatsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, Database &database,
+    void Initialize(HWND page_window, StorageWorker &storage,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -141,7 +146,7 @@ private:
 
 class IgnoreRegexpsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, Database &database,
+    void Initialize(HWND page_window, StorageWorker &storage,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -161,13 +166,14 @@ public:
     enum { IDD = IDD_SETTINGS };
 
     using SettingsChangedCallback = std::function<void(const AppSettings &, std::uint32_t)>;
-    SettingsWindow(Database &database, HWND owner, AppSettings settings,
+    SettingsWindow(StorageWorker &storage, HWND owner, AppSettings settings,
                    std::array<std::vector<std::wstring>, 3> ignored_lists,
                    SettingsChangedCallback on_changed);
 
     bool CreateOrShow();
     void DestroyForOwner();
     void SetSettingsSnapshot(const AppSettings &settings);
+    void SetStateSnapshot(const AppSettings &settings, StorageWorker::IgnoreLists ignored_lists);
     bool IsOpen() const noexcept { return m_hWnd != nullptr && IsWindowVisible(); }
     HWND Window() const noexcept { return m_hWnd; }
 
@@ -199,7 +205,7 @@ private:
     void RefreshPinsList();
 
     void SaveCurrentPage();
-    void NotifyOwner(std::uint32_t updateMask = AppConstants::UiUpdate::kSettings);
+    void NotifyOwner(std::uint32_t updateMask = 0);
     void EditSelectedPin();
     void DeleteSelectedPin();
     void OpenNotificationsSettings();
@@ -213,7 +219,7 @@ private:
     LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
 
-    Database &m_database;
+    StorageWorker &m_storage;
     HWND m_owner = nullptr;
     SettingsChangedCallback m_onChanged;
     CTabCtrl m_tabs;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlatformConfig.h"
+#include "Constants.h"
 
 #include <list>
 #include <optional>
@@ -9,7 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Database.h"
+#include "ClipboardData.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
 
@@ -36,7 +37,7 @@ public:
                          std::wstring_view searchQuery);
     void DrawMenuButton(DRAWITEMSTRUCT* draw,
                         int activeFooter,
-                        const std::array<HWND, 4>& footerButtons);
+                        const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons);
     void OnPaint(HDC dc, const RECT& client,
                  int pinSeparatorY,
                  int footerSeparatorY,
@@ -49,8 +50,6 @@ public:
 
     // Text utilities
     std::wstring DisplayText(const ClipboardItem& item) const;
-    static std::wstring MakeTitle(std::wstring value, bool show_special_symbols);
-    static std::wstring PreviewText(std::wstring_view text);
 
 private:
     struct HistoryItemLayout {
