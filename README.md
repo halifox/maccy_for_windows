@@ -1,8 +1,26 @@
+<div align="center">
+
+<img src="src/assets/app/maccy.png" alt="Maccy for Windows" width="120" height="120" />
+
 # Maccy for Windows
 
 一个 Windows 剪贴板历史工具，受 macOS 版 [Maccy](https://github.com/p0deje/Maccy) 启发。
 
-> 本项目不是 Maccy 官方 Windows 版本，也不隶属于、代表或获得 Maccy 官方项目授权。
+[![Platform: Windows x64](https://img.shields.io/badge/platform-Windows%20x64-0078D4)](#从源码构建)
+[![Built with C++20](https://img.shields.io/badge/built%20with-C%2B%2B20-00599C)](#从源码构建)
+[![Storage: SQLite](https://img.shields.io/badge/storage-SQLite-003B57)](#数据隐私和删除)
+[![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+[![No telemetry](https://img.shields.io/badge/telemetry-none-brightgreen)](#数据隐私和删除)
+
+[功能](#功能概览) · [安装](#安装) · [构建](#从源码构建) · [数据与隐私](#数据隐私和删除)
+
+</div>
+
+---
+
+> [!WARNING]
+>
+> **本项目不是 Maccy 官方 Windows 版本，也不隶属于、代表或获得 Maccy 官方项目授权。**
 
 ## 功能概览
 
@@ -23,9 +41,9 @@
 - Maccy 使用 macOS Pasteboard 和 SwiftData；本项目使用 Windows 原生剪贴板格式和 SQLite BLOB。
 - 本项目不包含 Universal Clipboard、iCloud 或 macOS App Intents 等 macOS 集成。
 
-## 下载和安装
+## 安装
 
-请从 [GitHub Releases](https://github.com/halifox/Clipboard/releases) 下载带有版本号的 ZIP 或 NSIS 安装包，并核对同一 Release 中的 `SHA256SUMS.txt`。本地 Debug 构建目录中的 `maccy.exe` 仅适用于开发和测试，不是正式分发包。
+请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 ZIP 或 NSIS 安装包，并核对同一 Release 中的 `SHA256SUMS.txt`。本地 Debug 构建目录中的 `maccy.exe` 仅适用于开发和测试，不是正式分发包。
 
 用户可见变化记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 
@@ -74,13 +92,6 @@ SQLite 的 `-wal` 和 `-shm` 文件也是数据库的一部分。当前存储未
 应用不包含遥测、剪贴板上传或后台自动下载安装服务。更新入口仅通过浏览器打开项目的 GitHub Releases 页面。
 
 删除历史并不等同于取证意义上的安全擦除。需要彻底清理时，应退出应用后按照 [隐私和数据说明](PRIVACY.md) 删除数据库及其 WAL 文件。
-
-## 已知限制
-
-- 当前没有完整的自动化 CTest 测试套件；
-- 目前提供的构建配置和预构建包面向 Windows x64，ARM64 和 32 位版本不在支持范围内；
-- 应用不提供自动下载和安装更新，请手动从 GitHub Releases 获取新版本；
-- 升级前请阅读对应版本的变更说明，并备份需要保留的历史记录。
 
 ## 许可证和第三方内容
 
