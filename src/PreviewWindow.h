@@ -28,11 +28,10 @@ public:
     END_MSG_MAP()
 
     bool Initialize(HWND owner);
-    void SetItem(const ClipboardItem &item, PreviewBitmap bitmap = {});
+    void SetItem(const ClipboardItem &item, std::wstring text, PreviewBitmap bitmap = {});
     void GetImageSize(UINT &width, UINT &height) const noexcept;
     void Hide();
     bool IsVisible() const noexcept;
-    bool ContainsWindow(HWND window) const noexcept;
     HWND Window() const noexcept { return m_hWnd; }
 
 private:
@@ -56,4 +55,5 @@ private:
     HFONT m_font = nullptr;
     int m_bitmapWidth = 0;
     int m_bitmapHeight = 0;
+    sqlite3_int64 m_itemId = 0;
 };

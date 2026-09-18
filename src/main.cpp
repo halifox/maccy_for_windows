@@ -72,13 +72,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     try {
         Database database(GetDatabasePath());
         PreviewWorker preview(database.Path());
-        preview.Start();
         MainWindow window(database, preview);
         if (!window.Create(nullptr)) {
             _Module.Term();
             CoUninitialize();
             return 1;
         }
+        preview.Start(window.Window());
 
         if (!window.AddTrayIcon()) {
             window.ShowMainWindow();
@@ -89,6 +89,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+        preview.Stop();
         _Module.Term();
         CoUninitialize();
         return static_cast<int>(message.wParam);

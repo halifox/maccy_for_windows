@@ -13,7 +13,6 @@ namespace {
 
 constexpr UINT kFallbackPreviewWidth = 194;
 constexpr UINT kFallbackPreviewHeight = 98;
-constexpr size_t kMaximumPreviewTextCharacters = 4ULL * 1024ULL * 1024ULL;
 
 void ApplySystemRoundedCorners(HWND window) {
     const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
@@ -23,69 +22,6 @@ void ApplySystemRoundedCorners(HWND window) {
         &preference,
         sizeof(preference)
     );
-}
-
-bool IsUnicodeText(const ClipboardFormatData &data) {
-    return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
-}
-
-bool IsAnsiText(const ClipboardFormatData &data) {
-    return data.format == CF_TEXT || data.name == L"CF_TEXT";
-}
-
-std::wstring FullText(const ClipboardItem &item) {
-    for (const ClipboardFormatData &data : item.data) {
-        if (!IsUnicodeText(data) || data.bytes.size() < sizeof(wchar_t)) {
-            continue;
-        }
-        const auto *text = reinterpret_cast<const wchar_t *>(data.bytes.data());
-        const size_t count = std::min(
-            data.bytes.size() / sizeof(wchar_t),
-            kMaximumPreviewTextCharacters
-        );
-        size_t length = 0;
-        while (length < count && text[length] != L'\0') {
-            ++length;
-        }
-        return std::wstring(text, length);
-    }
-
-    for (const ClipboardFormatData &data : item.data) {
-        if (!IsAnsiText(data) || data.bytes.empty()) {
-            continue;
-        }
-        const int source_length = static_cast<int>(std::min<size_t>(
-            data.bytes.size(),
-            std::min(kMaximumPreviewTextCharacters, static_cast<size_t>(INT_MAX))
-        ));
-        const int length = MultiByteToWideChar(
-            CP_ACP,
-            0,
-            reinterpret_cast<const char *>(data.bytes.data()),
-            source_length,
-            nullptr,
-            0
-        );
-        if (length <= 0) {
-            continue;
-        }
-        std::wstring result(static_cast<size_t>(length), L'\0');
-        MultiByteToWideChar(
-            CP_ACP,
-            0,
-            reinterpret_cast<const char *>(data.bytes.data()),
-            source_length,
-            result.data(),
-            length
-        );
-        const size_t nul = result.find(L'\0');
-        if (nul != std::wstring::npos) {
-            result.resize(nul);
-        }
-        return result;
-    }
-
-    return item.preview;
 }
 
 std::wstring FormatCopyTime(sqlite3_int64 milliseconds) {
@@ -159,14 +95,14 @@ void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
     ::SetWindowTextW(m_status, status.c_str());
 }
 
-void PreviewWindow::SetItem(const ClipboardItem &item, PreviewBitmap bitmap) {
+void PreviewWindow::SetItem(const ClipboardItem &item, std::wstring text, PreviewBitmap bitmap) {
+    m_itemId = item.id;
     ::SetWindowTextW(::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN), item.pinned ? L"取消置顶" : L"置顶");
     ClearBitmap();
     m_bitmapWidth = bitmap.width;
     m_bitmapHeight = bitmap.height;
     m_bitmap = bitmap.Release();
     const bool image_loaded = m_bitmap != nullptr && m_bitmapWidth > 0 && m_bitmapHeight > 0;
-    const std::wstring text = FullText(item);
     ::SetWindowTextW(m_text, text.c_str());
     ::SendMessageW(m_text, EM_SETSEL, 0, 0);
     ::ShowWindow(m_image, image_loaded ? SW_SHOW : SW_HIDE);
@@ -187,16 +123,12 @@ void PreviewWindow::Hide() {
         ::ShowWindow(m_image, SW_HIDE);
         ::ShowWindow(m_text, SW_HIDE);
         ::ShowWindow(m_hWnd, SW_HIDE);
+        m_itemId = 0;
     }
 }
 
 bool PreviewWindow::IsVisible() const noexcept {
     return m_hWnd != nullptr && ::IsWindowVisible(m_hWnd) != FALSE;
-}
-
-bool PreviewWindow::ContainsWindow(HWND window) const noexcept {
-    return window != nullptr && m_hWnd != nullptr &&
-        (window == m_hWnd || ::IsChild(m_hWnd, window) != FALSE);
 }
 
 LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
@@ -241,22 +173,32 @@ LRESULT PreviewWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL &hand
     handled = TRUE;
     const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
     if (owner != nullptr) {
-        ::SendMessageW(owner, AppConstants::kPopupActivationMessage, wParam, lParam);
+        ::PostMessageW(owner, AppConstants::kPopupActivationMessage, wParam, lParam);
     }
     return 0;
 }
 
 LRESULT PreviewWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND,
-        MAKEWPARAM(IDC_HISTORY_PREVIEW, BN_CLICKED), 0);
+    const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
+    if (owner != nullptr) {
+        ::PostMessageW(owner, WM_COMMAND, MAKEWPARAM(IDC_HISTORY_PREVIEW, BN_CLICKED), 0);
+    }
     return 0;
 }
 
 LRESULT PreviewWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     const int id = LOWORD(wParam);
     handled = id == IDC_PREVIEW_PIN || id == IDC_PREVIEW_DELETE;
-    if (handled) ::SendMessageW(::GetWindow(m_hWnd, GW_OWNER), WM_COMMAND, wParam, 0);
+    const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
+    if (handled && owner != nullptr && m_itemId != 0) {
+        ::PostMessageW(
+            owner,
+            WM_COMMAND,
+            wParam,
+            static_cast<LPARAM>(m_itemId)
+        );
+    }
     return 0;
 }
 
@@ -324,6 +266,7 @@ LRESULT PreviewWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_image = nullptr;
     m_text = nullptr;
     m_status = nullptr;
+    m_itemId = 0;
     m_hWnd = nullptr;
     return 0;
 }

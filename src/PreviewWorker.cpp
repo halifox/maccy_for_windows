@@ -1,11 +1,143 @@
 #include "PreviewWorker.h"
 
 #include "Constants.h"
+#include "PreviewDecoder.h"
 
 #include <atlbase.h>
 
+#include <algorithm>
+#include <climits>
 #include <stdexcept>
 #include <utility>
+
+namespace {
+
+constexpr WPARAM kRequestCommand = 1;
+constexpr WPARAM kHideCommand = 2;
+constexpr WPARAM kRepositionCommand = 3;
+constexpr size_t kMaximumPreviewTextCharacters = 4ULL * 1024ULL * 1024ULL;
+
+bool IsUnicodeText(const ClipboardFormatData &data) {
+    return data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT";
+}
+
+bool IsAnsiText(const ClipboardFormatData &data) {
+    return data.format == CF_TEXT || data.name == L"CF_TEXT";
+}
+
+std::wstring FullText(const ClipboardItem &item) {
+    for (const ClipboardFormatData &data : item.data) {
+        if (!IsUnicodeText(data) || data.bytes.size() < sizeof(wchar_t)) {
+            continue;
+        }
+        const auto *text = reinterpret_cast<const wchar_t *>(data.bytes.data());
+        const size_t count = std::min(
+            data.bytes.size() / sizeof(wchar_t),
+            kMaximumPreviewTextCharacters
+        );
+        size_t length = 0;
+        while (length < count && text[length] != L'\0') {
+            ++length;
+        }
+        return std::wstring(text, length);
+    }
+
+    for (const ClipboardFormatData &data : item.data) {
+        if (!IsAnsiText(data) || data.bytes.empty()) {
+            continue;
+        }
+        const int source_length = static_cast<int>(std::min<size_t>(
+            data.bytes.size(),
+            std::min(kMaximumPreviewTextCharacters, static_cast<size_t>(INT_MAX))
+        ));
+        const int length = MultiByteToWideChar(
+            CP_ACP,
+            0,
+            reinterpret_cast<const char *>(data.bytes.data()),
+            source_length,
+            nullptr,
+            0
+        );
+        if (length <= 0) {
+            continue;
+        }
+        std::wstring result(static_cast<size_t>(length), L'\0');
+        MultiByteToWideChar(
+            CP_ACP,
+            0,
+            reinterpret_cast<const char *>(data.bytes.data()),
+            source_length,
+            result.data(),
+            length
+        );
+        const size_t nul = result.find(L'\0');
+        if (nul != std::wstring::npos) {
+            result.resize(nul);
+        }
+        return result;
+    }
+
+    return item.preview;
+}
+
+void PositionPreviewWindow(HWND owner, PreviewWindow &preview, bool show) {
+    const HWND preview_handle = preview.Window();
+    if (owner == nullptr || preview_handle == nullptr || !::IsWindow(preview_handle)) {
+        return;
+    }
+
+    RECT main_rect{};
+    RECT preview_rect{};
+    if (!::GetWindowRect(owner, &main_rect) ||
+        !::GetWindowRect(preview_handle, &preview_rect)) {
+        return;
+    }
+
+    const int width = preview_rect.right - preview_rect.left;
+    const int height = preview_rect.bottom - preview_rect.top;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    HMONITOR monitor = ::MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{sizeof(monitor_info)};
+    if (monitor == nullptr || !::GetMonitorInfoW(monitor, &monitor_info)) {
+        return;
+    }
+
+    const RECT &work_area = monitor_info.rcWork;
+    constexpr int gap = 0;
+    int x = main_rect.right + gap;
+    int y = main_rect.top;
+    const bool fits_right = main_rect.right + gap + width <= work_area.right;
+    const bool fits_left = main_rect.left - gap - width >= work_area.left;
+    if (fits_right) {
+        x = main_rect.right + gap;
+    } else if (fits_left) {
+        x = main_rect.left - width - gap;
+    } else {
+        const bool fits_above = main_rect.top - gap - height >= work_area.top;
+        const bool fits_below = main_rect.bottom + gap + height <= work_area.bottom;
+        x = std::clamp(
+            static_cast<int>(main_rect.left),
+            static_cast<int>(work_area.left),
+            std::max<int>(work_area.left, work_area.right - width)
+        );
+        if (fits_above) {
+            y = main_rect.top - height - gap;
+        } else if (fits_below) {
+            y = main_rect.bottom + gap;
+        }
+    }
+    const int max_x = std::max<int>(work_area.left, work_area.right - width);
+    const int max_y = std::max<int>(work_area.top, work_area.bottom - height);
+    x = std::clamp(x, static_cast<int>(work_area.left), max_x);
+    y = std::clamp(y, static_cast<int>(work_area.top), max_y);
+
+    const UINT flags = SWP_NOSIZE | SWP_NOACTIVATE | (show ? SWP_SHOWWINDOW : 0);
+    ::SetWindowPos(preview_handle, HWND_TOPMOST, x, y, 0, 0, flags);
+}
+
+} // namespace
 
 PreviewWorker::PreviewWorker(std::filesystem::path path)
     : m_path(std::move(path)) {}
@@ -14,14 +146,12 @@ PreviewWorker::~PreviewWorker() {
     Stop();
 }
 
-void PreviewWorker::Start() {
+void PreviewWorker::Start(HWND owner) {
+    if (owner == nullptr) {
+        throw std::invalid_argument("Preview worker owner window is null");
+    }
     if (m_thread.joinable()) {
         return;
-    }
-    {
-        std::lock_guard lock(m_readyMutex);
-        m_ready = false;
-        m_startupError = nullptr;
     }
     {
         std::lock_guard lock(m_requestMutex);
@@ -29,19 +159,17 @@ void PreviewWorker::Start() {
         m_latestRequest.reset();
         m_requestStopSource = std::stop_source{};
     }
+    m_threadId.store(0, std::memory_order_release);
+    m_workerReady.store(false, std::memory_order_release);
+    m_workerFailed.store(false, std::memory_order_release);
+    m_previewWindow.store(nullptr, std::memory_order_release);
+    m_previewVisible.store(false, std::memory_order_release);
+    m_ownerWindow.store(owner, std::memory_order_release);
+    m_uiWindow.store(owner, std::memory_order_release);
 
     m_thread = std::jthread([this](std::stop_token stop_token) {
         ThreadMain(stop_token);
     });
-
-    std::unique_lock lock(m_readyMutex);
-    m_readyCondition.wait(lock, [this] { return m_ready; });
-    if (m_startupError != nullptr) {
-        const std::exception_ptr error = m_startupError;
-        lock.unlock();
-        Stop();
-        std::rethrow_exception(error);
-    }
 }
 
 void PreviewWorker::Stop() {
@@ -55,26 +183,65 @@ void PreviewWorker::Stop() {
         m_requestStopSource.request_stop();
     }
     m_thread.request_stop();
-    m_requestCondition.notify_all();
+    const DWORD thread_id = m_threadId.load(std::memory_order_acquire);
+    if (thread_id != 0) {
+        ::PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
+    }
     m_thread.join();
+    m_threadId.store(0, std::memory_order_release);
+    m_workerReady.store(false, std::memory_order_release);
+    m_workerFailed.store(false, std::memory_order_release);
+    m_previewWindow.store(nullptr, std::memory_order_release);
+    m_previewVisible.store(false, std::memory_order_release);
     {
         std::lock_guard lock(m_resultMutex);
         m_uiCallbacks.clear();
     }
+    m_ownerWindow.store(nullptr, std::memory_order_release);
+    m_uiWindow.store(nullptr, std::memory_order_release);
 }
 
 void PreviewWorker::SetUiWindow(HWND window) noexcept {
     m_uiWindow.store(window, std::memory_order_release);
 }
 
+void PreviewWorker::Hide() {
+    if (!m_thread.joinable()) {
+        return;
+    }
+    {
+        std::lock_guard lock(m_requestMutex);
+        m_requestStopSource.request_stop();
+        m_latestRequest.reset();
+    }
+    PostCommand(kHideCommand);
+}
+
+void PreviewWorker::Reposition() {
+    if (m_thread.joinable()) {
+        PostCommand(kRepositionCommand);
+    }
+}
+
+bool PreviewWorker::IsVisible() const noexcept {
+    return m_previewVisible.load(std::memory_order_acquire);
+}
+
+bool PreviewWorker::ContainsWindow(HWND window) const noexcept {
+    const HWND preview = m_previewWindow.load(std::memory_order_acquire);
+    if (window == nullptr || preview == nullptr) {
+        return false;
+    }
+    return window == preview || ::GetAncestor(window, GA_ROOT) == preview;
+}
+
 bool PreviewWorker::Request(
     sqlite3_int64 item_id,
     std::uint64_t generation,
-    UINT maximum_width,
-    UINT maximum_height,
     ResultCallback callback
 ) {
-    if (item_id <= 0 || !callback || !m_thread.joinable()) {
+    if (item_id <= 0 || !callback || !m_thread.joinable() ||
+        m_workerFailed.load(std::memory_order_acquire)) {
         return false;
     }
     {
@@ -87,14 +254,20 @@ bool PreviewWorker::Request(
         m_latestRequest = RequestData{
             item_id,
             generation,
-            maximum_width,
-            maximum_height,
             m_requestStopSource.get_token(),
             std::move(callback),
         };
     }
-    m_requestCondition.notify_one();
-    return true;
+    if (PostCommand(kRequestCommand) || !m_workerReady.load(std::memory_order_acquire)) {
+        return true;
+    }
+    {
+        std::lock_guard lock(m_requestMutex);
+        if (m_latestRequest.has_value() && m_latestRequest->generation == generation) {
+            m_latestRequest.reset();
+        }
+    }
+    return false;
 }
 
 void PreviewWorker::DrainUiCallbacks() {
@@ -110,8 +283,20 @@ void PreviewWorker::DrainUiCallbacks() {
     }
 }
 
+bool PreviewWorker::PostCommand(WPARAM command) const noexcept {
+    const DWORD thread_id = m_threadId.load(std::memory_order_acquire);
+    return thread_id != 0 && ::PostThreadMessageW(
+        thread_id,
+        AppConstants::kPreviewWorkerCommandMessage,
+        command,
+        0
+    ) != FALSE;
+}
+
 void PreviewWorker::ThreadMain(std::stop_token stop_token) {
     bool com_initialized = false;
+    PreviewWindow preview;
+    std::string worker_error;
     try {
         const HRESULT com_result = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         if (FAILED(com_result) && com_result != RPC_E_CHANGED_MODE) {
@@ -120,48 +305,93 @@ void PreviewWorker::ThreadMain(std::stop_token stop_token) {
         com_initialized = SUCCEEDED(com_result);
 
         Database database(m_path);
-        {
-            std::lock_guard lock(m_readyMutex);
-            m_ready = true;
+        const HWND owner = m_ownerWindow.load(std::memory_order_acquire);
+        if (owner == nullptr || !preview.Initialize(owner)) {
+            throw std::runtime_error("Unable to create preview window");
         }
-        m_readyCondition.notify_one();
+        m_previewWindow.store(preview.Window(), std::memory_order_release);
+
+        MSG message{};
+        ::PeekMessageW(&message, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+        m_threadId.store(::GetCurrentThreadId(), std::memory_order_release);
+        m_workerReady.store(true, std::memory_order_release);
+
+        bool request_pending = false;
+        {
+            std::lock_guard lock(m_requestMutex);
+            request_pending = !m_stopping && m_latestRequest.has_value();
+        }
+        if (request_pending) {
+            PostCommand(kRequestCommand);
+        }
 
         while (!stop_token.stop_requested()) {
-            std::optional<RequestData> request;
-            {
-                std::unique_lock lock(m_requestMutex);
-                m_requestCondition.wait(lock, stop_token, [this] {
-                    return m_stopping || m_latestRequest.has_value();
-                });
-                if (m_stopping || stop_token.stop_requested()) {
+            const BOOL result = ::GetMessageW(&message, nullptr, 0, 0);
+            if (result == 0) {
+                break;
+            }
+            if (result < 0) {
+                worker_error = "Preview worker message loop failed";
+                break;
+            }
+            if (message.message == AppConstants::kPreviewWorkerCommandMessage) {
+                switch (message.wParam) {
+                case kRequestCommand: {
+                    std::optional<RequestData> request;
+                    {
+                        std::lock_guard lock(m_requestMutex);
+                        request = std::move(m_latestRequest);
+                        m_latestRequest.reset();
+                    }
+                    if (request.has_value()) {
+                        ProcessRequest(database, preview, std::move(*request), stop_token);
+                    }
                     break;
                 }
-                request = std::move(m_latestRequest);
-                m_latestRequest.reset();
+                case kHideCommand:
+                    preview.Hide();
+                    m_previewVisible.store(false, std::memory_order_release);
+                    break;
+                case kRepositionCommand:
+                    if (preview.IsVisible()) {
+                        PositionPreviewWindow(owner, preview, false);
+                    }
+                    break;
+                default:
+                    break;
+                }
+                continue;
             }
-            if (request.has_value()) {
-                ProcessRequest(database, std::move(*request), stop_token);
-            }
+            ::TranslateMessage(&message);
+            ::DispatchMessageW(&message);
         }
-
-        if (com_initialized) {
-            ::CoUninitialize();
-        }
+    } catch (const std::exception &error) {
+        worker_error = error.what();
     } catch (...) {
-        if (com_initialized) {
-            ::CoUninitialize();
-        }
-        {
-            std::lock_guard lock(m_readyMutex);
-            m_startupError = std::current_exception();
-            m_ready = true;
-        }
-        m_readyCondition.notify_one();
+        worker_error = "Unknown preview worker error";
+    }
+
+    if (!worker_error.empty()) {
+        m_workerFailed.store(true, std::memory_order_release);
+        OutputDebugStringA(("Preview worker stopped: " + worker_error + "\n").c_str());
+        FailPendingRequest(worker_error);
+    }
+
+    if (preview.Window() != nullptr && ::IsWindow(preview.Window())) {
+        preview.DestroyWindow();
+    }
+    m_workerReady.store(false, std::memory_order_release);
+    m_previewVisible.store(false, std::memory_order_release);
+    m_previewWindow.store(nullptr, std::memory_order_release);
+    m_threadId.store(0, std::memory_order_release);
+    if (com_initialized) {
+        ::CoUninitialize();
     }
 }
 
 void PreviewWorker::ProcessRequest(
     Database &database,
+    PreviewWindow &preview,
     RequestData request,
     std::stop_token worker_stop
 ) {
@@ -172,32 +402,76 @@ void PreviewWorker::ProcessRequest(
         if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
             return;
         }
-        result->item = database.GetItem(request.item_id, PayloadMode::Preview);
-        if (result->item.has_value() &&
-            !worker_stop.stop_requested() && !request.request_stop.stop_requested()) {
-            bool superseded = false;
-            {
-                std::lock_guard lock(m_requestMutex);
-                superseded = m_latestRequest.has_value() &&
-                    m_latestRequest->generation != request.generation;
+
+        const auto item = database.GetItem(request.item_id, PayloadMode::Preview);
+        if (!item.has_value()) {
+            if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+                return;
             }
-            if (!superseded) {
-                result->bitmap = DecodePreviewBitmap(
-                    *result->item,
-                    request.maximum_width,
-                    request.maximum_height,
-                    request.request_stop
-                );
-            }
+            preview.Hide();
+            m_previewVisible.store(false, std::memory_order_release);
+            PostResult(std::move(result), std::move(request.callback));
+            return;
         }
+
+        std::wstring text = FullText(*item);
+        if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+            return;
+        }
+
+        UINT maximum_width = 0;
+        UINT maximum_height = 0;
+        preview.GetImageSize(maximum_width, maximum_height);
+        auto bitmap = DecodePreviewBitmap(
+            *item,
+            maximum_width,
+            maximum_height,
+            request.request_stop
+        );
+        if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+            return;
+        }
+
+        PreviewBitmap preview_bitmap;
+        if (bitmap.has_value()) {
+            preview_bitmap = std::move(*bitmap);
+        }
+        preview.SetItem(*item, std::move(text), std::move(preview_bitmap));
+        PositionPreviewWindow(m_ownerWindow.load(std::memory_order_acquire), preview, true);
+        m_previewVisible.store(true, std::memory_order_release);
+        result->displayed = true;
     } catch (const std::exception &error) {
         result->error = error.what();
     } catch (...) {
         result->error = "Unknown preview worker error";
     }
-    if (!worker_stop.stop_requested() && !request.request_stop.stop_requested()) {
-        PostResult(std::move(result), std::move(request.callback));
+
+    if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+        return;
     }
+    if (!result->displayed) {
+        preview.Hide();
+        m_previewVisible.store(false, std::memory_order_release);
+    }
+    PostResult(std::move(result), std::move(request.callback));
+}
+
+void PreviewWorker::FailPendingRequest(std::string error) {
+    std::optional<RequestData> request;
+    {
+        std::lock_guard lock(m_requestMutex);
+        request = std::move(m_latestRequest);
+        m_latestRequest.reset();
+    }
+    if (!request.has_value()) {
+        return;
+    }
+
+    auto result = std::make_shared<PreviewResult>();
+    result->item_id = request->item_id;
+    result->generation = request->generation;
+    result->error = std::move(error);
+    PostResult(std::move(result), std::move(request->callback));
 }
 
 void PreviewWorker::PostResult(
@@ -214,10 +488,5 @@ void PreviewWorker::PostResult(
             callback(std::move(result));
         });
     }
-    if (!::PostMessageW(window, AppConstants::kPreviewWorkerResultMessage, 0, 0)) {
-        std::lock_guard lock(m_resultMutex);
-        if (!m_uiCallbacks.empty()) {
-            m_uiCallbacks.pop_back();
-        }
-    }
+    ::PostMessageW(window, AppConstants::kPreviewWorkerResultMessage, 0, 0);
 }

@@ -18,7 +18,6 @@
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
-#include "PreviewWindow.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
 #include "ClipboardMonitor.h"
@@ -71,6 +70,7 @@ public:
 
     bool AddTrayIcon();
     void ShowMainWindow();
+    HWND Window() const noexcept { return m_hWnd; }
 
 private:
     // Window procedure callbacks for subclassed controls
@@ -95,7 +95,6 @@ private:
     // Window positioning
     void PositionPopup(PopupPosition popup_position);
     void PositionOnMonitor(HMONITOR monitor, bool center);
-    void PositionPreviewWindow();
     HMONITOR SelectedMonitor() const;
     int PopupWidth() const;
     int PopupHeight() const;
@@ -203,7 +202,6 @@ private:
     PasteController m_pasteController;
     HistoryRenderer m_historyRenderer;
     KeyboardHandler m_keyboardHandler;
-    PreviewWindow m_previewWindow;
     std::unique_ptr<SettingsWindow> m_settingsWindow;
 
     // UI controls

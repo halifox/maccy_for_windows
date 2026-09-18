@@ -18,6 +18,7 @@ namespace AppConstants {
     constexpr UINT kTrayIconMessage = WM_APP + 1;
     constexpr UINT kUiUpdateMessage = WM_APP + 2;
     constexpr UINT kPreviewWorkerResultMessage = WM_APP + 3;
+    constexpr UINT kPreviewWorkerCommandMessage = WM_APP + 4;
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
