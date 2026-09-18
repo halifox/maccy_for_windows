@@ -45,6 +45,15 @@ Copyright (c) 2025 Alex Rodionov
 
 Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声明不构成商标或品牌授权。
 
+## 参与贡献
+
+欢迎提交问题、改进建议和 Pull Request。提交前请阅读：
+
+- [贡献指南](CONTRIBUTING.md)
+- [安全政策](SECURITY.md)
+
+请不要在公开 Issue 中提交安全漏洞、密码、令牌或未脱敏的剪贴板内容。
+
 ## 致谢
 
 感谢 [Alex Rodionov](https://github.com/p0deje) 和 Maccy 项目为 macOS 提供了优秀的剪贴板工具，也感谢其 MIT 许可证允许社区学习、修改和再利用相关软件与资源。
