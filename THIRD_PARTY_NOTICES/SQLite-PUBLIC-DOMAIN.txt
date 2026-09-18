@@ -1,0 +1,7 @@
+SQLite is in the public domain.
+
+This distribution includes the SQLite amalgamation in third_party/sqlite.
+The current bundled source identifies itself as SQLite version 3.53.4.
+
+Official information:
+https://www.sqlite.org/copyright.html

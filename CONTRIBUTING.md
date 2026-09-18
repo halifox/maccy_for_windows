@@ -63,25 +63,37 @@
 - SQLite；
 - Ninja 或其他可用的 CMake 构建器。
 
-在 Windows 的 Visual Studio Developer Command Prompt 或 Developer PowerShell 中，可以使用：
+推荐在 Windows 的 Visual Studio Developer PowerShell 中使用仓库提供的 CMake Preset：
 
 ```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+cmake --preset windows-x64-debug
+cmake --build --preset windows-x64-debug
+ctest --preset windows-x64-debug --output-on-failure
 ```
 
-如果使用其他 CMake 生成器，请在 Pull Request 中说明生成器、配置和架构。
+Release 构建和打包验证：
 
-不要提交构建目录、生成的可执行文件、调试符号、数据库文件或本地配置文件。
+```powershell
+cmake --preset windows-x64-release
+cmake --build --preset windows-x64-release
+ctest --preset windows-x64-release --output-on-failure
+cpack --config .\build\windows-x64-release\CPackConfig.cmake -G ZIP
+```
+
+如果使用其他 CMake 生成器、Visual Studio 版本、配置或架构，请在 Pull Request 中说明。发布版本必须使用干净的 Release 构建目录，不得直接分发 Debug 构建结果。
+
+不要提交构建目录、生成的可执行文件、调试符号、安装包、数据库文件或本地配置文件。仓库的 `.gitignore` 已覆盖常见输出，但提交前仍需检查 `git status`。
 
 ## 测试
 
 当前项目没有完整的自动化 CTest 测试套件。修改后至少应完成与变更相关的手动验证。
 
+CTest 当前主要验证构建流程；在新增测试之前，`ctest` 通过不代表剪贴板、数据库或窗口生命周期已经得到完整覆盖。
+
 剪贴板压力测试需要：
 
 ```powershell
-py -m pip install pywin32 Pillow
+py -m pip install -r requirements-dev.txt
 ```
 
 示例：
@@ -147,6 +159,17 @@ Pull Request 应包含：
 - 第三方内容和许可证变更说明。
 
 提交 Pull Request 不代表一定会被合并。维护者可能要求缩小范围、重写实现、补充测试，或因项目方向不符而关闭变更。
+
+## 发布
+
+正式发布前请按照 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 执行。至少需要确认：
+
+- Release x64 构建成功；
+- CTest 和手动 Smoke Test 已完成；
+- ZIP/NSIS 包可以在干净环境启动；
+- 包含项目许可证和所有第三方许可证；
+- 版本 tag、CMake 版本、应用 About 版本一致；
+- Release 说明包含已知限制、数据影响和 SHA-256 校验和。
 
 ## 贡献许可
 

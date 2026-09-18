@@ -1,2 +1,17 @@
 /cmake-*/
+/build/
+/out/
+/dist/
+/_CPack_Packages/
 /.idea/
+/.vs/
+
+*.db
+*.db-wal
+*.db-shm
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.zip
+*.7z

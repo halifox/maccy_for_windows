@@ -1,0 +1,80 @@
+name: Windows CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.configuration }} x64
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - Debug
+          - Release
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure
+        shell: pwsh
+        run: cmake -S . -B "build/${{ matrix.configuration }}" -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build "build/${{ matrix.configuration }}" --config "${{ matrix.configuration }}" --parallel
+
+      - name: Test
+        shell: pwsh
+        run: ctest --test-dir "build/${{ matrix.configuration }}" -C "${{ matrix.configuration }}" --output-on-failure
+
+      - name: Install staging tree
+        shell: pwsh
+        run: cmake --install "build/${{ matrix.configuration }}" --config "${{ matrix.configuration }}" --prefix "build/${{ matrix.configuration }}/install"
+
+      - name: Package and verify Release metadata
+        if: matrix.configuration == 'Release'
+        shell: pwsh
+        run: |
+          cpack --config "build/Release/CPackConfig.cmake" -C Release -G ZIP
+          $archive = Get-ChildItem -LiteralPath . -Filter 'maccy-*.zip' -File | Select-Object -First 1
+          if ($null -eq $archive) {
+            throw 'CPack did not produce a ZIP archive.'
+          }
+          $extract = Join-Path $env:RUNNER_TEMP 'maccy-package'
+          Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $extract
+          $root = Get-ChildItem -LiteralPath $extract -Directory | Select-Object -First 1
+          $required = @(
+            'LICENSE',
+            'README.md',
+            'SECURITY.md',
+            'PRIVACY.md',
+            'CONTRIBUTING.md',
+            'CODE_OF_CONDUCT.md',
+            'CHANGELOG.md',
+            'RELEASE_CHECKLIST.md',
+            'THIRD_PARTY_NOTICES/README.md',
+            'THIRD_PARTY_NOTICES/Maccy-LICENSE.txt',
+            'THIRD_PARTY_NOTICES/WTL-MS-PL.txt',
+            'THIRD_PARTY_NOTICES/SQLite-PUBLIC-DOMAIN.txt'
+          )
+          foreach ($relativePath in $required) {
+            if (-not (Test-Path -LiteralPath (Join-Path $root.FullName $relativePath))) {
+              throw "Package is missing $relativePath"
+            }
+          }
+
+      - name: Upload staging tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: maccy-${{ matrix.configuration }}-x64
+          path: build/${{ matrix.configuration }}/install
+          if-no-files-found: error

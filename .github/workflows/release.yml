@@ -1,0 +1,78 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish Windows x64 release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate tag and project versions
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
+          $cmakeVersion = (Select-String -LiteralPath CMakeLists.txt -Pattern 'project\(maccy VERSION ([0-9.]+)' | Select-Object -First 1).Matches.Groups[1].Value
+          $appVersion = (Select-String -LiteralPath src/Constants.h -Pattern 'kAppVersion = L"([0-9.]+)"' | Select-Object -First 1).Matches.Groups[1].Value
+          if ([string]::IsNullOrWhiteSpace($cmakeVersion) -or [string]::IsNullOrWhiteSpace($appVersion)) {
+            throw 'Unable to read the project or application version.'
+          }
+          if ($tagVersion -ne $cmakeVersion -or $tagVersion -ne $appVersion) {
+            throw "Tag v$tagVersion does not match CMake version $cmakeVersion and application version $appVersion."
+          }
+
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis --yes --no-progress
+
+      - name: Configure Release
+        shell: pwsh
+        run: cmake -S . -B build/Release -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: cmake --build build/Release --config Release --parallel
+
+      - name: Run tests
+        shell: pwsh
+        run: ctest --test-dir build/Release -C Release --output-on-failure
+
+      - name: Create ZIP and NSIS packages
+        shell: pwsh
+        run: |
+          cpack --config build/Release/CPackConfig.cmake -C Release -G ZIP
+          cpack --config build/Release/CPackConfig.cmake -C Release -G NSIS
+
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $assets = @(Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*' -and $_.Extension -in @('.zip', '.exe') })
+          if ($assets.Count -lt 2) {
+            throw 'Expected ZIP and NSIS assets were not produced.'
+          }
+          $lines = foreach ($asset in $assets | Sort-Object Name) {
+            $hash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($asset.Name)"
+          }
+          [System.IO.File]::WriteAllLines((Join-Path (Get-Location) 'SHA256SUMS.txt'), $lines)
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --title "$env:GITHUB_REF_NAME" --generate-notes
+          $assets = @(
+            (Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*' -and $_.Extension -in @('.zip', '.exe') }).FullName
+            (Join-Path (Get-Location) 'SHA256SUMS.txt')
+          )
+          gh release upload "$env:GITHUB_REF_NAME" $assets --repo "$env:GITHUB_REPOSITORY" --clobber
