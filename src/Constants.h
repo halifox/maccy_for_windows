@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PlatformConfig.h"
+#include "Version.h"
 #include <cstdint>
 
 // ============================================================================
@@ -10,7 +11,7 @@
 
 namespace AppConstants {
     // 应用程序信息
-    constexpr const wchar_t* kAppVersion = L"1.0.0";
+    inline constexpr const wchar_t* kAppVersion = AppVersion::kString;
 
     // ========================================================================
     // Windows 自定义消息常量
@@ -20,6 +21,7 @@ namespace AppConstants {
     constexpr UINT kPreviewWorkerResultMessage = WM_APP + 3;
     constexpr UINT kPreviewWorkerCommandMessage = WM_APP + 4;
     constexpr UINT kStorageWorkerResultMessage = WM_APP + 5;
+    constexpr UINT kUpdateCheckerResultMessage = WM_APP + 6;
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;

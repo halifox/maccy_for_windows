@@ -507,11 +507,13 @@ SettingsWindow::SettingsWindow(
     HWND owner,
     AppSettings settings,
     std::array<std::vector<std::wstring>, 3> ignored_lists,
-    SettingsChangedCallback on_changed
+    SettingsChangedCallback on_changed,
+    UpdateCheckCallback on_update_check
 )
     : m_storage(storage),
       m_owner(owner),
       m_onChanged(std::move(on_changed)),
+      m_onUpdateCheck(std::move(on_update_check)),
       m_settings(std::move(settings)),
       m_ignoredLists(std::move(ignored_lists)) {}
 
@@ -532,6 +534,13 @@ void SettingsWindow::SetStateSnapshot(
     }
     if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
         LoadControlsFromSettings();
+    }
+}
+
+void SettingsWindow::SetUpdateCheckBusy(bool busy) {
+    m_updateCheckBusy = busy;
+    if (m_gCheckNow != nullptr && ::IsWindow(m_gCheckNow)) {
+        ::EnableWindow(m_gCheckNow, busy ? FALSE : TRUE);
     }
 }
 
@@ -664,6 +673,7 @@ void SettingsWindow::BindControls() {
 
     m_gLaunch = get(kPageGeneral, kGLaunch);
     m_gUpdates = get(kPageGeneral, kGUpdates);
+    m_gCheckNow = get(kPageGeneral, kGCheckNow);
     m_gOpenHotKey = get(kPageGeneral, kGOpenHotKey);
     m_gPinHotKey = get(kPageGeneral, kGPinHotKey);
     m_gDeleteHotKey = get(kPageGeneral, kGDeleteHotKey);
@@ -1167,20 +1177,21 @@ void SettingsWindow::OpenNotificationsSettings() {
 }
 
 void SettingsWindow::CheckForUpdatesNow() {
-    const HINSTANCE result = ShellExecuteW(
-        m_hWnd,
-        L"open",
-        L"https://github.com/halifox/maccy_for_windows",
-        nullptr,
-        nullptr,
-        SW_SHOWNORMAL
-    );
-    if (reinterpret_cast<INT_PTR>(result) <= 32) {
+    if (m_updateCheckBusy) {
         ::MessageBoxW(
             m_hWnd,
-            L"无法打开更新页面，请检查默认浏览器设置。",
+            L"正在检查更新，请稍候。",
             L"检查更新",
-            MB_OK | MB_ICONERROR
+            MB_OK | MB_ICONINFORMATION
+        );
+        return;
+    }
+    if (m_onUpdateCheck == nullptr || !m_onUpdateCheck()) {
+        ::MessageBoxW(
+            m_hWnd,
+            L"无法开始检查更新，请稍后重试。",
+            L"检查更新",
+            MB_OK | MB_ICONWARNING
         );
     }
 }
@@ -1236,6 +1247,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     }
     BindControls();
     LoadControlsFromSettings();
+    SetUpdateCheckBusy(m_updateCheckBusy);
     SetPage(kPageGeneral);
     SetIgnorePage(0);
     return TRUE;

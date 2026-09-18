@@ -166,14 +166,17 @@ public:
     enum { IDD = IDD_SETTINGS };
 
     using SettingsChangedCallback = std::function<void(const AppSettings &, std::uint32_t)>;
+    using UpdateCheckCallback = std::function<bool()>;
     SettingsWindow(StorageWorker &storage, HWND owner, AppSettings settings,
                    std::array<std::vector<std::wstring>, 3> ignored_lists,
-                   SettingsChangedCallback on_changed);
+                   SettingsChangedCallback on_changed,
+                   UpdateCheckCallback on_update_check);
 
     bool CreateOrShow();
     void DestroyForOwner();
     void SetSettingsSnapshot(const AppSettings &settings);
     void SetStateSnapshot(const AppSettings &settings, StorageWorker::IgnoreLists ignored_lists);
+    void SetUpdateCheckBusy(bool busy);
     bool IsOpen() const noexcept { return m_hWnd != nullptr && IsWindowVisible(); }
     HWND Window() const noexcept { return m_hWnd; }
 
@@ -222,12 +225,14 @@ private:
     StorageWorker &m_storage;
     HWND m_owner = nullptr;
     SettingsChangedCallback m_onChanged;
+    UpdateCheckCallback m_onUpdateCheck;
     CTabCtrl m_tabs;
     std::array<HWND, AppConstants::SettingsUI::kPageCount> m_pages{};
     std::array<HWND, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePages{};
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;
+    bool m_updateCheckBusy = false;
     HICON m_windowIcon = nullptr;
 
     AppSettings m_settings{};
@@ -235,6 +240,7 @@ private:
 
     HWND m_gLaunch = nullptr;
     HWND m_gUpdates = nullptr;
+    HWND m_gCheckNow = nullptr;
     HWND m_gOpenHotKey = nullptr;
     HWND m_gPinHotKey = nullptr;
     HWND m_gDeleteHotKey = nullptr;

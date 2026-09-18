@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(maccy VERSION 1.0.0 LANGUAGES C CXX)
+if(NOT DEFINED MACCY_VERSION)
+    set(MACCY_VERSION "1.0.0" CACHE STRING "Maccy application version")
+endif()
+if(NOT MACCY_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "MACCY_VERSION must be a numeric semantic version such as 1.0.0")
+endif()
+
+project(maccy VERSION "${MACCY_VERSION}" LANGUAGES C CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "maccy is a Windows application.")
@@ -36,11 +43,28 @@ set(MACCY_PROJECT_README "${CMAKE_CURRENT_SOURCE_DIR}/README.md")
 set(MACCY_PROJECT_SECURITY "${CMAKE_CURRENT_SOURCE_DIR}/SECURITY.md")
 set(MACCY_PROJECT_PRIVACY "${CMAKE_CURRENT_SOURCE_DIR}/PRIVACY.md")
 set(MACCY_PROJECT_CHANGELOG "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md")
+set(MACCY_PROJECT_CONTRIBUTING "${CMAKE_CURRENT_SOURCE_DIR}/CONTRIBUTING.md")
+set(MACCY_PROJECT_CODE_OF_CONDUCT "${CMAKE_CURRENT_SOURCE_DIR}/CODE_OF_CONDUCT.md")
+set(MACCY_PROJECT_RELEASE_CHECKLIST "${CMAKE_CURRENT_SOURCE_DIR}/RELEASE_CHECKLIST.md")
 set(MACCY_THIRD_PARTY_INDEX "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES/README.md")
 set(MACCY_THIRD_PARTY_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES/Maccy-LICENSE.txt")
 set(WTL_THIRD_PARTY_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES/WTL-MS-PL.txt")
 set(SQLITE_THIRD_PARTY_NOTICE "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES/SQLite-PUBLIC-DOMAIN.txt")
 set(MACCY_RESOURCE_FILE "${MACCY_SOURCE_DIR}/TrayIcon.rc")
+
+set(MACCY_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(MACCY_VERSION_HEADER "${MACCY_GENERATED_DIR}/Version.h")
+set(MACCY_VERSION_RESOURCE "${MACCY_GENERATED_DIR}/VersionInfo.rc")
+configure_file(
+        "${MACCY_SOURCE_DIR}/Version.h.in"
+        "${MACCY_VERSION_HEADER}"
+        @ONLY
+)
+configure_file(
+        "${MACCY_SOURCE_DIR}/VersionInfo.rc.in"
+        "${MACCY_VERSION_RESOURCE}"
+        @ONLY
+)
 
 set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/main.cpp"
@@ -59,9 +83,11 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/SettingsWindow.cpp"
         "${MACCY_SOURCE_DIR}/PreviewWindow.cpp"
         "${MACCY_SOURCE_DIR}/TrayIcon.cpp"
+        "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
         "${MACCY_SOURCE_DIR}/SettingsWindow.rc"
         "${MACCY_SOURCE_DIR}/MainWindow.rc"
         "${MACCY_RESOURCE_FILE}"
+        "${MACCY_VERSION_RESOURCE}"
 )
 
 set(MACCY_RESOURCE_ASSETS
@@ -112,6 +138,8 @@ target_compile_definitions(maccy_sqlite PRIVATE
 add_executable(maccy WIN32 ${MACCY_SOURCES})
 
 target_include_directories(maccy PRIVATE
+        "${MACCY_GENERATED_DIR}"
+        "${MACCY_SOURCE_DIR}"
         "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wtl"
 )
 
@@ -127,6 +155,7 @@ target_link_libraries(maccy PRIVATE
         dwmapi
         windowscodecs
         ole32
+        winhttp
 )
 
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
@@ -136,6 +165,23 @@ if(MSVC)
     target_compile_options(maccy PRIVATE /utf-8)
     target_link_options(maccy PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()
+
+enable_testing()
+
+add_executable(maccy_update_checker_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/UpdateCheckerTests.cpp"
+        "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
+)
+target_include_directories(maccy_update_checker_tests PRIVATE
+        "${MACCY_GENERATED_DIR}"
+        "${MACCY_SOURCE_DIR}"
+)
+target_compile_definitions(maccy_update_checker_tests PRIVATE UNICODE _UNICODE)
+target_link_libraries(maccy_update_checker_tests PRIVATE winhttp)
+if(MSVC)
+    target_compile_options(maccy_update_checker_tests PRIVATE /utf-8)
+endif()
+add_test(NAME maccy_update_checker_tests COMMAND maccy_update_checker_tests)
 
 include(GNUInstallDirs)
 
@@ -149,6 +195,9 @@ install(FILES
         "${MACCY_PROJECT_SECURITY}"
         "${MACCY_PROJECT_PRIVACY}"
         "${MACCY_PROJECT_CHANGELOG}"
+        "${MACCY_PROJECT_CONTRIBUTING}"
+        "${MACCY_PROJECT_CODE_OF_CONDUCT}"
+        "${MACCY_PROJECT_RELEASE_CHECKLIST}"
         DESTINATION "."
 )
 

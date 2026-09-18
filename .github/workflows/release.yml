@@ -17,18 +17,15 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Validate tag and project versions
+      - name: Validate release tag
         shell: pwsh
         run: |
-          $tagVersion = $env:GITHUB_REF_NAME.Substring(1)
-          $cmakeVersion = (Select-String -LiteralPath CMakeLists.txt -Pattern 'project\(maccy VERSION ([0-9.]+)' | Select-Object -First 1).Matches.Groups[1].Value
-          $appVersion = (Select-String -LiteralPath src/Constants.h -Pattern 'kAppVersion = L"([0-9.]+)"' | Select-Object -First 1).Matches.Groups[1].Value
-          if ([string]::IsNullOrWhiteSpace($cmakeVersion) -or [string]::IsNullOrWhiteSpace($appVersion)) {
-            throw 'Unable to read the project or application version.'
+          if ($env:GITHUB_REF_NAME -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
+            throw "Release tag '$env:GITHUB_REF_NAME' must use the vX.Y.Z format."
           }
-          if ($tagVersion -ne $cmakeVersion -or $tagVersion -ne $appVersion) {
-            throw "Tag v$tagVersion does not match CMake version $cmakeVersion and application version $appVersion."
-          }
+          $tagVersion = $Matches[1]
+          "Release version: $tagVersion"
+          "MACCY_RELEASE_VERSION=$tagVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Install NSIS
         shell: pwsh
@@ -36,7 +33,7 @@ jobs:
 
       - name: Configure Release
         shell: pwsh
-        run: cmake -S . -B build/Release -G "Visual Studio 18 2026" -A x64
+        run: cmake -S . -B build/Release -G "Visual Studio 18 2026" -A x64 -DMACCY_VERSION="$env:MACCY_RELEASE_VERSION"
 
       - name: Build Release
         shell: pwsh

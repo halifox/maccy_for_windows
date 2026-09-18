@@ -23,6 +23,7 @@
 #include "ClipboardMonitor.h"
 #include "ClipboardData.h"
 #include "StorageWorker.h"
+#include "UpdateChecker.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -69,6 +70,7 @@ public:
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
         MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
+        MESSAGE_HANDLER(AppConstants::kUpdateCheckerResultMessage, OnUpdateCheckerResult)
     END_MSG_MAP()
 
     bool AddTrayIcon();
@@ -149,6 +151,8 @@ private:
     void RequestUiUpdate(std::uint32_t updateMask);
     void ApplyPendingState();
     void OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates);
+    bool StartUpdateCheck(UpdateCheckMode mode);
+    void HandleUpdateCheckResult(const UpdateCheckResult &result);
 
     // Message handlers
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -180,6 +184,7 @@ private:
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
     // Callback handlers for KeyboardHandler
@@ -205,6 +210,7 @@ private:
     PasteController m_pasteController;
     HistoryRenderer m_historyRenderer;
     KeyboardHandler m_keyboardHandler;
+    UpdateChecker m_updateChecker;
     std::unique_ptr<SettingsWindow> m_settingsWindow;
 
     // UI controls

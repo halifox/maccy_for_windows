@@ -30,6 +30,7 @@
 - 精确搜索使用 SQLite FTS5，图片本身不参与文本搜索；
 - 支持固定项目、编辑固定文本、忽略应用程序、剪贴板格式和正则内容；
 - 支持 Windows 剪贴板历史记录标记，避免保存明确标记为不应进入历史的内容；
+- 可手动或在启动时检查 GitHub Releases，只提示新版本，不自动下载或替换程序；
 - 本地 SQLite 存储，不上传剪贴板内容。
 
 ## 与原版 Maccy 的差异
@@ -79,6 +80,8 @@ cpack --config .\build\windows-x64-release\CPackConfig.cmake -G ZIP
 
 如果使用普通 PowerShell，请先加载 Visual Studio 的 C++ 开发环境。本文档提供的构建配置针对 Windows x64。
 
+正式发布由 GitHub Actions 根据 Release tag 生成。例如推送 `v1.0.1` 后，CI 会把 `1.0.1` 注入 CMake，统一生成应用内版本、EXE 文件版本和安装包版本。
+
 ## 数据、隐私和删除
 
 剪贴板历史包含用户可能不希望长期保存的密码、令牌、私人文本、图片和文件路径。应用默认将数据保存在：
@@ -89,7 +92,7 @@ cpack --config .\build\windows-x64-release\CPackConfig.cmake -G ZIP
 
 SQLite 的 `-wal` 和 `-shm` 文件也是数据库的一部分。当前存储未提供应用层加密；拥有当前 Windows 用户数据访问权限的进程可能读取这些内容。请在使用密码管理器、银行信息或其他敏感数据时配置忽略规则，并阅读 [隐私和数据说明](PRIVACY.md)。
 
-应用不包含遥测、剪贴板上传或后台自动下载安装服务。更新入口仅通过浏览器打开项目的 GitHub Releases 页面。
+应用不包含遥测、剪贴板上传或后台自动下载安装服务。更新检查只请求 GitHub Releases 的公开版本信息；发现新版本后，应用会在用户确认后打开浏览器，不会自动下载或替换程序。
 
 删除历史并不等同于取证意义上的安全擦除。需要彻底清理时，应退出应用后按照 [隐私和数据说明](PRIVACY.md) 删除数据库及其 WAL 文件。
 

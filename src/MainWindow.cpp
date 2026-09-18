@@ -36,6 +36,26 @@ constexpr int kResizeBorder = 8;
 constexpr wchar_t kHistorySearchCue[] = L"搜索剪贴板内容…";
 constexpr wchar_t kControlOwnerProperty[] = L"maccyMainWindow";
 
+std::wstring DisplayVersion(std::wstring_view version) {
+    if (!version.empty() && (version.front() == L'v' || version.front() == L'V')) {
+        return std::wstring(version);
+    }
+    return L"v" + std::wstring(version);
+}
+
+bool OpenReleasePage(HWND owner, std::wstring_view url) {
+    const std::wstring target(url);
+    const HINSTANCE result = ::ShellExecuteW(
+        owner,
+        L"open",
+        target.c_str(),
+        nullptr,
+        nullptr,
+        SW_SHOWNORMAL
+    );
+    return reinterpret_cast<INT_PTR>(result) > 32;
+}
+
 std::wstring ReadWindowText(HWND window) {
     if (window == nullptr) {
         return {};
@@ -118,6 +138,7 @@ MainWindow::MainWindow(
 }
 
 MainWindow::~MainWindow() {
+    m_updateChecker.Stop();
     m_clipboard.SetSaveCallback({});
     m_previewWorker.SetUiWindow(nullptr);
     m_storage.SetUiWindow(nullptr);
@@ -1067,6 +1088,9 @@ void MainWindow::OpenSettings() {
             m_ignoredLists,
             [this](const AppSettings &settings, std::uint32_t updates) {
                 OnSettingsChanged(settings, updates);
+            },
+            [this]() {
+                return StartUpdateCheck(UpdateCheckMode::Manual);
             }
         );
     } else {
@@ -1074,6 +1098,61 @@ void MainWindow::OpenSettings() {
     }
     if (!m_settingsWindow->CreateOrShow()) {
         ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"maccy", MB_OK | MB_ICONERROR);
+    } else {
+        m_settingsWindow->SetUpdateCheckBusy(m_updateChecker.IsChecking());
+    }
+}
+
+bool MainWindow::StartUpdateCheck(UpdateCheckMode mode) {
+    if (!m_updateChecker.Start(mode)) {
+        return false;
+    }
+    if (m_settingsWindow != nullptr) {
+        m_settingsWindow->SetUpdateCheckBusy(true);
+    }
+    return true;
+}
+
+void MainWindow::HandleUpdateCheckResult(const UpdateCheckResult &result) {
+    if (m_settingsWindow != nullptr) {
+        m_settingsWindow->SetUpdateCheckBusy(false);
+    }
+    HWND owner = m_hWnd;
+    if (m_settingsWindow != nullptr && m_settingsWindow->IsOpen()) {
+        owner = m_settingsWindow->Window();
+    }
+
+    if (!result.succeeded) {
+        if (result.mode == UpdateCheckMode::Manual) {
+            std::wstring message = L"检查更新失败。\n";
+            message += result.error.empty() ? L"请稍后重试。" : result.error;
+            ::MessageBoxW(owner, message.c_str(), L"检查更新", MB_OK | MB_ICONWARNING);
+        } else if (!result.error.empty()) {
+            ::OutputDebugStringW((L"Update check failed: " + result.error + L"\n").c_str());
+        }
+        return;
+    }
+
+    if (!result.update_available) {
+        if (result.mode == UpdateCheckMode::Manual) {
+            std::wstring message = L"当前已经是最新版本。\n当前版本：";
+            message += DisplayVersion(result.current_version);
+            ::MessageBoxW(owner, message.c_str(), L"检查更新", MB_OK | MB_ICONINFORMATION);
+        }
+        return;
+    }
+
+    const std::wstring message = L"发现新版本 " + DisplayVersion(result.latest_version) +
+        L"。\n当前版本：" + DisplayVersion(result.current_version) +
+        L"\n是否打开下载页面？";
+    if (::MessageBoxW(owner, message.c_str(), L"检查更新", MB_YESNO | MB_ICONINFORMATION) == IDYES &&
+        !OpenReleasePage(owner, result.release_url)) {
+        ::MessageBoxW(
+            owner,
+            L"无法打开更新页面，请检查默认浏览器设置。",
+            L"检查更新",
+            MB_OK | MB_ICONERROR
+        );
     }
 }
 
@@ -1397,6 +1476,7 @@ void MainWindow::OnHideWindowCallback(void* context) {
 // Message handlers
 LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
+    m_updateChecker.SetWindow(m_hWnd);
     m_storage.SetUiWindow(m_hWnd);
     if (!m_historyRenderer.Initialize(m_hWnd) ||
         !BindControls()) {
@@ -1432,6 +1512,9 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     }
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout |
                     AppConstants::UiUpdate::kTray);
+    if (!m_isolated && m_settings.check_for_updates) {
+        StartUpdateCheck(UpdateCheckMode::Automatic);
+    }
     return TRUE;
 }
 
@@ -1852,8 +1935,17 @@ LRESULT MainWindow::OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
     return 0;
 }
 
+LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    for (const auto &result : m_updateChecker.TakeResults()) {
+        HandleUpdateCheckResult(result);
+    }
+    return 0;
+}
+
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
+    m_updateChecker.Stop();
     KillTimer(AppConstants::Timer::kSearch);
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
