@@ -295,6 +295,36 @@ std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
     return result;
 }
 
+class ClipboardFingerprint {
+public:
+    void Add(const std::wstring& name, UINT format, const unsigned char* bytes, size_t count) noexcept {
+        AddBytes(reinterpret_cast<const unsigned char*>(name.data()), name.size() * sizeof(wchar_t));
+        AddBytes(reinterpret_cast<const unsigned char*>(&format), sizeof(format));
+        AddBytes(bytes, count);
+    }
+
+    std::wstring Finish() const {
+        std::wstringstream stream;
+        stream << std::hex << std::setw(16) << std::setfill(L'0') << m_hash;
+        return stream.str();
+    }
+
+private:
+    void AddBytes(const unsigned char* bytes, size_t count) noexcept {
+        for (size_t index = 0; index < count; ++index) {
+            m_hash ^= bytes[index];
+            m_hash *= 1099511628211ULL;
+        }
+    }
+
+    std::uint64_t m_hash = 1469598103934665603ULL;
+};
+
+bool IsRedundantBitmapFormat(UINT format, bool has_dib, bool has_dibv5) noexcept {
+    return (format == CF_DIB && has_dibv5) ||
+        (format == CF_BITMAP && (has_dib || has_dibv5));
+}
+
 } // namespace
 
 ClipboardMonitor::ClipboardMonitor(Database& database, AppSettings& settings)
@@ -502,21 +532,11 @@ std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
 }
 
 std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {
-    std::uint64_t hash = 1469598103934665603ULL;
-    const auto add = [&hash](const unsigned char* bytes, size_t count) {
-        for (size_t index = 0; index < count; ++index) {
-            hash ^= bytes[index];
-            hash *= 1099511628211ULL;
-        }
-    };
+    ClipboardFingerprint fingerprint;
     for (const ClipboardFormatData& item : data) {
-        add(reinterpret_cast<const unsigned char*>(item.name.data()), item.name.size() * sizeof(wchar_t));
-        add(reinterpret_cast<const unsigned char*>(&item.format), sizeof(item.format));
-        add(item.bytes.data(), item.bytes.size());
+        fingerprint.Add(item.name, item.format, item.bytes.data(), item.bytes.size());
     }
-    std::wstringstream stream;
-    stream << std::hex << std::setw(16) << std::setfill(L'0') << hash;
-    return stream.str();
+    return fingerprint.Finish();
 }
 
 std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
@@ -565,8 +585,8 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     capture.has_image = false;
     capture.has_files = false;
     std::wstring file_preview;
-    const bool has_dib_format = IsClipboardFormatAvailable(CF_DIB) != FALSE ||
-        IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
+    const bool has_dib = IsClipboardFormatAvailable(CF_DIB) != FALSE;
+    const bool has_dibv5 = IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
         const std::wstring name = FormatName(format);
         const bool is_text = IsTextFormat(format, name);
@@ -575,7 +595,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
         const bool enabled = (is_text && m_settings.save_text) ||
             (is_image && m_settings.save_images) ||
             (is_files && m_settings.save_files);
-        if (!enabled || (format == CF_BITMAP && has_dib_format)) {
+        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
             continue;
         }
 
@@ -681,12 +701,11 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     );
     struct PendingFormat {
         UINT format = 0;
-        bool is_text = false;
         AllocatedGlobal data;
     };
 
     std::vector<PendingFormat> pending;
-    std::vector<ClipboardFormatData> written_formats;
+    ClipboardFingerprint fingerprint;
     bool has_text = false;
     for (const ClipboardFormatData& data : item.data) {
         const bool is_text = data.format == CF_UNICODETEXT || data.format == CF_TEXT ||
@@ -716,10 +735,8 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
             std::memcpy(lock.Data(), data.bytes.data(), data.bytes.size());
         }
 
-        ClipboardFormatData written = data;
-        written.format = format;
-        written_formats.push_back(std::move(written));
-        pending.push_back(PendingFormat{format, is_text, std::move(handle)});
+        fingerprint.Add(data.name, format, data.bytes.data(), data.bytes.size());
+        pending.push_back(PendingFormat{format, std::move(handle)});
         has_text = has_text || is_text;
     }
 
@@ -737,7 +754,7 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
         }
         format.data.Release();
     }
-    m_expectedClipboardFingerprint = HashCapture(written_formats);
+    m_expectedClipboardFingerprint = fingerprint.Finish();
     return true;
 }
 

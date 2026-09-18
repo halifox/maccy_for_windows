@@ -613,6 +613,7 @@ Database::Database(const std::filesystem::path &path)
 
     try {
         Exec("PRAGMA foreign_keys = ON;");
+        Exec("PRAGMA auto_vacuum = INCREMENTAL;");
         Exec("PRAGMA journal_mode = WAL;");
         Exec("PRAGMA synchronous = NORMAL;");
         Exec("PRAGMA temp_store = MEMORY;");
