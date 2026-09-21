@@ -123,7 +123,7 @@ nlohmann::json DownloadLatestRelease() {
         cpr::Header{
             {"Accept", "application/vnd.github+json"},
             {"X-GitHub-Api-Version", "2022-11-28"},
-            {"User-Agent", "maccy-for-windows/" + std::string(AppConstants::kAppVersion)}
+            {"User-Agent", "maccy-for-windows/" + std::string(AppVersion::kStringUtf8)}
         },
         cpr::Timeout{5000},
         cpr::ConnectTimeout{3000},
