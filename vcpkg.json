@@ -9,6 +9,8 @@
         "fts5"
       ]
     },
+    "cpr",
+    "nlohmann-json",
     "wtl"
   ]
 }

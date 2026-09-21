@@ -68,7 +68,7 @@ cmake --build --preset windows-x64-release
 ctest --preset windows-x64-release --output-on-failure
 ```
 
-首次配置会根据仓库根目录的 `vcpkg.json` 安装 SQLite（启用 FTS5）和 WTL。构建依赖使用 `x64-windows-static-md` triplet；构建目录会放在 `build/<preset>-vcpkg`。
+首次配置会根据仓库根目录的 `vcpkg.json` 安装 SQLite（启用 FTS5）、WTL、CPR 和 nlohmann-json。构建依赖使用 `x64-windows-static-md` triplet；构建目录会放在 `build/<preset>-vcpkg`。CMake 安装和打包时会从 vcpkg 安装目录复制依赖许可证，不需要将依赖许可证文件加入源码仓库。
 
 启动构建结果：
 
@@ -107,7 +107,7 @@ SQLite 的 `-wal` 和 `-shm` 文件也是数据库的一部分。当前存储未
 第三方组件和视觉资源遵循各自的许可证，来源和分发说明见 [`THIRD_PARTY_NOTICES/README.md`](THIRD_PARTY_NOTICES/README.md)：
 
 - Maccy 图标和视觉资源：MIT License，见 [`THIRD_PARTY_NOTICES/Maccy-LICENSE.txt`](THIRD_PARTY_NOTICES/Maccy-LICENSE.txt)；
-- WTL 和 SQLite：安装/打包时从 vcpkg 安装目录复制对应 port 的 `copyright` 文件到 `licenses/<port>/copyright`。
+- WTL、SQLite、CPR、nlohmann-json 及其传递依赖：安装/打包时从 vcpkg 安装目录复制对应 port 的 `copyright` 文件到 `licenses/<port>/copyright`。
 
 Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声明不构成商标或品牌授权。
 

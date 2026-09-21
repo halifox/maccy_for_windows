@@ -2,44 +2,26 @@
 
 #include "Constants.h"
 
-#include <winhttp.h>
+#include <cpr/cpr.h>
+#include <nlohmann/json.hpp>
 
-#include <algorithm>
-#include <cctype>
-#include <cwctype>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <utility>
 
 namespace {
 
-constexpr wchar_t kGitHubHost[] = L"api.github.com";
-constexpr wchar_t kGitHubLatestReleasePath[] =
-    L"/repos/halifox/maccy_for_windows/releases/latest";
+constexpr char kGitHubLatestReleaseUrl[] =
+    "https://api.github.com/repos/halifox/maccy_for_windows/releases/latest";
+constexpr std::string_view kGitHubReleaseUrlPrefix =
+    "https://github.com/halifox/maccy_for_windows/releases/";
 constexpr wchar_t kGitHubReleasePage[] =
     L"https://github.com/halifox/maccy_for_windows/releases/latest";
 constexpr std::size_t kMaximumResponseBytes = 4 * 1024 * 1024;
-
-class WinHttpHandle {
-public:
-    explicit WinHttpHandle(HINTERNET handle = nullptr) noexcept : m_handle(handle) {}
-    ~WinHttpHandle() {
-        if (m_handle != nullptr) {
-            WinHttpCloseHandle(m_handle);
-        }
-    }
-
-    WinHttpHandle(const WinHttpHandle &) = delete;
-    WinHttpHandle &operator=(const WinHttpHandle &) = delete;
-
-    HINTERNET get() const noexcept { return m_handle; }
-    explicit operator bool() const noexcept { return m_handle != nullptr; }
-
-private:
-    HINTERNET m_handle = nullptr;
-};
 
 std::wstring Utf8ToWide(std::string_view value) {
     if (value.empty()) {
@@ -70,77 +52,6 @@ std::wstring Utf8ToWide(std::string_view value) {
         throw std::runtime_error("无法解码 GitHub 返回的数据");
     }
     return result;
-}
-
-std::optional<std::string> ExtractJsonString(std::string_view json, std::string_view key) {
-    const std::string marker = "\"" + std::string(key) + "\"";
-    std::size_t search_from = 0;
-    while (true) {
-        const std::size_t key_position = json.find(marker, search_from);
-        if (key_position == std::string_view::npos) {
-            return std::nullopt;
-        }
-
-        std::size_t position = json.find(':', key_position + marker.size());
-        if (position == std::string_view::npos) {
-            return std::nullopt;
-        }
-        ++position;
-        while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position]))) {
-            ++position;
-        }
-        if (position >= json.size() || json[position] != '"') {
-            search_from = key_position + marker.size();
-            continue;
-        }
-        ++position;
-
-        std::string value;
-        while (position < json.size()) {
-            const char current = json[position++];
-            if (current == '"') {
-                return value;
-            }
-            if (current != '\\') {
-                value.push_back(current);
-                continue;
-            }
-            if (position >= json.size()) {
-                return std::nullopt;
-            }
-
-            const char escaped = json[position++];
-            switch (escaped) {
-            case '"':
-            case '\\':
-            case '/':
-                value.push_back(escaped);
-                break;
-            case 'b':
-                value.push_back('\b');
-                break;
-            case 'f':
-                value.push_back('\f');
-                break;
-            case 'n':
-                value.push_back('\n');
-                break;
-            case 'r':
-                value.push_back('\r');
-                break;
-            case 't':
-                value.push_back('\t');
-                break;
-            case 'u':
-                // The fields used by this checker are ASCII. Rejecting an
-                // escaped Unicode field is safer than silently corrupting it.
-                return std::nullopt;
-            default:
-                return std::nullopt;
-            }
-        }
-        return std::nullopt;
-    }
 }
 
 struct SemanticVersion {
@@ -204,115 +115,50 @@ std::wstring WithoutLeadingV(std::wstring value) {
     return value;
 }
 
-std::string DownloadLatestRelease() {
-    const std::wstring user_agent = L"maccy-for-windows/" +
-        std::wstring(AppConstants::kAppVersion);
-    WinHttpHandle session(WinHttpOpen(
-        user_agent.c_str(),
-        WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-        WINHTTP_NO_PROXY_NAME,
-        WINHTTP_NO_PROXY_BYPASS,
-        0
-    ));
-    if (!session) {
-        throw std::runtime_error("无法创建网络会话");
-    }
-    if (!WinHttpSetTimeouts(session.get(), 3000, 3000, 5000, 5000)) {
-        throw std::runtime_error("无法设置网络超时");
-    }
-
-    WinHttpHandle connection(WinHttpConnect(
-        session.get(),
-        kGitHubHost,
-        INTERNET_DEFAULT_HTTPS_PORT,
-        0
-    ));
-    if (!connection) {
-        throw std::runtime_error("无法连接 GitHub");
-    }
-
-    WinHttpHandle request(WinHttpOpenRequest(
-        connection.get(),
-        L"GET",
-        kGitHubLatestReleasePath,
-        nullptr,
-        WINHTTP_NO_REFERER,
-        WINHTTP_DEFAULT_ACCEPT_TYPES,
-        WINHTTP_FLAG_SECURE
-    ));
-    if (!request) {
-        throw std::runtime_error("无法创建 GitHub 请求");
-    }
-
-    constexpr wchar_t headers[] =
-        L"Accept: application/vnd.github+json\r\n"
-        L"X-GitHub-Api-Version: 2022-11-28\r\n";
-    if (!WinHttpAddRequestHeaders(
-            request.get(),
-            headers,
-            static_cast<DWORD>(-1L),
-            WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE
-        )) {
-        throw std::runtime_error("无法设置 GitHub 请求头");
-    }
-    if (!WinHttpSendRequest(
-            request.get(),
-            WINHTTP_NO_ADDITIONAL_HEADERS,
-            0,
-            WINHTTP_NO_REQUEST_DATA,
-            0,
-            0,
-            0
-        ) || !WinHttpReceiveResponse(request.get(), nullptr)) {
-        throw std::runtime_error("无法获取 GitHub Release");
-    }
-
-    DWORD status = 0;
-    DWORD status_size = sizeof(status);
-    if (!WinHttpQueryHeaders(
-            request.get(),
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            WINHTTP_HEADER_NAME_BY_INDEX,
-            &status,
-            &status_size,
-            WINHTTP_NO_HEADER_INDEX
-        )) {
-        throw std::runtime_error("无法读取 GitHub 响应状态");
-    }
-    if (status != 200) {
-        throw std::runtime_error("GitHub 返回 HTTP " + std::to_string(status));
-    }
-
+nlohmann::json DownloadLatestRelease() {
     std::string response;
-    while (true) {
-        DWORD available = 0;
-        if (!WinHttpQueryDataAvailable(request.get(), &available)) {
-            throw std::runtime_error("无法读取 GitHub 响应");
-        }
-        if (available == 0) {
-            break;
-        }
-        if (response.size() + available > kMaximumResponseBytes) {
-            throw std::runtime_error("GitHub 响应过大");
-        }
+    bool response_too_large = false;
+    const auto http_response = cpr::Get(
+        cpr::Url{kGitHubLatestReleaseUrl},
+        cpr::Header{
+            {"Accept", "application/vnd.github+json"},
+            {"X-GitHub-Api-Version", "2022-11-28"},
+            {"User-Agent", "maccy-for-windows/" + std::string(AppConstants::kAppVersion)}
+        },
+        cpr::Timeout{5000},
+        cpr::ConnectTimeout{3000},
+        cpr::WriteCallback{[&response, &response_too_large](std::string_view data, std::intptr_t) {
+            if (data.size() > kMaximumResponseBytes - response.size()) {
+                response_too_large = true;
+                return false;
+            }
+            response.append(data);
+            return true;
+        }}
+    );
 
-        const std::size_t old_size = response.size();
-        response.resize(old_size + available);
-        DWORD read = 0;
-        if (!WinHttpReadData(
-                request.get(),
-                response.data() + old_size,
-                available,
-                &read
-            )) {
-            throw std::runtime_error("无法读取 GitHub 响应内容");
-        }
-        response.resize(old_size + read);
-        if (read == 0) {
-            break;
-        }
+    if (response_too_large) {
+        throw std::runtime_error("GitHub 响应过大");
     }
-    return response;
+    if (http_response.error.code != cpr::ErrorCode::OK) {
+        throw std::runtime_error("无法获取 GitHub Release：" + http_response.error.message);
+    }
+    if (http_response.status_code != 200) {
+        const auto error = nlohmann::json::parse(response, nullptr, false);
+        if (error.is_object() && error.contains("message") && error["message"].is_string()) {
+            throw std::runtime_error(
+                "GitHub 返回 HTTP " + std::to_string(http_response.status_code) +
+                "：" + error["message"].get<std::string>()
+            );
+        }
+        throw std::runtime_error("GitHub 返回 HTTP " + std::to_string(http_response.status_code));
+    }
+
+    auto release = nlohmann::json::parse(response, nullptr, false);
+    if (release.is_discarded() || !release.is_object()) {
+        throw std::runtime_error("GitHub 返回的 Release 数据格式无效");
+    }
+    return release;
 }
 
 } // namespace
@@ -417,19 +263,24 @@ UpdateCheckResult UpdateChecker::Check(UpdateCheckMode mode) {
             throw std::runtime_error("当前应用版本格式无效");
         }
 
-        const std::string response = DownloadLatestRelease();
-        const auto tag = ExtractJsonString(response, "tag_name");
-        if (!tag || tag->empty()) {
+        const auto release = DownloadLatestRelease();
+        const auto tag = release.find("tag_name");
+        if (tag == release.end() || !tag->is_string() ||
+            tag->get_ref<const std::string &>().empty()) {
             throw std::runtime_error("GitHub Release 缺少版本号");
         }
-        result.latest_version = WithoutLeadingV(Utf8ToWide(*tag));
+        result.latest_version = WithoutLeadingV(Utf8ToWide(tag->get<std::string>()));
         const auto latest = ParseSemanticVersion(result.latest_version);
         if (!latest) {
             throw std::runtime_error("GitHub Release 版本格式无效");
         }
 
-        if (const auto url = ExtractJsonString(response, "html_url")) {
-            result.release_url = Utf8ToWide(*url);
+        const auto url = release.find("html_url");
+        if (url != release.end() && url->is_string()) {
+            const auto &release_url = url->get_ref<const std::string &>();
+            if (release_url.starts_with(kGitHubReleaseUrlPrefix)) {
+                result.release_url = Utf8ToWide(release_url);
+            }
         }
         if (result.release_url.empty()) {
             result.release_url = kGitHubReleasePage;

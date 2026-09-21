@@ -13,9 +13,13 @@
 
 ## 构建依赖许可证
 
-WTL 和 SQLite 由根目录 `vcpkg.json` 管理。许可证文本不保存在源码仓库中；执行 CMake 安装或打包时，会从 vcpkg 已安装 port 的 `share/<port>/copyright` 复制到发行目录：
+WTL、SQLite、CPR、nlohmann-json 及其传递依赖由根目录 `vcpkg.json` 管理。许可证文本不保存在源码仓库中；执行 CMake 安装或打包时，会从 vcpkg 已安装 port 的 `share/<port>/copyright` 复制到发行目录：
 
+- `licenses/cpr/copyright`
+- `licenses/curl/copyright`
+- `licenses/nlohmann-json/copyright`
 - `licenses/wtl/copyright`
 - `licenses/sqlite3/copyright`
+- `licenses/zlib/copyright`
 
 依赖版本和 SQLite 的 FTS5 构建功能由 `vcpkg.json` 中的 baseline 和 feature 声明确定。

@@ -14,6 +14,8 @@ if(NOT WIN32)
 endif()
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(cpr CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 find_path(WTL_INCLUDE_DIR NAMES atlapp.h REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -133,6 +135,8 @@ target_include_directories(maccy PRIVATE
 
 target_link_libraries(maccy PRIVATE
         unofficial::sqlite3::sqlite3
+        cpr::cpr
+        nlohmann_json::nlohmann_json
         user32
         imm32
         gdi32
@@ -143,7 +147,6 @@ target_link_libraries(maccy PRIVATE
         dwmapi
         windowscodecs
         ole32
-        winhttp
 )
 
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
@@ -164,7 +167,10 @@ target_include_directories(maccy_update_checker_tests PRIVATE
         "${MACCY_SOURCE_DIR}"
 )
 target_compile_definitions(maccy_update_checker_tests PRIVATE UNICODE _UNICODE)
-target_link_libraries(maccy_update_checker_tests PRIVATE winhttp)
+target_link_libraries(maccy_update_checker_tests PRIVATE
+        cpr::cpr
+        nlohmann_json::nlohmann_json
+)
 if(MSVC)
     target_compile_options(maccy_update_checker_tests PRIVATE /utf-8)
 endif()
@@ -195,10 +201,10 @@ install(FILES
 )
 
 set(MACCY_VCPKG_SHARE_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
-install(FILES "${MACCY_VCPKG_SHARE_DIR}/wtl/copyright"
-        DESTINATION "licenses/wtl")
-install(FILES "${MACCY_VCPKG_SHARE_DIR}/sqlite3/copyright"
-        DESTINATION "licenses/sqlite3")
+foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS cpr curl nlohmann-json sqlite3 wtl zlib)
+    install(FILES "${MACCY_VCPKG_SHARE_DIR}/${MACCY_VCPKG_LICENSE_PORT}/copyright"
+            DESTINATION "licenses/${MACCY_VCPKG_LICENSE_PORT}")
+endforeach()
 
 if(MSVC)
     # The bundled CMake module can assume an older VC redist folder name, so
