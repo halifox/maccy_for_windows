@@ -44,7 +44,7 @@
 
 ## 安装
 
-请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 ZIP 或 NSIS 安装包，并核对同一 Release 中的 `SHA256SUMS.txt`。本地 Debug 构建目录中的 `maccy.exe` 仅适用于开发和测试，不是正式分发包。
+请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 ZIP 或 NSIS 安装包，并核对同一 Release 中的 `SHA256SUMS.txt`。
 
 NSIS 安装程序默认安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
 
@@ -91,7 +91,7 @@ SQLite 的 `-wal` 和 `-shm` 文件也是数据库的一部分。当前存储未
 第三方组件和视觉资源遵循各自的许可证，来源和分发说明见 [`THIRD_PARTY_NOTICES/README.md`](THIRD_PARTY_NOTICES/README.md)：
 
 - Maccy 图标和视觉资源：MIT License，见 [`THIRD_PARTY_NOTICES/Maccy-LICENSE.txt`](THIRD_PARTY_NOTICES/Maccy-LICENSE.txt)；
-- WTL、SQLite、CPR、nlohmann-json 及其传递依赖：安装/打包时从 vcpkg 安装目录复制对应 port 的 `copyright` 文件到 `licenses/<port>/copyright`。
+- WTL、SQLite、CPR、nlohmann-json 及其传递依赖：许可证和版权声明见发行包 `licenses/<port>/copyright` 目录，具体文件位置见第三方内容说明。
 
 Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声明不构成商标或品牌授权。
 

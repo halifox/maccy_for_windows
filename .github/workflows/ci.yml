@@ -72,7 +72,6 @@ jobs:
             'CONTRIBUTING.md',
             'CODE_OF_CONDUCT.md',
             'CHANGELOG.md',
-            'RELEASE_CHECKLIST.md',
             'THIRD_PARTY_NOTICES/README.md',
             'THIRD_PARTY_NOTICES/Maccy-LICENSE.txt',
             'licenses/cpr/copyright',
