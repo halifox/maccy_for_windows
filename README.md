@@ -46,6 +46,8 @@
 
 请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 ZIP 或 NSIS 安装包，并核对同一 Release 中的 `SHA256SUMS.txt`。本地 Debug 构建目录中的 `maccy.exe` 仅适用于开发和测试，不是正式分发包。
 
+NSIS 安装程序默认安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
+
 用户可见变化记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 从源码构建
@@ -63,33 +65,10 @@
 在 Visual Studio x64 Developer PowerShell 的仓库根目录运行下面这一条命令，即可完成 Release 配置、编译，并生成 NSIS 安装程序、便携 ZIP 和 SHA-256 校验文件：
 
 ```powershell
-cmake -DVCPKG_ROOT=C:/path/to/vcpkg -DMACCY_VERSION="1.0.0" -P cmake/package-x64.cmake
+cmake -DVCPKG_ROOT=C:/dev/vcpkg -DMACCY_VERSION="1.0.0" -P cmake/package-x64.cmake
 ```
 
-将 `C:/path/to/vcpkg` 替换为本机 vcpkg 路径。产物位于 `build/packages/`。脚本会自动加载 x64 Visual Studio 工具链；如果程序正在运行，请先退出再打包。
-
-在 Visual Studio Developer PowerShell 中将 `VCPKG_ROOT` 指向 vcpkg 安装目录，然后执行：
-
-```powershell
-$env:VCPKG_ROOT = 'C:/path/to/vcpkg'
-cmake --preset windows-x64-release
-cmake --build --preset windows-x64-release
-ctest --preset windows-x64-release --output-on-failure
-```
-
-首次配置会根据仓库根目录的 `vcpkg.json` 安装 SQLite（启用 FTS5）、WTL、CPR 和 nlohmann-json。构建依赖使用 `x64-windows-static-md` triplet；构建目录会放在 `build/<preset>-vcpkg`。CMake 安装和打包时会从 vcpkg 安装目录复制依赖许可证，不需要将依赖许可证文件加入源码仓库。
-
-启动构建结果：
-
-```powershell
-Start-Process .\build\windows-x64-release-vcpkg\maccy.exe
-```
-
-安装程序会安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但会保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
-
-如果使用普通 PowerShell，请先加载 Visual Studio 的 C++ 开发环境。本文档提供的构建配置针对 Windows x64。
-
-正式发布由 GitHub Actions 根据 Release tag 生成。例如推送 `v1.0.1` 后，CI 会把 `1.0.1` 注入 CMake，统一生成应用内版本、EXE 文件版本和安装包版本。
+`VCPKG_ROOT` 指向 vcpkg 根目录，`MACCY_VERSION` 默认为 `1.0.0`。首次运行会通过 `vcpkg.json` 安装依赖；产物和校验文件写入 `build/packages/`。脚本使用 x64 Visual Studio Release 配置，版本号会写入程序和安装包。
 
 ## 数据、隐私和删除
 
