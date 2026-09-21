@@ -1,0 +1,14 @@
+{
+  "name": "maccy",
+  "version-string": "1.0.0",
+  "builtin-baseline": "6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8",
+  "dependencies": [
+    {
+      "name": "sqlite3",
+      "features": [
+        "fts5"
+      ]
+    },
+    "wtl"
+  ]
+}

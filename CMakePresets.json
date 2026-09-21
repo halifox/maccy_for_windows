@@ -10,8 +10,10 @@
       "name": "windows-x64-debug",
       "displayName": "Windows x64 Debug",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "binaryDir": "${sourceDir}/build/${presetName}-vcpkg",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
@@ -19,8 +21,10 @@
       "name": "windows-x64-release",
       "displayName": "Windows x64 Release",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
+      "binaryDir": "${sourceDir}/build/${presetName}-vcpkg",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static-md",
         "CMAKE_BUILD_TYPE": "Release"
       }
     }

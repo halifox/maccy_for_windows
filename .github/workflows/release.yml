@@ -33,21 +33,31 @@ jobs:
 
       - name: Configure Release
         shell: pwsh
-        run: cmake -S . -B build/Release -G "Visual Studio 18 2026" -A x64 -DMACCY_VERSION="$env:MACCY_RELEASE_VERSION"
+        run: |
+          $cmakeArgs = @(
+            '-S', '.',
+            '-B', 'build/Release-vcpkg',
+            '-G', 'Visual Studio 18 2026',
+            '-A', 'x64',
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake",
+            '-DVCPKG_TARGET_TRIPLET=x64-windows-static-md',
+            "-DMACCY_VERSION=$env:MACCY_RELEASE_VERSION"
+          )
+          cmake @cmakeArgs
 
       - name: Build Release
         shell: pwsh
-        run: cmake --build build/Release --config Release --parallel
+        run: cmake --build build/Release-vcpkg --config Release --parallel
 
       - name: Run tests
         shell: pwsh
-        run: ctest --test-dir build/Release -C Release --output-on-failure
+        run: ctest --test-dir build/Release-vcpkg -C Release --output-on-failure
 
       - name: Create ZIP and NSIS packages
         shell: pwsh
         run: |
-          cpack --config build/Release/CPackConfig.cmake -C Release -G ZIP
-          cpack --config build/Release/CPackConfig.cmake -C Release -G NSIS
+          cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G ZIP
+          cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G NSIS
 
       - name: Create checksums
         shell: pwsh

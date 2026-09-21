@@ -56,26 +56,30 @@
 - Visual Studio C++ 工具链；
 - CMake 3.25 或更高版本；
 - Ninja；
+- vcpkg；
 - C++20 编译器。
 
-请在 Visual Studio Developer PowerShell 中执行：
+在 Visual Studio Developer PowerShell 中将 `VCPKG_ROOT` 指向 vcpkg 安装目录，然后执行：
 
 ```powershell
+$env:VCPKG_ROOT = 'C:/path/to/vcpkg'
 cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release
 ctest --preset windows-x64-release --output-on-failure
 ```
 
+首次配置会根据仓库根目录的 `vcpkg.json` 安装 SQLite（启用 FTS5）和 WTL。构建依赖使用 `x64-windows-static-md` triplet；构建目录会放在 `build/<preset>-vcpkg`。
+
 启动构建结果：
 
 ```powershell
-Start-Process .\build\windows-x64-release\maccy.exe
+Start-Process .\build\windows-x64-release-vcpkg\maccy.exe
 ```
 
 生成便携 ZIP：
 
 ```powershell
-cpack --config .\build\windows-x64-release\CPackConfig.cmake -G ZIP
+cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G ZIP
 ```
 
 如果使用普通 PowerShell，请先加载 Visual Studio 的 C++ 开发环境。本文档提供的构建配置针对 Windows x64。

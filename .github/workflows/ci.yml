@@ -28,9 +28,11 @@ jobs:
         run: |
           $cmakeArgs = @(
             '-S', '.',
-            '-B', "build/${{ matrix.configuration }}",
+            '-B', "build/${{ matrix.configuration }}-vcpkg",
             '-G', 'Visual Studio 18 2026',
-            '-A', 'x64'
+            '-A', 'x64',
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake",
+            '-DVCPKG_TARGET_TRIPLET=x64-windows-static-md'
           )
           if ($env:GITHUB_REF_NAME -match '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
             $cmakeArgs += "-DMACCY_VERSION=$($Matches[1])"
@@ -39,21 +41,21 @@ jobs:
 
       - name: Build
         shell: pwsh
-        run: cmake --build "build/${{ matrix.configuration }}" --config "${{ matrix.configuration }}" --parallel
+        run: cmake --build "build/${{ matrix.configuration }}-vcpkg" --config "${{ matrix.configuration }}" --parallel
 
       - name: Test
         shell: pwsh
-        run: ctest --test-dir "build/${{ matrix.configuration }}" -C "${{ matrix.configuration }}" --output-on-failure
+        run: ctest --test-dir "build/${{ matrix.configuration }}-vcpkg" -C "${{ matrix.configuration }}" --output-on-failure
 
       - name: Install staging tree
         shell: pwsh
-        run: cmake --install "build/${{ matrix.configuration }}" --config "${{ matrix.configuration }}" --prefix "build/${{ matrix.configuration }}/install"
+        run: cmake --install "build/${{ matrix.configuration }}-vcpkg" --config "${{ matrix.configuration }}" --prefix "build/${{ matrix.configuration }}-vcpkg/install"
 
       - name: Package and verify Release metadata
         if: matrix.configuration == 'Release'
         shell: pwsh
         run: |
-          cpack --config "build/Release/CPackConfig.cmake" -C Release -G ZIP
+          cpack --config "build/Release-vcpkg/CPackConfig.cmake" -C Release -G ZIP
           $archive = Get-ChildItem -LiteralPath . -Filter 'maccy-*.zip' -File | Select-Object -First 1
           if ($null -eq $archive) {
             throw 'CPack did not produce a ZIP archive.'
@@ -86,5 +88,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: maccy-${{ matrix.configuration }}-x64
-          path: build/${{ matrix.configuration }}/install
+          path: build/${{ matrix.configuration }}-vcpkg/install
           if-no-files-found: error

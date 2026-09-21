@@ -13,15 +13,14 @@
 
 ## WTL
 
-- 目录：`third_party/wtl`
-- 版本标记：WTL 10.0
+- 来源：vcpkg `wtl` port，版本由根目录 `vcpkg.json` 的 baseline 固定
 - 许可证：Microsoft Public License (MS-PL)
 - 完整文本：[`WTL-MS-PL.txt`](WTL-MS-PL.txt)
 
 ## SQLite
 
-- 目录：`third_party/sqlite`
-- 当前源码版本：SQLite 3.53.4
+- 来源：vcpkg `sqlite3` port，版本由根目录 `vcpkg.json` 的 baseline 固定
+- 构建功能：启用 FTS5
 - 许可证：Public Domain
 - 说明：[`SQLite-PUBLIC-DOMAIN.txt`](SQLite-PUBLIC-DOMAIN.txt)
 - 官方版权说明：[sqlite.org/copyright.html](https://www.sqlite.org/copyright.html)

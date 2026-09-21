@@ -13,6 +13,9 @@ if(NOT WIN32)
     message(FATAL_ERROR "maccy is a Windows application.")
 endif()
 
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_path(WTL_INCLUDE_DIR NAMES atlapp.h REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -122,29 +125,16 @@ set_source_files_properties(
         PROPERTIES OBJECT_DEPENDS "${MACCY_RESOURCE_ASSETS}"
 )
 
-add_library(maccy_sqlite STATIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite/sqlite3.c"
-)
-
-target_include_directories(maccy_sqlite PUBLIC
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/sqlite"
-)
-
-target_compile_definitions(maccy_sqlite PRIVATE
-        SQLITE_THREADSAFE=1
-        SQLITE_ENABLE_FTS5
-)
-
 add_executable(maccy WIN32 ${MACCY_SOURCES})
 
 target_include_directories(maccy PRIVATE
         "${MACCY_GENERATED_DIR}"
         "${MACCY_SOURCE_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/third_party/wtl"
+        "${WTL_INCLUDE_DIR}"
 )
 
 target_link_libraries(maccy PRIVATE
-        maccy_sqlite
+        unofficial::sqlite3::sqlite3
         user32
         imm32
         gdi32
@@ -161,7 +151,6 @@ target_link_libraries(maccy PRIVATE
 target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
-    target_compile_options(maccy_sqlite PRIVATE /utf-8)
     target_compile_options(maccy PRIVATE /utf-8)
     target_link_options(maccy PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
 endif()

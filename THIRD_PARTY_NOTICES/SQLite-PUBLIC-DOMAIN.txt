@@ -1,7 +1,8 @@
 SQLite is in the public domain.
 
-This distribution includes the SQLite amalgamation in third_party/sqlite.
-The current bundled source identifies itself as SQLite version 3.53.4.
+This project obtains SQLite through the vcpkg manifest in vcpkg.json.
+The selected SQLite version is fixed by that manifest's builtin baseline.
+The SQLite FTS5 feature is enabled for this application.
 
 Official information:
 https://www.sqlite.org/copyright.html

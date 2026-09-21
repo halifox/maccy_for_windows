@@ -3,6 +3,7 @@
 /out/
 /dist/
 /_CPack_Packages/
+/vcpkg_installed/
 /.idea/
 /.vs/
 

@@ -61,11 +61,13 @@
 - Visual Studio C++ 工具链；
 - WTL；
 - SQLite；
+- vcpkg；
 - Ninja 或其他可用的 CMake 构建器。
 
-推荐在 Windows 的 Visual Studio Developer PowerShell 中使用仓库提供的 CMake Preset：
+推荐在 Windows 的 Visual Studio Developer PowerShell 中设置 `VCPKG_ROOT`，再使用仓库提供的 CMake Preset：
 
 ```powershell
+$env:VCPKG_ROOT = 'C:/path/to/vcpkg'
 cmake --preset windows-x64-debug
 cmake --build --preset windows-x64-debug
 ctest --preset windows-x64-debug --output-on-failure
@@ -77,8 +79,10 @@ Release 构建和打包验证：
 cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release
 ctest --preset windows-x64-release --output-on-failure
-cpack --config .\build\windows-x64-release\CPackConfig.cmake -G ZIP
+cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G ZIP
 ```
+
+首次配置会根据根目录的 `vcpkg.json` 安装 WTL 和启用了 FTS5 的 SQLite。Preset 使用 `x64-windows-static-md` triplet，并将构建文件写入独立的 `build/<preset>-vcpkg` 目录。
 
 如果使用其他 CMake 生成器、Visual Studio 版本、配置或架构，请在 Pull Request 中说明。发布版本必须使用干净的 Release 构建目录，不得直接分发 Debug 构建结果。
 
