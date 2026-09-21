@@ -57,7 +57,16 @@
 - CMake 3.25 或更高版本；
 - Ninja；
 - vcpkg；
-- C++20 编译器。
+- C++20 编译器；
+- NSIS，并确保 `makensis.exe` 在 `PATH` 中。
+
+在 Visual Studio x64 Developer PowerShell 的仓库根目录运行下面这一条命令，即可完成 Release 配置、编译，并生成 NSIS 安装程序、便携 ZIP 和 SHA-256 校验文件：
+
+```powershell
+cmake -DVCPKG_ROOT=C:/path/to/vcpkg -DMACCY_VERSION="1.0.0" -P cmake/package-x64.cmake
+```
+
+将 `C:/path/to/vcpkg` 替换为本机 vcpkg 路径。产物位于 `build/packages/`。脚本会自动加载 x64 Visual Studio 工具链；如果程序正在运行，请先退出再打包。
 
 在 Visual Studio Developer PowerShell 中将 `VCPKG_ROOT` 指向 vcpkg 安装目录，然后执行：
 
@@ -74,18 +83,6 @@ ctest --preset windows-x64-release --output-on-failure
 
 ```powershell
 Start-Process .\build\windows-x64-release-vcpkg\maccy.exe
-```
-
-生成便携 ZIP：
-
-```powershell
-cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G ZIP
-```
-
-生成 NSIS 安装程序（需安装 NSIS，并确保 `makensis.exe` 在 `PATH` 中）：
-
-```powershell
-cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G NSIS
 ```
 
 安装程序会安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但会保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
