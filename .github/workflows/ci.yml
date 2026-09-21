@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure
         shell: pwsh
@@ -88,7 +88,7 @@ jobs:
           }
 
       - name: Upload staging tree
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: maccy-${{ matrix.configuration }}-x64
           path: build/${{ matrix.configuration }}-vcpkg/install
