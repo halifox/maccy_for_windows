@@ -75,8 +75,8 @@ jobs:
             'RELEASE_CHECKLIST.md',
             'THIRD_PARTY_NOTICES/README.md',
             'THIRD_PARTY_NOTICES/Maccy-LICENSE.txt',
-            'THIRD_PARTY_NOTICES/WTL-MS-PL.txt',
-            'THIRD_PARTY_NOTICES/SQLite-PUBLIC-DOMAIN.txt'
+            'licenses/wtl/copyright',
+            'licenses/sqlite3/copyright'
           )
           foreach ($relativePath in $required) {
             if (-not (Test-Path -LiteralPath (Join-Path $root.FullName $relativePath))) {

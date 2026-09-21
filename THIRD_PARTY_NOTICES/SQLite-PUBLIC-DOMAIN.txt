@@ -1,8 +1,0 @@
-SQLite is in the public domain.
-
-This project obtains SQLite through the vcpkg manifest in vcpkg.json.
-The selected SQLite version is fixed by that manifest's builtin baseline.
-The SQLite FTS5 feature is enabled for this application.
-
-Official information:
-https://www.sqlite.org/copyright.html

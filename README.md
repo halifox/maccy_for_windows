@@ -107,8 +107,7 @@ SQLite 的 `-wal` 和 `-shm` 文件也是数据库的一部分。当前存储未
 第三方组件和视觉资源遵循各自的许可证，来源和分发说明见 [`THIRD_PARTY_NOTICES/README.md`](THIRD_PARTY_NOTICES/README.md)：
 
 - Maccy 图标和视觉资源：MIT License，见 [`THIRD_PARTY_NOTICES/Maccy-LICENSE.txt`](THIRD_PARTY_NOTICES/Maccy-LICENSE.txt)；
-- WTL 头文件：Microsoft Public License，见 [`THIRD_PARTY_NOTICES/WTL-MS-PL.txt`](THIRD_PARTY_NOTICES/WTL-MS-PL.txt)；
-- SQLite：Public Domain，见 [`THIRD_PARTY_NOTICES/SQLite-PUBLIC-DOMAIN.txt`](THIRD_PARTY_NOTICES/SQLite-PUBLIC-DOMAIN.txt)。
+- WTL 和 SQLite：安装/打包时从 vcpkg 安装目录复制对应 port 的 `copyright` 文件到 `licenses/<port>/copyright`。
 
 Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声明不构成商标或品牌授权。
 

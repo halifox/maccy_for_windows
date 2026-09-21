@@ -11,16 +11,11 @@
 
 本项目不是 Maccy 官方 Windows 版本，也不获得 Maccy 商标或品牌授权。分发源码或二进制文件时，请保留上述归属说明。
 
-## WTL
+## 构建依赖许可证
 
-- 来源：vcpkg `wtl` port，版本由根目录 `vcpkg.json` 的 baseline 固定
-- 许可证：Microsoft Public License (MS-PL)
-- 完整文本：[`WTL-MS-PL.txt`](WTL-MS-PL.txt)
+WTL 和 SQLite 由根目录 `vcpkg.json` 管理。许可证文本不保存在源码仓库中；执行 CMake 安装或打包时，会从 vcpkg 已安装 port 的 `share/<port>/copyright` 复制到发行目录：
 
-## SQLite
+- `licenses/wtl/copyright`
+- `licenses/sqlite3/copyright`
 
-- 来源：vcpkg `sqlite3` port，版本由根目录 `vcpkg.json` 的 baseline 固定
-- 构建功能：启用 FTS5
-- 许可证：Public Domain
-- 说明：[`SQLite-PUBLIC-DOMAIN.txt`](SQLite-PUBLIC-DOMAIN.txt)
-- 官方版权说明：[sqlite.org/copyright.html](https://www.sqlite.org/copyright.html)
+依赖版本和 SQLite 的 FTS5 构建功能由 `vcpkg.json` 中的 baseline 和 feature 声明确定。
