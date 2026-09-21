@@ -18,7 +18,7 @@
 
 优先使用 GitHub 的私密漏洞报告入口：
 
-[报告安全漏洞](https://github.com/halifox/Clipboard/security/advisories/new)
+[报告安全漏洞](https://github.com/halifox/maccy_for_windows/security/advisories/new)
 
 报告内容建议包括：
 
