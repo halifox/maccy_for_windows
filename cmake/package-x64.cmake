@@ -100,33 +100,25 @@ if (NOT EXISTS "${_cpack_config}")
     message(FATAL_ERROR "CMake did not create the expected CPack config: ${_cpack_config}")
 endif ()
 
-foreach (_generator IN ITEMS NSIS ZIP)
-    execute_process(
-            COMMAND "${_cpack_executable}" --config "${_cpack_config}"
-                    -C Release -G "${_generator}" -B "${_package_dir}"
-            WORKING_DIRECTORY "${_source_dir}"
-            RESULT_VARIABLE _package_result
-    )
-    if (NOT _package_result STREQUAL "0")
-        message(FATAL_ERROR "CPack ${_generator} packaging failed: ${_package_result}")
-    endif ()
-endforeach ()
+execute_process(
+        COMMAND "${_cpack_executable}" --config "${_cpack_config}"
+                -C Release -G NSIS -B "${_package_dir}"
+        WORKING_DIRECTORY "${_source_dir}"
+        RESULT_VARIABLE _package_result
+)
+if (NOT _package_result STREQUAL "0")
+    message(FATAL_ERROR "CPack NSIS packaging failed: ${_package_result}")
+endif ()
 
 set(_package_base "maccy-${MACCY_VERSION}-win64")
 set(_installer "${_package_dir}/${_package_base}.exe")
-set(_portable_zip "${_package_dir}/${_package_base}.zip")
 if (NOT EXISTS "${_installer}")
     message(FATAL_ERROR "CPack did not create the expected installer: ${_installer}")
 endif ()
-if (NOT EXISTS "${_portable_zip}")
-    message(FATAL_ERROR "CPack did not create the expected ZIP package: ${_portable_zip}")
-endif ()
 
 file(SHA256 "${_installer}" _installer_hash)
-file(SHA256 "${_portable_zip}" _zip_hash)
 file(WRITE "${_package_dir}/SHA256SUMS.txt"
-        "${_installer_hash}  ${_package_base}.exe\n${_zip_hash}  ${_package_base}.zip\n")
+        "${_installer_hash}  ${_package_base}.exe\n")
 
 message(STATUS "Installer: ${_installer}")
-message(STATUS "Portable ZIP: ${_portable_zip}")
 message(STATUS "SHA-256: ${_package_dir}/SHA256SUMS.txt")

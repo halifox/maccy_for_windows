@@ -51,20 +51,13 @@ jobs:
         shell: pwsh
         run: cmake --install "build/${{ matrix.configuration }}-vcpkg" --config "${{ matrix.configuration }}" --prefix "build/${{ matrix.configuration }}-vcpkg/install"
 
-      - name: Package and verify Release metadata
+      - name: Verify Release staging metadata
         if: matrix.configuration == 'Release'
         shell: pwsh
         run: |
-          cpack --config "build/Release-vcpkg/CPackConfig.cmake" -C Release -G ZIP
-          $archive = Get-ChildItem -LiteralPath . -Filter 'maccy-*.zip' -File | Select-Object -First 1
-          if ($null -eq $archive) {
-            throw 'CPack did not produce a ZIP archive.'
-          }
-          $extract = Join-Path $env:RUNNER_TEMP 'maccy-package'
-          Remove-Item -LiteralPath $extract -Recurse -Force -ErrorAction SilentlyContinue
-          Expand-Archive -LiteralPath $archive.FullName -DestinationPath $extract
-          $root = Get-ChildItem -LiteralPath $extract -Directory | Select-Object -First 1
+          $root = (Resolve-Path -LiteralPath 'build/Release-vcpkg/install').Path
           $required = @(
+            'bin/maccy.exe',
             'LICENSE',
             'README.md',
             'SECURITY.md',
@@ -82,8 +75,8 @@ jobs:
             'licenses/zlib/copyright'
           )
           foreach ($relativePath in $required) {
-            if (-not (Test-Path -LiteralPath (Join-Path $root.FullName $relativePath))) {
-              throw "Package is missing $relativePath"
+            if (-not (Test-Path -LiteralPath (Join-Path $root $relativePath))) {
+              throw "Release staging tree is missing $relativePath"
             }
           }
 

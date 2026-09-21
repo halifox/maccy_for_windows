@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '语义化版本号，例如 1.0.0'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -53,18 +59,17 @@ jobs:
         shell: pwsh
         run: ctest --test-dir build/Release-vcpkg -C Release --output-on-failure
 
-      - name: Create ZIP and NSIS packages
+      - name: Create NSIS installer
         shell: pwsh
         run: |
-          cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G ZIP
           cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G NSIS
 
       - name: Create checksums
         shell: pwsh
         run: |
-          $assets = @(Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*' -and $_.Extension -in @('.zip', '.exe') })
-          if ($assets.Count -lt 2) {
-            throw 'Expected ZIP and NSIS assets were not produced.'
+          $assets = @(Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*' -and $_.Extension -eq '.exe' })
+          if ($assets.Count -lt 1) {
+            throw 'Expected an NSIS installer was not produced.'
           }
           $lines = foreach ($asset in $assets | Sort-Object Name) {
             $hash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -79,7 +84,7 @@ jobs:
         run: |
           gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --title "$env:GITHUB_REF_NAME" --generate-notes
           $assets = @(
-            (Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*' -and $_.Extension -in @('.zip', '.exe') }).FullName
+            (Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*.exe' }).FullName
             (Join-Path (Get-Location) 'SHA256SUMS.txt')
           )
           gh release upload "$env:GITHUB_REF_NAME" $assets --repo "$env:GITHUB_REPOSITORY" --clobber

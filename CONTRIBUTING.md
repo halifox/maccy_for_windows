@@ -79,7 +79,7 @@ Release 构建和打包验证：
 cmake --preset windows-x64-release
 cmake --build --preset windows-x64-release
 ctest --preset windows-x64-release --output-on-failure
-cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G ZIP
+cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G NSIS
 ```
 
 首次配置会根据根目录的 `vcpkg.json` 安装 WTL 和启用了 FTS5 的 SQLite。Preset 使用 `x64-windows-static-md` triplet，并将构建文件写入独立的 `build/<preset>-vcpkg` 目录。
@@ -155,7 +155,7 @@ Pull Request 应包含：
 
 - Release x64 构建成功；
 - CTest 和手动 Smoke Test 已完成；
-- ZIP/NSIS 包可以在干净环境启动；
+- NSIS 安装包可以在干净环境安装并启动；
 - 包含项目许可证和所有第三方许可证；
 - 版本 tag、CMake 版本、应用 About 版本一致；
 - Release 说明包含已知限制、数据影响和 SHA-256 校验和。

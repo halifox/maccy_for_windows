@@ -44,7 +44,7 @@
 
 ## 安装
 
-请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 ZIP 或 NSIS 安装包，并核对同一 Release 中的 `SHA256SUMS.txt`。
+请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 NSIS 安装程序，并核对同一 Release 中的 `SHA256SUMS.txt`。
 
 NSIS 安装程序默认安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
 
@@ -62,7 +62,7 @@ NSIS 安装程序默认安装到 Program Files，并创建开始菜单和桌面�
 - C++20 编译器；
 - NSIS，并确保 `makensis.exe` 在 `PATH` 中。
 
-在 Visual Studio x64 Developer PowerShell 的仓库根目录运行下面这一条命令，即可完成 Release 配置、编译，并生成 NSIS 安装程序、便携 ZIP 和 SHA-256 校验文件：
+在 Visual Studio x64 Developer PowerShell 的仓库根目录运行下面这一条命令，即可完成 Release 配置、编译，并生成 NSIS 安装程序和 SHA-256 校验文件：
 
 ```powershell
 cmake -DVCPKG_ROOT=C:/dev/vcpkg -DMACCY_VERSION="1.0.0" -P cmake/package-x64.cmake
