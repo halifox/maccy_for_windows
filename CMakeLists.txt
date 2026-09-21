@@ -273,11 +273,18 @@ set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/halifox/Clipboard")
 set(CPACK_NSIS_HELP_LINK "https://github.com/halifox/Clipboard/issues")
 set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
 set(CPACK_NSIS_MODIFY_PATH OFF)
+set(CPACK_NSIS_MUI_FINISHPAGE_RUN "maccy.exe")
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
 else()
     set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
 endif()
+
+# Remove the per-user logon entry created by the application's setting when
+# uninstalling, while leaving the clipboard database and settings in LocalAppData.
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
+        "DeleteRegValue HKCU Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run maccy"
+)
 
 # Create Start Menu and desktop shortcuts that use the icon embedded in maccy.exe.
 set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")

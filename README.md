@@ -82,6 +82,14 @@ Start-Process .\build\windows-x64-release-vcpkg\maccy.exe
 cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G ZIP
 ```
 
+生成 NSIS 安装程序（需安装 NSIS，并确保 `makensis.exe` 在 `PATH` 中）：
+
+```powershell
+cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G NSIS
+```
+
+安装程序会安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但会保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
+
 如果使用普通 PowerShell，请先加载 Visual Studio 的 C++ 开发环境。本文档提供的构建配置针对 Windows x64。
 
 正式发布由 GitHub Actions 根据 Release tag 生成。例如推送 `v1.0.1` 后，CI 会把 `1.0.1` 注入 CMake，统一生成应用内版本、EXE 文件版本和安装包版本。
