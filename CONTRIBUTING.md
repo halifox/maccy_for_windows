@@ -94,21 +94,6 @@ cpack --config .\build\windows-x64-release-vcpkg\CPackConfig.cmake -G ZIP
 
 CTest 当前主要验证构建流程；在新增测试之前，`ctest` 通过不代表剪贴板、数据库或窗口生命周期已经得到完整覆盖。
 
-剪贴板压力测试需要：
-
-```powershell
-py -m pip install -r requirements-dev.txt
-```
-
-示例：
-
-```powershell
-py clipboard_test.py short --count 100 --interval 50
-py clipboard_test.py long --count 100 --size 50 --interval 100
-py clipboard_test.py image --count 100 --width 800 --height 600 --interval 150
-py clipboard_test.py mixed --count 300 --size 50 --width 800 --height 600 --interval 100
-```
-
 涉及以下内容时，应额外验证：
 
 - 托盘图标和窗口关闭行为；
