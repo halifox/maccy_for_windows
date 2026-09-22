@@ -110,7 +110,7 @@ if (NOT _package_result STREQUAL "0")
     message(FATAL_ERROR "CPack NSIS packaging failed: ${_package_result}")
 endif ()
 
-set(_package_base "maccy-${MACCY_VERSION}-win64")
+set(_package_base "MaccyForWindows-${MACCY_VERSION}-x64")
 set(_installer "${_package_dir}/${_package_base}.exe")
 if (NOT EXISTS "${_installer}")
     message(FATAL_ERROR "CPack did not create the expected installer: ${_installer}")
