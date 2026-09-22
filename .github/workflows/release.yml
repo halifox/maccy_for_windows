@@ -68,7 +68,7 @@ jobs:
       - name: Create checksums
         shell: pwsh
         run: |
-          $assets = @(Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*' -and $_.Extension -eq '.exe' })
+          $assets = @(Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'MaccyForWindows-*' -and $_.Extension -eq '.exe' })
           if ($assets.Count -lt 1) {
             throw 'Expected an NSIS installer was not produced.'
           }
@@ -85,7 +85,7 @@ jobs:
         run: |
           gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --title "$env:GITHUB_REF_NAME" --generate-notes
           $assets = @(
-            (Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'maccy-*.exe' }).FullName
+            (Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'MaccyForWindows-*.exe' }).FullName
             (Join-Path (Get-Location) 'SHA256SUMS.txt')
           )
           gh release upload "$env:GITHUB_REF_NAME" $assets --repo "$env:GITHUB_REPOSITORY" --clobber
