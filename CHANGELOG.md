@@ -2,4 +2,15 @@
 
 ## Unreleased
 
-- 可手动检查版本，也可在启动时自动检查 GitHub Releases 的新版本。
+### Changed
+
+- Updated MSVC runtime detection to sort by version numerically
+
+### Fixed
+
+- Added check to ensure MSVC runtime is not older than the toolset version
+
+### Security
+
+- Added option to fail if MSVC runtime DLLs cannot be bundled
+

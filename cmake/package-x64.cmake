@@ -66,7 +66,7 @@ string(APPEND _driver_content
 string(APPEND _driver_content "if errorlevel 1 exit /b 1\r\n")
 
 set(_commands
-        "\"${_cmake_executable_native}\" --fresh --preset windows-x64-release \"-DMACCY_VERSION=${MACCY_VERSION}\""
+        "\"${_cmake_executable_native}\" --fresh --preset windows-x64-release \"-DMACCY_VERSION=${MACCY_VERSION}\" -DMACCY_REQUIRE_BUNDLED_MSVC_RUNTIME=ON"
         "\"${_cmake_executable_native}\" --build --preset windows-x64-release --target maccy --parallel"
 )
 foreach (_command IN LISTS _commands)

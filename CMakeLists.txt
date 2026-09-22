@@ -24,6 +24,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
+option(MACCY_REQUIRE_BUNDLED_MSVC_RUNTIME "Fail if MSVC runtime DLLs cannot be bundled" OFF)
+
 if(MSVC)
     # CMake must know the localized /showIncludes prefix so Ninja can track
     # headers when the installed Visual Studio language is not English.
@@ -223,6 +225,9 @@ if(MSVC)
 
     file(GLOB MACCY_MSVC_RUNTIME_DIRS LIST_DIRECTORIES true
          "${MACCY_VC_DIR}/Redist/MSVC/*/${MACCY_MSVC_ARCH}/Microsoft.VC*.CRT")
+    # file(GLOB) sorts lexicographically, which can put an older 14.29 runtime
+    # before 14.50. Sort by numeric version, newest first, before selecting.
+    list(SORT MACCY_MSVC_RUNTIME_DIRS COMPARE NATURAL ORDER DESCENDING)
 
     set(MACCY_MSVC_RUNTIME_DIR "")
     foreach(MACCY_RUNTIME_DIR IN LISTS MACCY_MSVC_RUNTIME_DIRS)
@@ -233,6 +238,15 @@ if(MSVC)
     endforeach()
 
     if(MACCY_MSVC_RUNTIME_DIR)
+        get_filename_component(MACCY_MSVC_RUNTIME_ARCH_DIR "${MACCY_MSVC_RUNTIME_DIR}" DIRECTORY)
+        get_filename_component(MACCY_MSVC_RUNTIME_VERSION_DIR "${MACCY_MSVC_RUNTIME_ARCH_DIR}" DIRECTORY)
+        get_filename_component(MACCY_MSVC_RUNTIME_VERSION "${MACCY_MSVC_RUNTIME_VERSION_DIR}" NAME)
+        get_filename_component(MACCY_MSVC_TOOLSET_VERSION "${MACCY_MSVC_TOOLSET_DIR}" NAME)
+        if(MACCY_MSVC_RUNTIME_VERSION VERSION_LESS MACCY_MSVC_TOOLSET_VERSION)
+            message(FATAL_ERROR
+                "Selected MSVC runtime ${MACCY_MSVC_RUNTIME_VERSION} is older than compiler toolset ${MACCY_MSVC_TOOLSET_VERSION}.")
+        endif()
+        message(STATUS "Bundling MSVC runtime ${MACCY_MSVC_RUNTIME_VERSION} from ${MACCY_MSVC_RUNTIME_DIR}")
         file(GLOB MACCY_MSVC_RUNTIME_FILES LIST_DIRECTORIES false
              "${MACCY_MSVC_RUNTIME_DIR}/concrt140*.dll"
              "${MACCY_MSVC_RUNTIME_DIR}/msvcp140*.dll"
@@ -241,7 +255,11 @@ if(MSVC)
                 DESTINATION "${CMAKE_INSTALL_BINDIR}"
         )
     else()
-        message(WARNING "MSVC runtime redistributable DLLs were not found; the package will require the Visual C++ runtime on the target machine.")
+        if(MACCY_REQUIRE_BUNDLED_MSVC_RUNTIME)
+            message(FATAL_ERROR "MSVC runtime redistributable DLLs were not found; refusing to create a self-contained package.")
+        else()
+            message(WARNING "MSVC runtime redistributable DLLs were not found; the package will require the Visual C++ runtime on the target machine.")
+        endif()
     endif()
 endif()
 
