@@ -146,7 +146,7 @@ MainWindow::~MainWindow() {
 
 void MainWindow::DrawSearchCue(HWND window, HDC dc) const {
     if (window == nullptr || dc == nullptr || window != m_search ||
-        !ReadWindowText(window).empty()) {
+        ::GetFocus() == window || !ReadWindowText(window).empty()) {
         return;
     }
 
@@ -184,6 +184,9 @@ LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM 
         return 0;
     }
     const LRESULT result = CallWindowProcW(owner->m_originalSearchProc, window, message, wParam, lParam);
+    if (message == WM_SETFOCUS || message == WM_KILLFOCUS) {
+        ::InvalidateRect(window, nullptr, TRUE);
+    }
     if (message == WM_PAINT && owner->m_search == window && ReadWindowText(window).empty()) {
         HDC dc = ::GetDC(window);
         if (dc != nullptr) {
@@ -292,8 +295,6 @@ bool MainWindow::BindControls() {
     m_search = ::GetDlgItem(m_hWnd, kSearchControlId);
     m_historyList = ::GetDlgItem(m_hWnd, kHistoryListControlId);
     m_pinsList = ::GetDlgItem(m_hWnd, IDC_HISTORY_PINS);
-    m_searchClear = ::GetDlgItem(m_hWnd, IDC_HISTORY_SEARCH_CLEAR);
-    m_previewToggle = ::GetDlgItem(m_hWnd, IDC_HISTORY_PREVIEW);
     m_footerClear = ::GetDlgItem(m_hWnd, IDC_HISTORY_CLEAR);
     m_footerSettings = ::GetDlgItem(m_hWnd, IDC_HISTORY_SETTINGS);
     m_footerAbout = ::GetDlgItem(m_hWnd, IDC_HISTORY_ABOUT);
@@ -302,6 +303,29 @@ bool MainWindow::BindControls() {
     if (m_search == nullptr || m_historyList == nullptr ||
         m_footerClear == nullptr || m_footerSettings == nullptr ||
         m_footerAbout == nullptr || m_footerExit == nullptr) {
+        return false;
+    }
+
+    // Search-header buttons are created here so SearchHeaderLayout owns their
+    // complete runtime geometry instead of relying on placeholder RC positions.
+    const DWORD buttonStyle = WS_CHILD | WS_TABSTOP | BS_OWNERDRAW;
+    m_searchClear = ::CreateWindowExW(0, L"BUTTON", L"清除搜索", buttonStyle,
+        0, 0, 1, 1, m_hWnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_SEARCH_CLEAR)),
+        _Module.GetModuleInstance(), nullptr);
+    m_previewToggle = ::CreateWindowExW(0, L"BUTTON", L"预览", buttonStyle,
+        0, 0, 1, 1, m_hWnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_PREVIEW)),
+        _Module.GetModuleInstance(), nullptr);
+    if (m_searchClear == nullptr || m_previewToggle == nullptr) {
+        if (m_searchClear != nullptr) {
+            ::DestroyWindow(m_searchClear);
+            m_searchClear = nullptr;
+        }
+        if (m_previewToggle != nullptr) {
+            ::DestroyWindow(m_previewToggle);
+            m_previewToggle = nullptr;
+        }
         return false;
     }
 

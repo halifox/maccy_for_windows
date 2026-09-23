@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks
+- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic
 
 ### Fixed
 
