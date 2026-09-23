@@ -296,11 +296,9 @@ else()
     set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
 endif()
 
-# Remove the per-user logon entry created by the application's setting when
-# uninstalling, while leaving the clipboard database and settings in LocalAppData.
-set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
-        "DeleteRegValue HKCU Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run maccy"
-)
+# Stop the running app before deleting its executable and remove its per-user logon
+# entry. Keep the clipboard database and settings in LocalAppData when uninstalling.
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "Push $0\nExecWait '\"$SYSDIR\\taskkill.exe\" /F /T /IM maccy.exe' $0\nPop $0\nDeleteRegValue HKCU Software\\Microsoft\\Windows\\CurrentVersion\\Run maccy")
 
 # Create Start Menu and desktop shortcuts that use the icon embedded in maccy.exe.
 set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")
