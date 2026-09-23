@@ -172,12 +172,36 @@ void MainWindow::DrawSearchCue(HWND window, HDC dc) const {
     }
 }
 
+bool MainWindow::IsSearchClearHit(POINT point) const {
+    return m_search != nullptr && ::IsWindowVisible(m_search) != FALSE &&
+        m_searchHeader.showSearch && !ReadWindowText(m_search).empty() &&
+        ::PtInRect(&m_searchHeader.searchClear, point) != FALSE;
+}
+
+void MainWindow::ClearSearch() {
+    if (m_search == nullptr) {
+        return;
+    }
+    ::SetWindowTextW(m_search, L"");
+    RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
+    m_keyboardHandler.FocusSearchOrPopup(m_search, m_hWnd,
+        ::IsWindowVisible(m_search) != FALSE);
+}
+
 LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
     if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
     owner->RequestFooterUpdateForKeyMessage(message, wParam);
     if (message == WM_IME_STARTCOMPOSITION) owner->m_keyboardHandler.SetImeComposing(true);
     if (message == WM_IME_ENDCOMPOSITION) owner->m_keyboardHandler.SetImeComposing(false);
+    if (message == WM_KEYDOWN && wParam == 'U' &&
+        !owner->m_keyboardHandler.IsComposing(window) &&
+        (::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+        if (!ReadWindowText(window).empty()) {
+            owner->ClearSearch();
+        }
+        return 0;
+    }
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
         !owner->m_keyboardHandler.IsComposing(window) &&
         owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
@@ -251,7 +275,7 @@ LRESULT CALLBACK MainWindow::MenuControlProc(HWND window, UINT message, WPARAM w
         }
     }
     if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && wParam == VK_RETURN &&
-        (::GetDlgCtrlID(window) == IDC_HISTORY_PREVIEW || ::GetDlgCtrlID(window) == IDC_HISTORY_SEARCH_CLEAR)) {
+        ::GetDlgCtrlID(window) == IDC_HISTORY_PREVIEW) {
         SendMessageW(owner->m_hWnd, WM_COMMAND, MAKEWPARAM(::GetDlgCtrlID(window), BN_CLICKED),
             reinterpret_cast<LPARAM>(window));
         return 0;
@@ -306,26 +330,14 @@ bool MainWindow::BindControls() {
         return false;
     }
 
-    // Search-header buttons are created here so SearchHeaderLayout owns their
-    // complete runtime geometry instead of relying on placeholder RC positions.
+    // The preview toggle is created here so SearchHeaderLayout owns its runtime
+    // geometry instead of relying on a placeholder RC position.
     const DWORD buttonStyle = WS_CHILD | WS_TABSTOP | BS_OWNERDRAW;
-    m_searchClear = ::CreateWindowExW(0, L"BUTTON", L"清除搜索", buttonStyle,
-        0, 0, 1, 1, m_hWnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_SEARCH_CLEAR)),
-        _Module.GetModuleInstance(), nullptr);
     m_previewToggle = ::CreateWindowExW(0, L"BUTTON", L"预览", buttonStyle,
         0, 0, 1, 1, m_hWnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_PREVIEW)),
         _Module.GetModuleInstance(), nullptr);
-    if (m_searchClear == nullptr || m_previewToggle == nullptr) {
-        if (m_searchClear != nullptr) {
-            ::DestroyWindow(m_searchClear);
-            m_searchClear = nullptr;
-        }
-        if (m_previewToggle != nullptr) {
-            ::DestroyWindow(m_previewToggle);
-            m_previewToggle = nullptr;
-        }
+    if (m_previewToggle == nullptr) {
         return false;
     }
 
@@ -345,9 +357,7 @@ bool MainWindow::BindControls() {
     for (HWND button : FooterButtons()) {
         SetWindowSubclass(button, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
     }
-    for (HWND button : {m_searchClear, m_previewToggle}) {
-        SetWindowSubclass(button, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
-    }
+    SetWindowSubclass(m_previewToggle, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     // Remove borders
     for (HWND control : {m_search, m_historyList, m_pinsList}) {
@@ -358,20 +368,17 @@ bool MainWindow::BindControls() {
     }
 
     ::SetWindowTextW(m_previewToggle, L"预览");
-    ::SetWindowTextW(m_searchClear, L"清除搜索");
     m_previewTip = L"显示或隐藏预览（" + HotKeyToText(m_settings.preview_hotkey) + L"）";
 
     m_tooltips = ::CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, m_hWnd, nullptr,
         _Module.GetModuleInstance(), nullptr);
-    for (HWND control : {m_searchClear, m_previewToggle}) {
-        TOOLINFOW info{sizeof(info)};
-        info.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
-        info.hwnd = m_hWnd; info.uId = reinterpret_cast<UINT_PTR>(control);
-        info.lpszText = const_cast<wchar_t*>(control == m_searchClear ?
-            L"清除搜索（Ctrl+U）" : m_previewTip.c_str());
-        SendMessageW(m_tooltips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&info));
-    }
+    TOOLINFOW previewInfo{sizeof(previewInfo)};
+    previewInfo.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    previewInfo.hwnd = m_hWnd;
+    previewInfo.uId = reinterpret_cast<UINT_PTR>(m_previewToggle);
+    previewInfo.lpszText = m_previewTip.data();
+    SendMessageW(m_tooltips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&previewInfo));
 
     LONG_PTR search_style = ::GetWindowLongPtrW(m_search, GWL_STYLE);
     search_style &= ~static_cast<LONG_PTR>(ES_MULTILINE);
@@ -386,7 +393,7 @@ bool MainWindow::BindControls() {
 void MainWindow::ApplyHistoryFonts() {
     const HFONT font = m_historyRenderer.GetNormalFont();
     for (HWND control : {m_search, m_historyList, m_pinsList, m_footerClear, m_footerSettings,
-                         m_footerAbout, m_footerExit, m_searchClear, m_previewToggle}) {
+                         m_footerAbout, m_footerExit, m_previewToggle}) {
         if (control != nullptr) {
             SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
         }
@@ -455,16 +462,14 @@ void MainWindow::LayoutHistoryControls() {
                 SWP_NOZORDER | SWP_NOACTIVATE);
         };
         place(m_search, headerLayout.searchEdit);
-        place(m_searchClear, headerLayout.searchClear);
         place(m_previewToggle, headerLayout.preview);
     } else {
-        for (HWND control : {m_search, m_searchClear, m_previewToggle}) {
+        for (HWND control : {m_search, m_previewToggle}) {
             ::SetWindowPos(control, nullptr, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
         }
     }
 
-    ::ShowWindow(m_searchClear, header && !ReadWindowText(m_search).empty() ? SW_SHOW : SW_HIDE);
     ::ShowWindow(m_previewToggle, header ? SW_SHOW : SW_HIDE);
 
     ::SetWindowPos(m_pinsList, nullptr, margin, pinTop, width, pinsHeight,
@@ -1612,6 +1617,13 @@ LRESULT MainWindow::OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     }
 
     const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    POINT clientPoint = point;
+    ::ScreenToClient(m_hWnd, &clientPoint);
+    if (IsSearchClearHit(clientPoint)) {
+        handled = TRUE;
+        return HTCLIENT;
+    }
+
     const bool left = point.x < rect.left + kResizeBorder;
     const bool right = point.x >= rect.right - kResizeBorder;
     const bool top = point.y < rect.top + kResizeBorder;
@@ -1629,13 +1641,65 @@ LRESULT MainWindow::OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     return HTCAPTION;
 }
 
+LRESULT MainWindow::OnLButtonDown(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    if (!IsSearchClearHit(point)) {
+        handled = FALSE;
+        return 0;
+    }
+    handled = TRUE;
+    m_searchClearPressed = true;
+    ::SetCapture(m_hWnd);
+    return 0;
+}
+
+LRESULT MainWindow::OnLButtonUp(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    if (!m_searchClearPressed) {
+        handled = FALSE;
+        return 0;
+    }
+    handled = TRUE;
+    const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    const bool activate = IsSearchClearHit(point);
+    m_searchClearPressed = false;
+    if (::GetCapture() == m_hWnd) {
+        ::ReleaseCapture();
+    }
+    if (activate) {
+        ClearSearch();
+    }
+    return 0;
+}
+
+LRESULT MainWindow::OnCaptureChanged(UINT, WPARAM, LPARAM, BOOL& handled) {
+    m_searchClearPressed = false;
+    handled = TRUE;
+    return 0;
+}
+
+LRESULT MainWindow::OnSetCursor(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    if (LOWORD(lParam) == HTCLIENT) {
+        POINT point{};
+        if (::GetCursorPos(&point) && ::ScreenToClient(m_hWnd, &point) &&
+            IsSearchClearHit(point)) {
+            ::SetCursor(::LoadCursorW(nullptr, IDC_HAND));
+            handled = TRUE;
+            return TRUE;
+        }
+    }
+    handled = FALSE;
+    return 0;
+}
+
 LRESULT MainWindow::OnPaint(UINT, WPARAM, LPARAM, BOOL&) {
     PAINTSTRUCT paint{};
     HDC dc = BeginPaint(&paint);
     RECT client{};
     GetClientRect(&client);
+    const bool showSearchClear = m_search != nullptr &&
+        !ReadWindowText(m_search).empty() && m_searchHeader.showSearch;
     m_historyRenderer.OnPaint(dc, client, m_pinSeparatorY, m_footerSeparatorY,
-        m_searchHeader);
+        m_searchHeader, showSearchClear);
     EndPaint(&paint);
     return 0;
 }
@@ -1772,13 +1836,6 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
         OpenAbout();
         return 0;
     }
-    if (notification == BN_CLICKED && command == IDC_HISTORY_SEARCH_CLEAR) {
-        handled = TRUE;
-        ::SetWindowTextW(m_search, L"");
-        RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
-        m_keyboardHandler.FocusSearchOrPopup(m_search, m_hWnd, ::IsWindowVisible(m_search) != FALSE);
-        return 0;
-    }
     if (notification == BN_CLICKED && command == IDC_HISTORY_PREVIEW) {
         handled = TRUE;
         TogglePreview();
@@ -1792,6 +1849,9 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
     }
     if (command == kSearchControlId && notification == EN_CHANGE) {
         handled = TRUE;
+        if (m_searchHeader.showSearch) {
+            ::InvalidateRect(m_hWnd, &m_searchHeader.searchClear, FALSE);
+        }
         ScheduleSearchFromCurrentEdit();
         return 0;
     }
