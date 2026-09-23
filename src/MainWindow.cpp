@@ -22,7 +22,6 @@ constexpr UINT kTrayCommandSettings = 1002;
 constexpr UINT kTrayCommandClear = 1003;
 constexpr UINT kTrayCommandIgnore = 1004;
 constexpr UINT kTrayCommandExit = 1005;
-constexpr UINT kSearchDebounceMilliseconds = 200;
 
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
@@ -72,6 +71,14 @@ std::wstring ReadWindowText(HWND window) {
 
 bool IsShiftKey(WPARAM key) {
     return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
+}
+
+bool HasPendingKeyboardInput(HWND window) {
+    if (window == nullptr || !::IsWindow(window)) {
+        return false;
+    }
+    MSG message{};
+    return ::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE;
 }
 
 // Resolve paste action based on modifier keys
@@ -207,6 +214,9 @@ LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM 
         owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
         return 0;
     }
+
+    // Search from EN_CHANGE after the edit control has actually changed its
+    // text. Scheduling from WM_KEYDOWN can enqueue a query for the old text.
     const LRESULT result = CallWindowProcW(owner->m_originalSearchProc, window, message, wParam, lParam);
     if (message == WM_SETFOCUS || message == WM_KILLFOCUS) {
         ::InvalidateRect(window, nullptr, TRUE);
@@ -710,9 +720,40 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
                 ::OutputDebugStringA("\n");
                 return;
             }
+            if (HasPendingKeyboardInput(m_search)) {
+                m_deferredHistoryResult = DeferredHistoryResult{
+                    result_generation,
+                    std::move(owned_query),
+                    std::move(items)
+                };
+                if (::SetTimer(m_hWnd, AppConstants::Timer::kSearchResultCommit,
+                               USER_TIMER_MINIMUM, nullptr) != 0) {
+                    return;
+                }
+                ApplyDeferredHistoryResult();
+                return;
+            }
+            KillTimer(AppConstants::Timer::kSearchResultCommit);
+            m_deferredHistoryResult.reset();
             ApplyHistoryItems(std::move(owned_query), std::move(items));
         }
     );
+}
+
+void MainWindow::ApplyDeferredHistoryResult() {
+    KillTimer(AppConstants::Timer::kSearchResultCommit);
+    if (!m_deferredHistoryResult.has_value()) {
+        return;
+    }
+
+    auto result = std::move(*m_deferredHistoryResult);
+    m_deferredHistoryResult.reset();
+    if (result.generation != m_historyGeneration ||
+        m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_search == nullptr ||
+        result.query != ReadWindowText(m_search)) {
+        return;
+    }
+    ApplyHistoryItems(std::move(result.query), std::move(result.items));
 }
 
 void MainWindow::ApplyHistoryItems(
@@ -813,14 +854,6 @@ void MainWindow::ApplyHistoryItems(
             }
         }
         OutputDebugStringA(error.what());
-    }
-}
-
-void MainWindow::ScheduleSearch() {
-    KillTimer(AppConstants::Timer::kSearch);
-    if (::SetTimer(m_hWnd, AppConstants::Timer::kSearch,
-                   kSearchDebounceMilliseconds, nullptr) == 0) {
-        RequestUiUpdate(AppConstants::UiUpdate::kHistory);
     }
 }
 
@@ -1248,11 +1281,9 @@ int MainWindow::SelectedHistoryIndex() const {
 }
 
 void MainWindow::ScheduleSearchFromCurrentEdit() {
-    // Invalidate outstanding results as soon as the edit changes, before the
-    // debounce timer starts the next query.
+    // Invalidate outstanding results and queue a search as soon as the edit changes.
     ++m_historyGeneration;
-    ScheduleSearch();
-    RequestUiUpdate(AppConstants::UiUpdate::kLayout);
+    RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
 }
 
 void MainWindow::UpdateTrayTooltip() {
@@ -1469,7 +1500,6 @@ void MainWindow::OnScheduleSearchCallback(void* context) {
     auto* window = static_cast<MainWindow*>(context);
     const auto query = ReadWindowText(window->m_search);
     if (query != window->m_searchQuery) {
-        ::KillTimer(window->m_hWnd, AppConstants::Timer::kSearch);
         window->RequestUiUpdate(AppConstants::UiUpdate::kHistory);
     }
 }
@@ -1900,10 +1930,14 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         m_pasteController.OnPasteTimer();
         return 0;
     }
-    if (wParam == AppConstants::Timer::kSearch) {
+    if (wParam == AppConstants::Timer::kSearchResultCommit) {
         handled = TRUE;
-        KillTimer(AppConstants::Timer::kSearch);
-        RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+        if (HasPendingKeyboardInput(m_search) &&
+            ::SetTimer(m_hWnd, AppConstants::Timer::kSearchResultCommit,
+                       USER_TIMER_MINIMUM, nullptr) != 0) {
+            return 0;
+        }
+        ApplyDeferredHistoryResult();
         return 0;
     }
     if (wParam == AppConstants::Timer::kPreview) {
@@ -2037,7 +2071,8 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
     m_updateChecker.Stop();
-    KillTimer(AppConstants::Timer::kSearch);
+    KillTimer(AppConstants::Timer::kSearchResultCommit);
+    m_deferredHistoryResult.reset();
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
     m_keyboardHandler.Shutdown();
@@ -2088,7 +2123,6 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_pasteController.CaptureTargetWindow();
     m_previewSuppressed = false;
     ::SetWindowTextW(m_search, L"");
-    KillTimer(AppConstants::Timer::kSearch);
     HidePreview();
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
     PositionPopup(popup_position);

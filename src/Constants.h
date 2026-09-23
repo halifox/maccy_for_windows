@@ -31,7 +31,7 @@ namespace AppConstants {
     // 定时器ID
     // ========================================================================
     namespace Timer {
-        constexpr UINT_PTR kSearch = 1;
+        constexpr UINT_PTR kSearchResultCommit = 1;
         constexpr UINT_PTR kPreview = 2;
         constexpr UINT_PTR kPaste = 3;
     }
