@@ -12,10 +12,6 @@
 - Improved search clear button interaction with mouse and keyboard and visual feedback
 - Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic, including enhanced error handling
 
-### Removed
-
-- Removed obsolete search clear button control
-
 ### Fixed
 
 - Added check to ensure MSVC runtime is not older than the toolset version
