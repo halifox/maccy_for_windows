@@ -388,18 +388,28 @@ bool SameHotKey(const HotKeyConfig &lhs, const HotKeyConfig &rhs) {
 bool SetLaunchAtLogin(bool enabled) {
     constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     HKEY key = nullptr;
-    if (RegCreateKeyExW(
-        HKEY_CURRENT_USER,
-        kRunKey,
-        0,
-        nullptr,
-        REG_OPTION_NON_VOLATILE,
-        KEY_SET_VALUE,
-        nullptr,
-        &key,
-        nullptr
-    ) != ERROR_SUCCESS) {
-        return false;
+    if (enabled) {
+        if (RegCreateKeyExW(
+            HKEY_CURRENT_USER,
+            kRunKey,
+            0,
+            nullptr,
+            REG_OPTION_NON_VOLATILE,
+            KEY_SET_VALUE,
+            nullptr,
+            &key,
+            nullptr
+        ) != ERROR_SUCCESS) {
+            return false;
+        }
+    } else {
+        const LONG open_result = RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key);
+        if (open_result == ERROR_FILE_NOT_FOUND || open_result == ERROR_PATH_NOT_FOUND) {
+            return true;
+        }
+        if (open_result != ERROR_SUCCESS) {
+            return false;
+        }
     }
 
     LONG result = ERROR_SUCCESS;

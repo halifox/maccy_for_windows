@@ -287,21 +287,24 @@ set(CPACK_NSIS_MUI_ICON "${MACCY_APP_ICON_ICO}")
 set(CPACK_NSIS_MUI_UNIICON "${MACCY_APP_ICON_ICO}")
 set(CPACK_NSIS_URL_INFO_ABOUT "https://github.com/halifox/maccy_for_windows")
 set(CPACK_NSIS_HELP_LINK "https://github.com/halifox/maccy_for_windows/issues")
-set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set(CPACK_NSIS_MODIFY_PATH OFF)
 set(CPACK_NSIS_MUI_FINISHPAGE_RUN "maccy.exe")
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
-else()
-    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES")
-endif()
+set(CPACK_NSIS_INSTALL_ROOT "$LOCALAPPDATA\\\\Programs")
 
-# Stop the running app before deleting its executable and remove its per-user logon
-# entry. Keep the clipboard database and settings in LocalAppData when uninstalling.
-set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "Push $0\nExecWait '\"$SYSDIR\\taskkill.exe\" /F /T /IM maccy.exe' $0\nPop $0\nDeleteRegValue HKCU Software\\Microsoft\\Windows\\CurrentVersion\\Run maccy")
+# Updates replace the registered per-user installation in place. The installer's
+# preinstall hook closes Maccy before removing its old, app-owned bin directory.
+set(CPACK_NSIS_EXTRA_PREINSTALL_COMMANDS
+    "Call MaccyStopRunningApp\nStrCmp \\\"$MACCY_UPGRADE_FOUND\\\" \\\"1\\\" 0 maccy_preinstall_done\nClearErrors\nRMDir /r \\\"$INSTDIR\\\\bin\\\"\nmaccy_preinstall_done:")
+
+# Full uninstall always removes this user's logon entry. User data is deleted only
+# when the uninstaller page's checkbox is selected.
+set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
+    "Call un.MaccyStopRunningApp\nDeleteRegValue HKCU \\\"Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Run\\\" \\\"maccy\\\"\nStrCmp \\\"$MACCY_DELETE_USER_DATA\\\" \\\"1\\\" 0 maccy_uninstall_done\nClearErrors\nRMDir /r \\\"$LOCALAPPDATA\\\\maccy\\\"\nIfFileExists \\\"$LOCALAPPDATA\\\\maccy\\\\*.*\\\" 0 maccy_uninstall_done\nmaccy_data_delete_failed:\nMessageBox MB_OK|MB_ICONEXCLAMATION \\\"$(MACCY_UNINSTALL_DATA_DELETE_FAILED)\\\"\nmaccy_uninstall_done:")
 
 # Create Start Menu and desktop shortcuts that use the icon embedded in maccy.exe.
 set(CPACK_PACKAGE_EXECUTABLES "${PROJECT_NAME};${PROJECT_NAME}")
 set(CPACK_CREATE_DESKTOP_LINKS "${PROJECT_NAME}")
 
+include(cmake/PrepareNsisTemplate.cmake)
 include(CPack)

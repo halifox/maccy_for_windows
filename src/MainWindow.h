@@ -80,9 +80,15 @@ public:
 
     bool AddTrayIcon();
     void ShowMainWindow();
+    void ExitForInstaller();
     HWND Window() const noexcept { return m_hWnd; }
 
 private:
+    enum class ExitReason {
+        User,
+        Installer
+    };
+
     // Window procedure callbacks for subclassed controls
     static LRESULT CALLBACK SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
     static LRESULT CALLBACK HistoryListWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -134,7 +140,7 @@ private:
     void ClearHistory(bool all = false);
     void OpenAbout();
     void OpenSettings();
-    void ExitApplication();
+    void ExitApplication(ExitReason reason = ExitReason::User);
 
     // Utilities
     void UpdateFooterControls();

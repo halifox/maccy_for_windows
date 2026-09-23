@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added experimental foo command
 - Added visual indicator for search clear button in history view
 
 ### Changed
