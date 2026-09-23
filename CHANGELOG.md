@@ -2,9 +2,19 @@
 
 ## Unreleased
 
+### Added
+
+- Added visual indicator for search clear button in history view
+
 ### Changed
 
-- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks
+- Added support for Ctrl+U shortcut to clear search input, with improved keyboard navigation and focus handling
+- Improved search clear button interaction with mouse and keyboard and visual feedback
+- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic, including enhanced error handling
+
+### Removed
+
+- Removed obsolete search clear button control
 
 ### Fixed
 

@@ -41,7 +41,8 @@ public:
     void OnPaint(HDC dc, const RECT& client,
                  int pinSeparatorY,
                  int footerSeparatorY,
-                 const SearchHeaderLayout::Geometry& header);
+                 const SearchHeaderLayout::Geometry& header,
+                 bool showSearchClear);
 
     // Font access
     HFONT GetNormalFont() const { return m_normalFont; }

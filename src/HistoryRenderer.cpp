@@ -570,7 +570,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         SelectObject(draw->hDC, oldBrush); SelectObject(draw->hDC, oldPen); DeleteObject(pen);
         return;
     }
-    const auto title = draw->CtlID == IDC_HISTORY_SEARCH_CLEAR ? std::wstring(L"×") : ReadWindowText(draw->hwndItem);
+    const auto title = ReadWindowText(draw->hwndItem);
     DrawTextW(draw->hDC, title.c_str(), -1, &rect, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | (index < 0 ? DT_CENTER : DT_LEFT));
     if (index >= 0) {
         const wchar_t* keys[] = {(GetKeyState(VK_SHIFT) & 0x8000) ? L"Ctrl+Alt+Shift+Backspace" : L"Ctrl+Alt+Backspace", L"Ctrl+,", L"", L"Ctrl+Q"};
@@ -582,7 +582,8 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
 void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
                              int pinSeparatorY,
                              int footerSeparatorY,
-                             const SearchHeaderLayout::Geometry& header) {
+                             const SearchHeaderLayout::Geometry& header,
+                             bool showSearchClear) {
     FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
     HPEN separator = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT));
     auto previousPen = SelectObject(dc, separator);
@@ -607,6 +608,16 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
                  icon.top + header.metrics.iconHandleStart, nullptr);
         LineTo(dc, icon.left + header.metrics.iconHandleEnd,
                icon.top + header.metrics.iconHandleEnd);
+        if (showSearchClear && !IsRectEmpty(&header.searchClear)) {
+            const int centerX = (header.searchClear.left + header.searchClear.right) / 2;
+            const int centerY = (header.searchClear.top + header.searchClear.bottom) / 2;
+            const int halfSize = std::max(2, MulDiv(3, header.metrics.clearWidth,
+                                                     SearchHeaderLayout::kClearWidth));
+            MoveToEx(dc, centerX - halfSize, centerY - halfSize, nullptr);
+            LineTo(dc, centerX + halfSize + 1, centerY + halfSize + 1);
+            MoveToEx(dc, centerX + halfSize, centerY - halfSize, nullptr);
+            LineTo(dc, centerX - halfSize - 1, centerY + halfSize + 1);
+        }
         SelectObject(dc, brush); SelectObject(dc, pen); DeleteObject(iconPen);
     }
     if (m_settings.show_title && header.showTitle && !IsRectEmpty(&header.title)) {

@@ -10,6 +10,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -46,6 +47,10 @@ public:
         MESSAGE_HANDLER(WM_ENTERSIZEMOVE, OnEnterSizeMove)
         MESSAGE_HANDLER(WM_GETMINMAXINFO, OnGetMinMaxInfo)
         MESSAGE_HANDLER(WM_NCHITTEST, OnNcHitTest)
+        MESSAGE_HANDLER(WM_LBUTTONDOWN, OnLButtonDown)
+        MESSAGE_HANDLER(WM_LBUTTONUP, OnLButtonUp)
+        MESSAGE_HANDLER(WM_CAPTURECHANGED, OnCaptureChanged)
+        MESSAGE_HANDLER(WM_SETCURSOR, OnSetCursor)
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
@@ -86,6 +91,8 @@ private:
 
     // Search edit rendering
     void DrawSearchCue(HWND window, HDC dc) const;
+    bool IsSearchClearHit(POINT point) const;
+    void ClearSearch();
 
     // Control management
     bool BindControls();
@@ -106,6 +113,7 @@ private:
     // History management
     void RefreshHistory(std::wstring_view query);
     void ApplyHistoryItems(std::wstring query, std::vector<ClipboardItem> items);
+    void ApplyDeferredHistoryResult();
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
 
@@ -131,7 +139,6 @@ private:
     // Utilities
     void UpdateFooterControls();
     void RequestFooterUpdateForKeyMessage(UINT message, WPARAM key);
-    void ScheduleSearch();
     void ScheduleSearchFromCurrentEdit();
     void SaveWindowGeometry(bool resized = false);
     void HideMainWindow();
@@ -163,6 +170,10 @@ private:
     LRESULT OnEnterSizeMove(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled);
+    LRESULT OnLButtonDown(UINT, WPARAM, LPARAM lParam, BOOL& handled);
+    LRESULT OnLButtonUp(UINT, WPARAM, LPARAM lParam, BOOL& handled);
+    LRESULT OnCaptureChanged(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSetCursor(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
@@ -217,7 +228,6 @@ private:
     HWND m_search = nullptr;
     HWND m_historyList = nullptr;
     HWND m_pinsList = nullptr;
-    HWND m_searchClear = nullptr;
     HWND m_previewToggle = nullptr;
     HWND m_tooltips = nullptr;
     HWND m_footerClear = nullptr;
@@ -237,11 +247,18 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
+    bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;
     std::uint64_t m_historyGeneration = 0;
+    struct DeferredHistoryResult {
+        std::uint64_t generation = 0;
+        std::wstring query;
+        std::vector<ClipboardItem> items;
+    };
+    std::optional<DeferredHistoryResult> m_deferredHistoryResult;
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};
