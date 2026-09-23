@@ -8,7 +8,7 @@
 
 ### Changed
 
-- Added support for Ctrl+U shortcut to clear search input
+- Added support for Ctrl+U shortcut to clear search input, with improved keyboard navigation
 - Improved search clear button interaction with mouse and keyboard
 - Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic
 

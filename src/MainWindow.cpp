@@ -700,7 +700,8 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
                             std::vector<ClipboardItem> items,
                             std::string error) mutable {
             if (result_generation != m_historyGeneration ||
-                m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+                m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_search == nullptr ||
+                owned_query != ReadWindowText(m_search)) {
                 return;
             }
             if (!error.empty()) {
@@ -817,7 +818,10 @@ void MainWindow::ApplyHistoryItems(
 
 void MainWindow::ScheduleSearch() {
     KillTimer(AppConstants::Timer::kSearch);
-    ::SetTimer(m_hWnd, AppConstants::Timer::kSearch, kSearchDebounceMilliseconds, nullptr);
+    if (::SetTimer(m_hWnd, AppConstants::Timer::kSearch,
+                   kSearchDebounceMilliseconds, nullptr) == 0) {
+        RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+    }
 }
 
 void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id) {
@@ -1244,6 +1248,9 @@ int MainWindow::SelectedHistoryIndex() const {
 }
 
 void MainWindow::ScheduleSearchFromCurrentEdit() {
+    // Invalidate outstanding results as soon as the edit changes, before the
+    // debounce timer starts the next query.
+    ++m_historyGeneration;
     ScheduleSearch();
     RequestUiUpdate(AppConstants::UiUpdate::kLayout);
 }
