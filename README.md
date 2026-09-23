@@ -42,6 +42,22 @@
 - Maccy 使用 macOS Pasteboard 和 SwiftData；本项目使用 Windows 原生剪贴板格式和 SQLite BLOB。
 - 本项目不包含 Universal Clipboard、iCloud 或 macOS App Intents 等 macOS 集成。
 
+## 内存测试
+
+测试软件版本:1.0.1
+
+|    历史记录 | 内容                 |   后台内存占用 |
+|--------:|--------------------|---------:|
+|     0 条 | 全新启动，无历史记录         |  3.07 MB |
+|   200 条 | 每条 55 字节的短文本       |  3.99 MB |
+|   200 条 | 每条 50 KB 的长文本      | 10.84 MB |
+|   200 条 | 每张 800 × 600 像素的图片 | 11.54 MB |
+|   200 条 | 短文本、长文本和图片混合       | 12.04 MB |
+|  1000 条 | 每条 55 字节的短文本       |  8.38 MB |
+|  1000 条 | 每条 50 KB 的长文本      | 36.05 MB |
+|  1000 条 | 每张 800 × 600 像素的图片 | 14.43 MB |
+|  1000 条 | 短文本、长文本和图片混合       | 18.46 MB |
+
 ## 安装
 
 请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 NSIS 安装程序，并核对同一 Release 中的 `SHA256SUMS.txt`。
