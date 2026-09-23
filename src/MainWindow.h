@@ -5,6 +5,7 @@
 
 #include <atlbase.h>
 #include <atlapp.h>
+#include <atlctrls.h>
 #include <atlwin.h>
 
 #include <array>
@@ -59,7 +60,6 @@ public:
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
         MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
-        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
         MESSAGE_HANDLER(WM_KEYDOWN, OnKeyDown)
@@ -76,6 +76,22 @@ public:
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
         MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
         MESSAGE_HANDLER(AppConstants::kUpdateCheckerResultMessage, OnUpdateCheckerResult)
+        COMMAND_HANDLER(IDC_HISTORY_SEARCH, EN_CHANGE, OnSearchChanged)
+        COMMAND_HANDLER(IDC_HISTORY_LIST, LBN_SELCHANGE, OnHistoryListSelectionChanged)
+        COMMAND_HANDLER(IDC_HISTORY_PINS, LBN_SELCHANGE, OnHistoryListSelectionChanged)
+        COMMAND_HANDLER(IDC_HISTORY_CLEAR, BN_CLICKED, OnClearHistoryButton)
+        COMMAND_HANDLER(IDC_HISTORY_SETTINGS, BN_CLICKED, OnSettingsButton)
+        COMMAND_HANDLER(IDC_HISTORY_ABOUT, BN_CLICKED, OnAboutButton)
+        COMMAND_HANDLER(IDC_HISTORY_PREVIEW, BN_CLICKED, OnPreviewToggleButton)
+        COMMAND_HANDLER(IDC_HISTORY_EXIT, BN_CLICKED, OnExitButton)
+        COMMAND_ID_HANDLER(kTrayCommandShow, OnTrayShowCommand)
+        COMMAND_ID_HANDLER(kTrayCommandSettings, OnTraySettingsCommand)
+        COMMAND_ID_HANDLER(kTrayCommandClear, OnTrayClearCommand)
+        COMMAND_ID_HANDLER(kTrayCommandIgnore, OnTrayIgnoreCommand)
+        COMMAND_ID_HANDLER(kTrayCommandExit, OnTrayExitCommand)
+        // Preview actions carry an item ID in lParam, so this final WM_COMMAND
+        // handler is retained for that nonstandard notification payload.
+        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
     END_MSG_MAP()
 
     bool AddTrayIcon();
@@ -84,6 +100,14 @@ public:
     HWND Window() const noexcept { return m_hWnd; }
 
 private:
+    enum : UINT {
+        kTrayCommandShow = 1001,
+        kTrayCommandSettings = 1002,
+        kTrayCommandClear = 1003,
+        kTrayCommandIgnore = 1004,
+        kTrayCommandExit = 1005
+    };
+
     enum class ExitReason {
         User,
         Installer
@@ -108,7 +132,7 @@ private:
     void RedrawFooterButtons();
     void RestoreControlSubclass(HWND control, WNDPROC original);
     void RestoreControlSubclasses();
-    std::array<HWND, AppConstants::UI::kFooterButtonCount> FooterButtons() const;
+    std::array<CButton, AppConstants::UI::kFooterButtonCount> FooterButtons() const;
 
     // Window positioning
     void PositionPopup(PopupPosition popup_position);
@@ -189,6 +213,18 @@ private:
     LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
+    LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnHistoryListSelectionChanged(WORD, WORD id, HWND, BOOL& handled);
+    LRESULT OnClearHistoryButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnSettingsButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnAboutButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnPreviewToggleButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnExitButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayShowCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTraySettingsCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayClearCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayIgnoreCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayExitCommand(WORD, WORD, HWND, BOOL& handled);
     LRESULT OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled);
@@ -231,15 +267,15 @@ private:
     std::unique_ptr<SettingsWindow> m_settingsWindow;
 
     // UI controls
-    HWND m_search = nullptr;
-    HWND m_historyList = nullptr;
-    HWND m_pinsList = nullptr;
-    HWND m_previewToggle = nullptr;
-    HWND m_tooltips = nullptr;
-    HWND m_footerClear = nullptr;
-    HWND m_footerSettings = nullptr;
-    HWND m_footerAbout = nullptr;
-    HWND m_footerExit = nullptr;
+    CEdit m_search;
+    CListBox m_historyList;
+    CListBox m_pinsList;
+    CButton m_previewToggle;
+    CToolTipCtrl m_tooltips;
+    CButton m_footerClear;
+    CButton m_footerSettings;
+    CButton m_footerAbout;
+    CButton m_footerExit;
 
     // Window procedures
     WNDPROC m_originalSearchProc = nullptr;

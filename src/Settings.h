@@ -98,8 +98,6 @@ struct AppSettings {
 };
 
 std::wstring HotKeyToText(const HotKeyConfig &hotkey);
-HotKeyConfig HotKeyFromControl(HWND control);
-void SetHotKeyControl(HWND control, const HotKeyConfig &hotkey);
 bool IsHotKeyPressed(const HotKeyConfig &hotkey, WPARAM virtual_key);
 bool SameHotKey(const HotKeyConfig &lhs, const HotKeyConfig &rhs);
 bool SetLaunchAtLogin(bool enabled);

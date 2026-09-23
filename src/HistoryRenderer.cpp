@@ -92,41 +92,40 @@ bool HistoryRenderer::Initialize(HWND owner) {
 }
 
 bool HistoryRenderer::UpdateFonts(UINT dpi) {
-    HFONT normalFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
-    HFONT smallFont = UiFont::CreateSegoeUi(dpi, UiFont::kSmallPointSize);
-    HFONT boldFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_BOLD);
-    HFONT italicFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE);
-    HFONT underlineFont = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE);
-    if (normalFont == nullptr || smallFont == nullptr || boldFont == nullptr ||
-        italicFont == nullptr || underlineFont == nullptr) {
-        for (HFONT font : {normalFont, smallFont, boldFont, italicFont, underlineFont}) {
-            if (font != nullptr) DeleteObject(font);
-        }
+    CFont normalFont;
+    CFont smallFont;
+    CFont boldFont;
+    CFont italicFont;
+    CFont underlineFont;
+    normalFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize));
+    smallFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kSmallPointSize));
+    boldFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_BOLD));
+    italicFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, TRUE));
+    underlineFont.Attach(UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize, FW_NORMAL, FALSE, TRUE));
+    if (normalFont.IsNull() || smallFont.IsNull() || boldFont.IsNull() ||
+        italicFont.IsNull() || underlineFont.IsNull()) {
         return false;
     }
 
-    for (HFONT font : {m_normalFont, m_smallFont, m_boldFont, m_italicFont, m_underlineFont}) {
-        if (font != nullptr) DeleteObject(font);
-    }
-    m_normalFont = normalFont;
-    m_smallFont = smallFont;
-    m_boldFont = boldFont;
-    m_italicFont = italicFont;
-    m_underlineFont = underlineFont;
+    m_normalFont.DeleteObject();
+    m_smallFont.DeleteObject();
+    m_boldFont.DeleteObject();
+    m_italicFont.DeleteObject();
+    m_underlineFont.DeleteObject();
+    m_normalFont.Attach(normalFont.Detach());
+    m_smallFont.Attach(smallFont.Detach());
+    m_boldFont.Attach(boldFont.Detach());
+    m_italicFont.Attach(italicFont.Detach());
+    m_underlineFont.Attach(underlineFont.Detach());
     return true;
 }
 
 void HistoryRenderer::Shutdown() {
-    for (HFONT font : {m_normalFont, m_smallFont, m_boldFont, m_italicFont, m_underlineFont}) {
-        if (font != nullptr) {
-            DeleteObject(font);
-        }
-    }
-    m_normalFont = nullptr;
-    m_smallFont = nullptr;
-    m_boldFont = nullptr;
-    m_italicFont = nullptr;
-    m_underlineFont = nullptr;
+    m_normalFont.DeleteObject();
+    m_smallFont.DeleteObject();
+    m_boldFont.DeleteObject();
+    m_italicFont.DeleteObject();
+    m_underlineFont.DeleteObject();
 
     for (auto& [path, entry] : m_iconCache) {
         (void)path;
@@ -382,7 +381,9 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_vie
         );
         const std::wstring part(text.substr(start, end - start));
         SIZE size{};
-        HFONT font = highlighted ? FontForHighlight(m_settings.highlight_match) : m_normalFont;
+        HFONT font = highlighted
+            ? FontForHighlight(m_settings.highlight_match)
+            : static_cast<HFONT>(m_normalFont);
         HGDIOBJ old_font = SelectObject(dc, font != nullptr ? font : GetStockObject(DEFAULT_GUI_FONT));
         if (highlighted && m_settings.highlight_match == HighlightMatch::Color) {
             SetTextColor(dc, RGB(0, 70, 160));
@@ -502,29 +503,29 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         // using an opaque color block. Full payloads remain in SQLite and
         // are still loaded only by the preview/copy path.
         const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
-        HPEN marker_pen = CreatePen(PS_SOLID, 1, marker);
-        HGDIOBJ old_pen = SelectObject(draw->hDC, marker_pen);
-        HGDIOBJ old_brush = SelectObject(draw->hDC, GetStockObject(NULL_BRUSH));
-        Rectangle(draw->hDC, layout.attachment.left + 1, layout.attachment.top + 2,
-            layout.attachment.right - 1, layout.attachment.bottom - 2);
-        if (item.has_image) {
-            MoveToEx(draw->hDC, layout.attachment.left + 3, layout.attachment.bottom - 4, nullptr);
-            LineTo(draw->hDC, layout.attachment.left + 7, layout.attachment.top + 7);
-            LineTo(draw->hDC, layout.attachment.left + 10, layout.attachment.bottom - 6);
-        } else {
-            MoveToEx(draw->hDC, layout.attachment.left + 4, layout.attachment.top + 5, nullptr);
-            LineTo(draw->hDC, layout.attachment.right - 4, layout.attachment.top + 5);
+        CPen marker_pen;
+        if (marker_pen.CreatePen(PS_SOLID, 1, marker)) {
+            HGDIOBJ old_pen = SelectObject(draw->hDC, marker_pen);
+            HGDIOBJ old_brush = SelectObject(draw->hDC, GetStockObject(NULL_BRUSH));
+            Rectangle(draw->hDC, layout.attachment.left + 1, layout.attachment.top + 2,
+                layout.attachment.right - 1, layout.attachment.bottom - 2);
+            if (item.has_image) {
+                MoveToEx(draw->hDC, layout.attachment.left + 3, layout.attachment.bottom - 4, nullptr);
+                LineTo(draw->hDC, layout.attachment.left + 7, layout.attachment.top + 7);
+                LineTo(draw->hDC, layout.attachment.left + 10, layout.attachment.bottom - 6);
+            } else {
+                MoveToEx(draw->hDC, layout.attachment.left + 4, layout.attachment.top + 5, nullptr);
+                LineTo(draw->hDC, layout.attachment.right - 4, layout.attachment.top + 5);
+            }
+            SelectObject(draw->hDC, old_brush);
+            SelectObject(draw->hDC, old_pen);
         }
-        SelectObject(draw->hDC, old_brush);
-        SelectObject(draw->hDC, old_pen);
-        DeleteObject(marker_pen);
     }
 
     if (!IsRectEmpty(&layout.swatch) && swatch_color.has_value()) {
-        HBRUSH brush = CreateSolidBrush(*swatch_color);
-        if (brush != nullptr) {
+        CBrush brush;
+        if (brush.CreateSolidBrush(*swatch_color)) {
             FillRect(draw->hDC, &layout.swatch, brush);
-            DeleteObject(brush);
         }
         FrameRect(draw->hDC, &layout.swatch, GetSysColorBrush(COLOR_GRAYTEXT));
     }
@@ -546,8 +547,10 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
 
 void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
                                     int activeFooter,
-                                    const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons) {
-    auto it = std::find(footerButtons.begin(), footerButtons.end(), draw->hwndItem);
+                                    const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons) {
+    auto it = std::find_if(footerButtons.begin(), footerButtons.end(), [draw](const CButton& button) {
+        return button.m_hWnd == draw->hwndItem;
+    });
     const int index = it == footerButtons.end() ? -1 : static_cast<int>(it - footerButtons.begin());
     const bool selected = index >= 0 && index == activeFooter;
     FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
@@ -562,12 +565,15 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
     RECT rect = draw->rcItem; rect.left += index < 0 ? 2 : 10; rect.right -= index < 0 ? 2 : 10;
     if (draw->CtlID == IDC_HISTORY_PREVIEW) {
-        HPEN pen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT));
-        auto oldPen = SelectObject(draw->hDC, pen);
-        auto oldBrush = SelectObject(draw->hDC, GetStockObject(NULL_BRUSH));
-        Rectangle(draw->hDC, 5, 5, 22, 19);
-        MoveToEx(draw->hDC, 15, 5, nullptr); LineTo(draw->hDC, 15, 19);
-        SelectObject(draw->hDC, oldBrush); SelectObject(draw->hDC, oldPen); DeleteObject(pen);
+        CPen pen;
+        if (pen.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT))) {
+            auto oldPen = SelectObject(draw->hDC, pen);
+            auto oldBrush = SelectObject(draw->hDC, GetStockObject(NULL_BRUSH));
+            Rectangle(draw->hDC, 5, 5, 22, 19);
+            MoveToEx(draw->hDC, 15, 5, nullptr); LineTo(draw->hDC, 15, 19);
+            SelectObject(draw->hDC, oldBrush);
+            SelectObject(draw->hDC, oldPen);
+        }
         return;
     }
     const auto title = ReadWindowText(draw->hwndItem);
@@ -585,12 +591,14 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
                              const SearchHeaderLayout::Geometry& header,
                              bool showSearchClear) {
     FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
-    HPEN separator = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT));
-    auto previousPen = SelectObject(dc, separator);
-    for (int y : {pinSeparatorY, footerSeparatorY}) if (y >= 0) {
-        MoveToEx(dc, 16, y, nullptr); LineTo(dc, client.right - 16, y);
+    CPen separator;
+    if (separator.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT))) {
+        auto previousPen = SelectObject(dc, separator);
+        for (int y : {pinSeparatorY, footerSeparatorY}) if (y >= 0) {
+            MoveToEx(dc, 16, y, nullptr); LineTo(dc, client.right - 16, y);
+        }
+        SelectObject(dc, previousPen);
     }
-    SelectObject(dc, previousPen); DeleteObject(separator);
     if (header.showSearch) {
         auto pen = SelectObject(dc, GetStockObject(NULL_PEN));
         auto brush = SelectObject(dc, GetSysColorBrush(COLOR_BTNFACE));
@@ -598,33 +606,37 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
                   header.search.right, header.search.bottom,
                   header.metrics.cornerRadius, header.metrics.cornerRadius);
         SelectObject(dc, brush); SelectObject(dc, pen);
-        HPEN iconPen = CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT));
-        pen = SelectObject(dc, iconPen); brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        const SearchHeaderLayout::IconGeometry icon = SearchHeaderLayout::IconFor(header);
-        Ellipse(dc, icon.left, icon.top,
-                icon.left + header.metrics.iconLensSize,
-                icon.top + header.metrics.iconLensSize);
-        MoveToEx(dc, icon.left + header.metrics.iconHandleStart,
-                 icon.top + header.metrics.iconHandleStart, nullptr);
-        LineTo(dc, icon.left + header.metrics.iconHandleEnd,
-               icon.top + header.metrics.iconHandleEnd);
-        if (showSearchClear && !IsRectEmpty(&header.searchClear)) {
-            const int centerX = (header.searchClear.left + header.searchClear.right) / 2;
-            const int centerY = (header.searchClear.top + header.searchClear.bottom) / 2;
-            const int halfSize = std::max(2, MulDiv(3, header.metrics.clearWidth,
-                                                     SearchHeaderLayout::kClearWidth));
-            MoveToEx(dc, centerX - halfSize, centerY - halfSize, nullptr);
-            LineTo(dc, centerX + halfSize + 1, centerY + halfSize + 1);
-            MoveToEx(dc, centerX + halfSize, centerY - halfSize, nullptr);
-            LineTo(dc, centerX - halfSize - 1, centerY + halfSize + 1);
+        CPen iconPen;
+        if (iconPen.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT))) {
+            pen = SelectObject(dc, iconPen);
+            brush = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            const SearchHeaderLayout::IconGeometry icon = SearchHeaderLayout::IconFor(header);
+            Ellipse(dc, icon.left, icon.top,
+                    icon.left + header.metrics.iconLensSize,
+                    icon.top + header.metrics.iconLensSize);
+            MoveToEx(dc, icon.left + header.metrics.iconHandleStart,
+                     icon.top + header.metrics.iconHandleStart, nullptr);
+            LineTo(dc, icon.left + header.metrics.iconHandleEnd,
+                   icon.top + header.metrics.iconHandleEnd);
+            if (showSearchClear && !IsRectEmpty(&header.searchClear)) {
+                const int centerX = (header.searchClear.left + header.searchClear.right) / 2;
+                const int centerY = (header.searchClear.top + header.searchClear.bottom) / 2;
+                const int halfSize = std::max(2, MulDiv(3, header.metrics.clearWidth,
+                                                         SearchHeaderLayout::kClearWidth));
+                MoveToEx(dc, centerX - halfSize, centerY - halfSize, nullptr);
+                LineTo(dc, centerX + halfSize + 1, centerY + halfSize + 1);
+                MoveToEx(dc, centerX + halfSize, centerY - halfSize, nullptr);
+                LineTo(dc, centerX - halfSize - 1, centerY + halfSize + 1);
+            }
+            SelectObject(dc, brush);
+            SelectObject(dc, pen);
         }
-        SelectObject(dc, brush); SelectObject(dc, pen); DeleteObject(iconPen);
     }
     if (m_settings.show_title && header.showTitle && !IsRectEmpty(&header.title)) {
-        const HFONT previous_font = static_cast<HFONT>(SelectObject(
-            dc,
-            m_smallFont != nullptr ? m_smallFont : m_normalFont
-        ));
+        const HFONT title_font = m_smallFont.IsNull()
+            ? static_cast<HFONT>(m_normalFont)
+            : static_cast<HFONT>(m_smallFont);
+        const HFONT previous_font = static_cast<HFONT>(SelectObject(dc, title_font));
         const int previous_color = SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
         const int previous_mode = SetBkMode(dc, TRANSPARENT);
         RECT title = header.title;

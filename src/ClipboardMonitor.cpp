@@ -2,6 +2,10 @@
 #include "ClipboardRules.h"
 #include "Constants.h"
 
+#include <atlbase.h>
+#include <atlapp.h>
+#include <atlgdi.h>
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -166,12 +170,12 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
     std::vector<unsigned char> result(static_cast<size_t>(total_bytes));
     std::memcpy(result.data(), &info.bmiHeader, sizeof(info.bmiHeader));
 
-    HDC dc = ::GetDC(nullptr);
-    if (dc == nullptr) {
+    CWindowDC dc(nullptr);
+    if (dc.m_hDC == nullptr) {
         return std::nullopt;
     }
     const int copied = ::GetDIBits(
-        dc,
+        dc.m_hDC,
         bitmap,
         0,
         static_cast<UINT>(height),
@@ -179,7 +183,6 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
         &info,
         DIB_RGB_COLORS
     );
-    ::ReleaseDC(nullptr, dc);
     if (copied != static_cast<int>(height)) {
         return std::nullopt;
     }

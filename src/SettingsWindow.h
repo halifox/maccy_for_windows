@@ -84,7 +84,7 @@ class IgnorePageBase {
 public:
     virtual ~IgnorePageBase() = default;
 
-    virtual void Initialize(HWND page_window, StorageWorker &storage,
+    virtual void Initialize(CWindow page_window, StorageWorker &storage,
                             std::vector<std::wstring> values) = 0;
     virtual void Show() = 0;
     virtual void Hide() = 0;
@@ -95,16 +95,17 @@ public:
     virtual bool ResetToDefaults() = 0;
     virtual bool SaveList() = 0;
 
-    HWND GetPageWindow() const { return m_pageWindow; }
+    CWindow GetPageWindow() const { return m_pageWindow; }
+    CListViewCtrl ListWindow() const { return m_list; }
     const std::vector<std::wstring> &Values() const noexcept { return m_values; }
     void SetValues(std::vector<std::wstring> values);
 
 protected:
     bool PersistValues(IgnoreListKind list);
 
-    HWND m_pageWindow = nullptr;
-    HWND m_list = nullptr;
-    HWND m_description = nullptr;
+    CWindow m_pageWindow;
+    CListViewCtrl m_list;
+    CStatic m_description;
     StorageWorker *m_storage = nullptr;
     std::vector<std::wstring> m_values;
     std::vector<std::wstring> m_persistedValues;
@@ -112,7 +113,7 @@ protected:
 
 class IgnoreApplicationsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, StorageWorker &storage,
+    void Initialize(CWindow page_window, StorageWorker &storage,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -129,7 +130,7 @@ private:
 
 class IgnoreFormatsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, StorageWorker &storage,
+    void Initialize(CWindow page_window, StorageWorker &storage,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -146,7 +147,7 @@ private:
 
 class IgnoreRegexpsPage : public IgnorePageBase {
 public:
-    void Initialize(HWND page_window, StorageWorker &storage,
+    void Initialize(CWindow page_window, StorageWorker &storage,
                     std::vector<std::wstring> values) override;
     void Show() override;
     void Hide() override;
@@ -184,9 +185,60 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
-        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
-        MESSAGE_HANDLER(WM_NOTIFY, OnNotify)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+
+        COMMAND_HANDLER(IDC_G_CHECK_NOW, BN_CLICKED, OnCheckUpdatesCommand)
+        COMMAND_HANDLER(IDC_G_NOTIFICATIONS, BN_CLICKED, OnNotificationsCommand)
+        COMMAND_HANDLER(IDC_A_RESET_POSITION, BN_CLICKED, OnResetPositionCommand)
+        COMMAND_HANDLER(IDC_I_ADD, BN_CLICKED, OnIgnorePageCommand)
+        COMMAND_HANDLER(IDC_I_REMOVE, BN_CLICKED, OnIgnorePageCommand)
+        COMMAND_HANDLER(IDC_I_RESET, BN_CLICKED, OnIgnorePageCommand)
+
+        COMMAND_HANDLER(IDC_G_LAUNCH, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_UPDATES, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_OPEN_HOTKEY, EN_CHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_PIN_HOTKEY, EN_CHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_DELETE_HOTKEY, EN_CHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_PREVIEW_HOTKEY, EN_CHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_SEARCH_MODE, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_PASTE_BY_DEFAULT, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_G_REMOVE_FORMATTING, BN_CLICKED, OnSettingChanged)
+
+        COMMAND_HANDLER(IDC_A_POPUP_POSITION, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_POPUP_SCREEN, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_PIN_TO, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_IMAGE_HEIGHT, EN_KILLFOCUS, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_OPEN_PREVIEW, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_PREVIEW_DELAY, EN_KILLFOCUS, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_HIGHLIGHT, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_MENU_ICON, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_STATUS, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_SEARCH, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SEARCH_VISIBILITY, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_TITLE, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_FOOTER, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_SPECIAL, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_ICONS, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_A_SHOW_SWATCH, BN_CLICKED, OnSettingChanged)
+
+        COMMAND_HANDLER(IDC_S_SAVE_FILES, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_S_SAVE_IMAGES, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_S_SAVE_TEXT, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_S_HISTORY_SIZE, EN_KILLFOCUS, OnSettingChanged)
+        COMMAND_HANDLER(IDC_S_SORT_BY, CBN_SELCHANGE, OnSettingChanged)
+        COMMAND_HANDLER(IDC_I_WHITELIST, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_X_IGNORE_EVENTS, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_X_IGNORE_NEXT, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_X_CLEAR_ON_QUIT, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_X_CLEAR_CLIPBOARD, BN_CLICKED, OnSettingChanged)
+        COMMAND_HANDLER(IDC_X_RESPECT_WINDOWS_CLIPBOARD_HISTORY, BN_CLICKED, OnSettingChanged)
+
+        NOTIFY_HANDLER(IDC_SETTINGS_TABS, TCN_SELCHANGE, OnTabsSelectionChanged)
+        NOTIFY_HANDLER(IDC_IGNORE_TABS, TCN_SELCHANGE, OnIgnoreTabsSelectionChanged)
+        NOTIFY_HANDLER(IDC_I_LIST, NM_DBLCLK, OnIgnoreListDoubleClick)
+        NOTIFY_HANDLER(IDC_I_LIST, LVN_KEYDOWN, OnIgnoreListKeyDown)
+        NOTIFY_HANDLER(IDC_P_LIST, NM_DBLCLK, OnPinsListDoubleClick)
+        NOTIFY_HANDLER(IDC_P_LIST, LVN_KEYDOWN, OnPinsListKeyDown)
     END_MSG_MAP()
 
 private:
@@ -218,8 +270,17 @@ private:
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
-    LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
-    LRESULT OnNotify(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnCheckUpdatesCommand(WORD, WORD, HWND, BOOL &handled);
+    LRESULT OnNotificationsCommand(WORD, WORD, HWND, BOOL &handled);
+    LRESULT OnResetPositionCommand(WORD, WORD, HWND, BOOL &handled);
+    LRESULT OnIgnorePageCommand(WORD, WORD id, HWND, BOOL &handled);
+    LRESULT OnSettingChanged(WORD, WORD id, HWND, BOOL &handled);
+    LRESULT OnTabsSelectionChanged(int, LPNMHDR, BOOL &handled);
+    LRESULT OnIgnoreTabsSelectionChanged(int, LPNMHDR, BOOL &handled);
+    LRESULT OnIgnoreListDoubleClick(int, LPNMHDR, BOOL &handled);
+    LRESULT OnIgnoreListKeyDown(int, LPNMHDR, BOOL &handled);
+    LRESULT OnPinsListDoubleClick(int, LPNMHDR, BOOL &handled);
+    LRESULT OnPinsListKeyDown(int, LPNMHDR, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
 
     StorageWorker &m_storage;
@@ -227,8 +288,8 @@ private:
     SettingsChangedCallback m_onChanged;
     UpdateCheckCallback m_onUpdateCheck;
     CTabCtrl m_tabs;
-    std::array<HWND, AppConstants::SettingsUI::kPageCount> m_pages{};
-    std::array<HWND, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePages{};
+    std::array<CWindow, AppConstants::SettingsUI::kPageCount> m_pages{};
+    std::array<CWindow, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePages{};
     int m_currentPage = 0;
     bool m_loading = false;
     bool m_destroying = false;
@@ -238,53 +299,56 @@ private:
     AppSettings m_settings{};
     std::array<std::vector<std::wstring>, 3> m_ignoredLists;
 
-    HWND m_gLaunch = nullptr;
-    HWND m_gUpdates = nullptr;
-    HWND m_gCheckNow = nullptr;
-    HWND m_gOpenHotKey = nullptr;
-    HWND m_gPinHotKey = nullptr;
-    HWND m_gDeleteHotKey = nullptr;
-    HWND m_gPreviewHotKey = nullptr;
-    HWND m_gSearchMode = nullptr;
-    HWND m_gPasteByDefault = nullptr;
-    HWND m_gRemoveFormatting = nullptr;
+    CButton m_gLaunch;
+    CButton m_gUpdates;
+    CButton m_gCheckNow;
+    CStatic m_gBehaviorHint;
+    CHotKeyCtrl m_gOpenHotKey;
+    CHotKeyCtrl m_gPinHotKey;
+    CHotKeyCtrl m_gDeleteHotKey;
+    CHotKeyCtrl m_gPreviewHotKey;
+    CComboBox m_gSearchMode;
+    CButton m_gPasteByDefault;
+    CButton m_gRemoveFormatting;
 
-    HWND m_aPopupPosition = nullptr;
-    HWND m_aPopupScreen = nullptr;
-    HWND m_aPinTo = nullptr;
-    HWND m_aImageHeight = nullptr;
-    HWND m_aOpenPreview = nullptr;
-    HWND m_aPreviewDelay = nullptr;
-    HWND m_aHighlight = nullptr;
-    HWND m_aMenuIcon = nullptr;
-    HWND m_aShowStatus = nullptr;
-    HWND m_aShowSearch = nullptr;
-    HWND m_aSearchVisibility = nullptr;
-    HWND m_aShowTitle = nullptr;
-    HWND m_aShowFooter = nullptr;
-    HWND m_aShowSpecial = nullptr;
-    HWND m_aShowIcons = nullptr;
-    HWND m_aShowSwatch = nullptr;
+    CComboBox m_aPopupPosition;
+    CComboBox m_aPopupScreen;
+    CButton m_aResetPosition;
+    CComboBox m_aPinTo;
+    CEdit m_aImageHeight;
+    CButton m_aOpenPreview;
+    CEdit m_aPreviewDelay;
+    CComboBox m_aHighlight;
+    CComboBox m_aMenuIcon;
+    CButton m_aShowStatus;
+    CButton m_aShowSearch;
+    CComboBox m_aSearchVisibility;
+    CButton m_aShowTitle;
+    CButton m_aShowFooter;
+    CButton m_aShowSpecial;
+    CButton m_aShowIcons;
+    CButton m_aShowSwatch;
 
-    HWND m_sSaveFiles = nullptr;
-    HWND m_sSaveImages = nullptr;
-    HWND m_sSaveText = nullptr;
-    HWND m_sHistorySize = nullptr;
-    HWND m_sSortBy = nullptr;
-    HWND m_sStorageSize = nullptr;
-    HWND m_sCurrentSize = nullptr;
+    CButton m_sSaveFiles;
+    CButton m_sSaveImages;
+    CButton m_sSaveText;
+    CEdit m_sHistorySize;
+    CComboBox m_sSortBy;
+    CStatic m_sStorageSize;
+    CStatic m_sCurrentSize;
 
     CTabCtrl m_ignoreTabs;
     std::array<std::unique_ptr<IgnorePageBase>, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePageObjects;
-    HIMAGELIST m_ignoreImageList = nullptr;
+    CImageListManaged m_ignoreImageList;
     int m_ignorePage = 0;
 
-    HWND m_pList = nullptr;
+    CListViewCtrl m_pList;
+    CButton m_iWhitelist;
     std::vector<ClipboardItem> m_pins;
 
-    HWND m_xIgnoreEvents = nullptr;
-    HWND m_xIgnoreNext = nullptr;
-    HWND m_xClearOnQuit = nullptr;
-    HWND m_xClearClipboard = nullptr;
-    HWND m_xRespectWindowsClipboardHistory = nullptr;
+    CButton m_xIgnoreEvents;
+    CButton m_xIgnoreNext;
+    CButton m_xClearOnQuit;
+    CButton m_xClearClipboard;
+    CButton m_xRespectWindowsClipboardHistory;
 };

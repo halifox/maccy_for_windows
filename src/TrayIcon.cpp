@@ -3,6 +3,8 @@
 #include "resource.h"
 
 #include <atlbase.h>
+#include <atlapp.h>
+#include <atlgdi.h>
 #include <wincodec.h>
 #include <winreg.h>
 
@@ -169,31 +171,29 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
     void* pixels = nullptr;
-    HBITMAP color_bitmap = CreateDIBSection(
+    CBitmap color_bitmap;
+    color_bitmap.Attach(CreateDIBSection(
         nullptr,
         &bitmap_info,
         DIB_RGB_COLORS,
         &pixels,
         nullptr,
         0
-    );
-    if (color_bitmap == nullptr || pixels == nullptr ||
+    ));
+    if (color_bitmap.IsNull() || pixels == nullptr ||
         FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(pixels)))) {
-        if (color_bitmap != nullptr) {
-            DeleteObject(color_bitmap);
-        }
         return nullptr;
     }
 
-    HBITMAP mask_bitmap = CreateBitmap(
+    CBitmap mask_bitmap;
+    mask_bitmap.Attach(CreateBitmap(
         static_cast<int>(width),
         static_cast<int>(height),
         1,
         1,
         nullptr
-    );
-    if (mask_bitmap == nullptr) {
-        DeleteObject(color_bitmap);
+    ));
+    if (mask_bitmap.IsNull()) {
         return nullptr;
     }
 
@@ -201,10 +201,7 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
     icon_info.fIcon = TRUE;
     icon_info.hbmColor = color_bitmap;
     icon_info.hbmMask = mask_bitmap;
-    HICON icon = CreateIconIndirect(&icon_info);
-    DeleteObject(mask_bitmap);
-    DeleteObject(color_bitmap);
-    return icon;
+    return CreateIconIndirect(&icon_info);
 }
 
 HICON CreateFallbackIcon() noexcept {
