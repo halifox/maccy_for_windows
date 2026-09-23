@@ -840,7 +840,7 @@ void MainWindow::ApplyHistoryItems(
                 SendMessageW(list, WM_SETREDRAW, TRUE, 0);
             }
         }
-        RedrawHistoryLists();
+        ApplyHistoryVisibility();
         if (previewOpen && m_keyboardHandler.GetActiveItemId()) {
             ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
         } else if (!m_keyboardHandler.GetActiveItemId()) {

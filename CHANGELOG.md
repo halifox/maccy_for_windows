@@ -10,7 +10,7 @@
 
 - Added support for Ctrl+U shortcut to clear search input, with improved keyboard navigation and focus handling
 - Improved search clear button interaction with mouse and keyboard and visual feedback
-- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic
+- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic, including enhanced error handling
 
 ### Removed
 
