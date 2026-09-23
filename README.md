@@ -62,7 +62,11 @@
 
 请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 NSIS 安装程序，并核对同一 Release 中的 `SHA256SUMS.txt`。
 
-NSIS 安装程序默认安装到 Program Files，并创建开始菜单和桌面快捷方式；安装完成页可选择启动 Maccy。卸载时会清除 Maccy 的登录启动项，但保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。
+NSIS 安装程序仅为当前 Windows 用户安装到 `%LOCALAPPDATA%\Programs\maccy`，无需管理员权限；开始菜单快捷方式和登录启动项也仅属于当前用户。安装完成页可选择启动 Maccy，桌面快捷方式可在安装过程中选择。
+
+升级请使用同一个 NSIS 安装程序：从应用的更新提示打开 GitHub Releases，下载新版安装程序并运行。安装程序会关闭正在运行的 Maccy，在原用户安装目录内替换程序文件，并保留剪贴板历史、设置和登录启动项。旧版全机安装需先由管理员卸载一次，再安装每用户版本。
+
+卸载时默认保留 `%LOCALAPPDATA%\maccy` 中的剪贴板历史和设置。若要同时删除历史、固定项目、设置及其他 Maccy 本地数据，请在卸载页勾选删除选项；此操作不可撤销。
 
 用户可见变化记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 

@@ -1222,15 +1222,17 @@ void MainWindow::HandleUpdateCheckResult(const UpdateCheckResult &result) {
     }
 }
 
-void MainWindow::ExitApplication() {
+void MainWindow::ExitApplication(ExitReason reason) {
     m_exiting = true;
-    if (m_settings.clear_on_quit) {
+    if (reason == ExitReason::User && m_settings.clear_on_quit) {
         try {
             m_storage.DeleteUnpinned();
         } catch (...) {
         }
     }
-    if (m_settings.clear_on_quit && m_settings.clear_system_clipboard) {
+    if (reason == ExitReason::User &&
+        m_settings.clear_on_quit &&
+        m_settings.clear_system_clipboard) {
         m_clipboard.ClearClipboard();
     }
     RemoveTrayIcon();
@@ -1238,6 +1240,10 @@ void MainWindow::ExitApplication() {
         m_settingsWindow->DestroyForOwner();
     }
     DestroyWindow();
+}
+
+void MainWindow::ExitForInstaller() {
+    ExitApplication(ExitReason::Installer);
 }
 
 void MainWindow::SaveWindowGeometry(bool resized) {

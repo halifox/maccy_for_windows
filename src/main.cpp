@@ -29,6 +29,7 @@ constexpr DWORD kActivationWindowWaitIntervalMs = 25;
 
 MainWindow *g_mainWindow = nullptr;
 bool g_activationRequested = false;
+bool g_installerShutdownRequested = false;
 
 class SingleInstanceMutex {
 public:
@@ -106,6 +107,14 @@ LRESULT CALLBACK ActivationWindowProc(HWND window, UINT message, WPARAM wParam, 
             g_activationRequested = true;
         }
         return 0;
+    }
+    if (message == AppConstants::kInstallerShutdownMessage) {
+        if (g_mainWindow != nullptr && ::IsWindow(g_mainWindow->Window())) {
+            g_mainWindow->ExitForInstaller();
+        } else {
+            g_installerShutdownRequested = true;
+        }
+        return 1;
     }
     return ::DefWindowProcW(window, message, wParam, lParam);
 }
@@ -299,6 +308,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         StorageWorker storage(GetDatabasePath());
         storage.Start();
         AppSettings settings = storage.LoadSettings();
+        if (!SetLaunchAtLogin(settings.launch_at_login)) {
+            ::OutputDebugStringW(L"Unable to synchronize the Maccy logon startup entry.\n");
+        }
         StorageWorker::IgnoreLists ignored_lists = storage.LoadIgnoreLists();
         PreviewWorker preview(storage.Path());
         MainWindow window(storage, preview, std::move(settings), std::move(ignored_lists));
@@ -309,16 +321,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             CoUninitialize();
             return 1;
         }
+        g_mainWindow = &window;
         preview.Start(window.Window());
 
         if (!window.AddTrayIcon()) {
             window.ShowMainWindow();
         }
 
-        g_mainWindow = &window;
         if (g_activationRequested) {
             g_activationRequested = false;
             window.ShowMainWindow();
+        }
+        if (g_installerShutdownRequested) {
+            g_installerShutdownRequested = false;
+            window.ExitForInstaller();
         }
 
         MSG message{};
