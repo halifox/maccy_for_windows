@@ -1,6 +1,7 @@
 #include "HistoryRenderer.h"
 #include "UiFont.h"
 #include "ClipboardRules.h"
+#include "GdiScope.h"
 
 #include <algorithm>
 #include <array>
@@ -126,12 +127,6 @@ void HistoryRenderer::Shutdown() {
     m_italicFont.DeleteObject();
     m_underlineFont.DeleteObject();
 
-    for (auto& [path, entry] : m_iconCache) {
-        (void)path;
-        if (entry.icon != nullptr) {
-            DestroyIcon(entry.icon);
-        }
-    }
     m_iconCache.clear();
     m_iconLru.clear();
     m_unpinnedShortcutNumbers.clear();
@@ -315,7 +310,7 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
 
 void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_view text,
                                             bool selected, std::wstring_view searchQuery) {
-    const int saved = SaveDC(dc);
+    ScopedDcState dc_state(dc);
     IntersectClipRect(dc, rect.left, rect.top, rect.right, rect.bottom);
     const auto originalRanges = HighlightRanges(text, searchQuery);
     const auto measure = [&](std::wstring_view value) {
@@ -402,7 +397,7 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_vie
     }
     SetTextColor(dc, old_text);
     SetBkMode(dc, old_bk_mode);
-    RestoreDC(dc, saved);
+    dc_state.Restore();
 }
 
 HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
@@ -412,7 +407,7 @@ HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
     const std::wstring key = ClipboardRules::NormalizePath(std::wstring(application));
     if (const auto found = m_iconCache.find(key); found != m_iconCache.end()) {
         m_iconLru.splice(m_iconLru.begin(), m_iconLru, found->second.lru);
-        return found->second.icon;
+        return found->second.icon.Get();
     }
     SHFILEINFOW info{};
     if (SHGetFileInfoW(
@@ -424,20 +419,19 @@ HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
     ) == 0) {
         info.hIcon = nullptr;
     }
+    UniqueIcon icon(info.hIcon);
     if (m_iconCache.size() >= 32) {
         const std::wstring evicted_key = m_iconLru.back();
         m_iconLru.pop_back();
         const auto evicted = m_iconCache.find(evicted_key);
         if (evicted != m_iconCache.end()) {
-            if (evicted->second.icon != nullptr) {
-                DestroyIcon(evicted->second.icon);
-            }
             m_iconCache.erase(evicted);
         }
     }
     m_iconLru.push_front(key);
-    m_iconCache.emplace(key, IconCacheEntry{info.hIcon, m_iconLru.begin()});
-    return info.hIcon;
+    const HICON result = icon.Get();
+    m_iconCache.emplace(key, IconCacheEntry{std::move(icon), m_iconLru.begin()});
+    return result;
 }
 
 void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
@@ -461,6 +455,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         swatch_color = ParseHexColor(text);
     }
     const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item, swatch_color.has_value());
+    ScopedDcState dc_state(draw->hDC);
     FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
     if (selected) {
         HGDIOBJ pen = SelectObject(draw->hDC, GetStockObject(NULL_PEN));
@@ -542,6 +537,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     DrawTextW(draw->hDC, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.right = layout.content.right;
     DrawTextWithHighlights(draw->hDC, text_rect, text, selected, searchQuery);
+    dc_state.Restore();
 }
 
 void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
@@ -552,6 +548,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     });
     const int index = it == footerButtons.end() ? -1 : static_cast<int>(it - footerButtons.begin());
     const bool selected = index >= 0 && index == activeFooter;
+    ScopedDcState dc_state(draw->hDC);
     FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
     if (selected || (draw->itemState & ODS_SELECTED)) {
         auto pen = SelectObject(draw->hDC, GetStockObject(NULL_PEN));
@@ -573,6 +570,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
             SelectObject(draw->hDC, oldBrush);
             SelectObject(draw->hDC, oldPen);
         }
+        dc_state.Restore();
         return;
     }
     const auto title = ReadWindowText(CWindow(draw->hwndItem));
@@ -582,6 +580,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
         DrawTextW(draw->hDC, keys[index], -1, &rect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
+    dc_state.Restore();
 }
 
 void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
@@ -589,6 +588,7 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
                              int footerSeparatorY,
                              const SearchHeaderLayout::Geometry& header,
                              bool showSearchClear) {
+    ScopedDcState dc_state(dc);
     FillRect(dc, &client, GetSysColorBrush(COLOR_WINDOW));
     CPen separator;
     if (separator.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_3DLIGHT))) {
@@ -644,4 +644,5 @@ void HistoryRenderer::OnPaint(HDC dc, const RECT& client,
         SetTextColor(dc, previous_color);
         SelectObject(dc, previous_font);
     }
+    dc_state.Restore();
 }

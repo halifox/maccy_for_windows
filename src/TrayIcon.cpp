@@ -8,7 +8,9 @@
 #include <wincodec.h>
 #include <winreg.h>
 
+#include <algorithm>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -97,23 +99,22 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
         return nullptr;
     }
 
-    HGLOBAL stream_memory = GlobalAlloc(GMEM_MOVEABLE, resource_size);
-    if (stream_memory == nullptr) {
+    UniqueGlobal stream_memory(GlobalAlloc(GMEM_MOVEABLE, resource_size));
+    if (!stream_memory) {
         return nullptr;
     }
-    void* destination = GlobalLock(stream_memory);
-    if (destination == nullptr) {
-        GlobalFree(stream_memory);
+    ScopedGlobalLock destination(stream_memory.Get());
+    if (destination.Data() == nullptr) {
         return nullptr;
     }
-    CopyMemory(destination, LockResource(loaded), resource_size);
-    GlobalUnlock(stream_memory);
+    CopyMemory(destination.Data(), LockResource(loaded), resource_size);
+    destination.Unlock();
 
     CComPtr<IStream> stream;
-    if (FAILED(CreateStreamOnHGlobal(stream_memory, TRUE, &stream))) {
-        GlobalFree(stream_memory);
+    if (FAILED(CreateStreamOnHGlobal(stream_memory.Get(), TRUE, &stream))) {
         return nullptr;
     }
+    stream_memory.Release();
 
     CComPtr<IWICImagingFactory> factory;
     if (FAILED(CoCreateInstance(
@@ -225,4 +226,78 @@ HICON LoadTrayIcon(std::wstring_view name) {
         : (use_large_icon ? resources.light_32 : resources.light_16);
     HICON icon = CreateIconFromPngResource(resource_id);
     return icon != nullptr ? icon : CreateFallbackIcon();
+}
+
+bool TrayIcon::Add(HWND owner, UINT icon_id, UINT callback_message,
+                   std::wstring_view tooltip, std::wstring_view icon_name) {
+    Remove();
+
+    UniqueIcon icon(LoadTrayIcon(icon_name));
+    if (!icon) {
+        return false;
+    }
+
+    NOTIFYICONDATAW data{};
+    data.cbSize = sizeof(data);
+    data.hWnd = owner;
+    data.uID = icon_id;
+    data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    data.uCallbackMessage = callback_message;
+    data.hIcon = icon.Get();
+    const auto tooltip_length = std::min(tooltip.size(), ARRAYSIZE(data.szTip) - 1);
+    if (tooltip_length != 0) {
+        std::copy_n(tooltip.data(), tooltip_length, data.szTip);
+    }
+    data.szTip[tooltip_length] = L'\0';
+    if (!::Shell_NotifyIconW(NIM_ADD, &data)) {
+        return false;
+    }
+
+    m_data = data;
+    m_icon = std::move(icon);
+    m_added = true;
+    return true;
+}
+
+bool TrayIcon::UpdateIcon(std::wstring_view icon_name) {
+    if (!m_added) {
+        return false;
+    }
+
+    UniqueIcon icon(LoadTrayIcon(icon_name));
+    if (!icon) {
+        return false;
+    }
+
+    NOTIFYICONDATAW data = m_data;
+    data.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+    data.hIcon = icon.Get();
+    if (!::Shell_NotifyIconW(NIM_MODIFY, &data)) {
+        return false;
+    }
+
+    m_data = data;
+    m_icon = std::move(icon);
+    return true;
+}
+
+bool TrayIcon::GetRect(RECT &rect) const noexcept {
+    if (!m_added) {
+        return false;
+    }
+
+    NOTIFYICONIDENTIFIER identifier{};
+    identifier.cbSize = sizeof(identifier);
+    identifier.hWnd = m_data.hWnd;
+    identifier.uID = m_data.uID;
+    return SUCCEEDED(::Shell_NotifyIconGetRect(&identifier, &rect));
+}
+
+void TrayIcon::Remove() noexcept {
+    if (m_added) {
+        ::Shell_NotifyIconW(NIM_DELETE, &m_data);
+        m_added = false;
+    }
+    m_icon.Reset();
+    m_data = {};
 }

@@ -10,6 +10,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Win32Resources.h"
+
 #include <atlbase.h>
 #include <atlapp.h>
 #include <atlctrls.h>
@@ -83,7 +85,7 @@ private:
     HICON IconForApplication(std::wstring_view application);
 
     struct IconCacheEntry {
-        HICON icon = nullptr;
+        UniqueIcon icon;
         std::list<std::wstring>::iterator lru;
     };
 

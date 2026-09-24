@@ -1,5 +1,7 @@
 #include "PreviewDecoder.h"
 #include "ClipboardRules.h"
+#include "GdiScope.h"
+#include "Win32Resources.h"
 
 #include <atlbase.h>
 #include <atlapp.h>
@@ -146,7 +148,10 @@ std::optional<PreviewBitmap> CreateBitmapFromDib(
     if (!dc.CreateCompatibleDC(nullptr)) {
         return std::nullopt;
     }
-    const HBITMAP previous = dc.SelectBitmap(bitmap);
+    ScopedGdiObjectSelection selected_bitmap(dc.m_hDC, static_cast<HBITMAP>(bitmap));
+    if (!selected_bitmap.IsSelected()) {
+        return std::nullopt;
+    }
     ::SetStretchBltMode(dc.m_hDC, HALFTONE);
     ::SetBrushOrgEx(dc.m_hDC, 0, 0, nullptr);
     const int result = ::StretchDIBits(
@@ -164,7 +169,6 @@ std::optional<PreviewBitmap> CreateBitmapFromDib(
         DIB_RGB_COLORS,
         SRCCOPY
     );
-    dc.SelectBitmap(previous);
     if (result == GDI_ERROR || stop_token.stop_requested()) {
         return std::nullopt;
     }
@@ -191,23 +195,22 @@ std::optional<PreviewBitmap> CreateBitmapFromEncoded(
         return std::nullopt;
     }
 
-    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes.size());
-    if (memory == nullptr) {
+    UniqueGlobal memory(::GlobalAlloc(GMEM_MOVEABLE, bytes.size()));
+    if (!memory) {
         return std::nullopt;
     }
-    void *destination = ::GlobalLock(memory);
-    if (destination == nullptr) {
-        ::GlobalFree(memory);
+    ScopedGlobalLock destination(memory.Get());
+    if (destination.Data() == nullptr) {
         return std::nullopt;
     }
-    std::memcpy(destination, bytes.data(), bytes.size());
-    ::GlobalUnlock(memory);
+    std::memcpy(destination.Data(), bytes.data(), bytes.size());
+    destination.Unlock();
 
     CComPtr<IStream> stream;
-    if (FAILED(::CreateStreamOnHGlobal(memory, TRUE, &stream))) {
-        ::GlobalFree(memory);
+    if (FAILED(::CreateStreamOnHGlobal(memory.Get(), TRUE, &stream))) {
         return std::nullopt;
     }
+    memory.Release();
 
     CComPtr<IWICBitmapDecoder> decoder;
     if (FAILED(factory->CreateDecoderFromStream(

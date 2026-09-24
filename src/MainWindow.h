@@ -8,6 +8,8 @@
 #include <atlctrls.h>
 #include <atlwin.h>
 
+#include "ApplicationController.h"
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -22,10 +24,9 @@
 #include "PreviewWorker.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
-#include "ClipboardMonitor.h"
 #include "ClipboardData.h"
 #include "StorageWorker.h"
-#include "UpdateChecker.h"
+#include "TrayIcon.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -212,7 +213,6 @@ private:
     void HandlePopupActivation(HWND activating_window);
 
     // Tray icon
-    void UpdateTrayTooltip();
     void UpdateTrayIcon();
     void ShowTrayMenu();
     void RemoveTrayIcon();
@@ -307,14 +307,13 @@ private:
     AppSettings m_settings;
     bool m_suppressClearAlert = false;
     StorageWorker::IgnoreLists m_ignoredLists;
-    ClipboardMonitor m_clipboard;
     PreviewWorker &m_previewWorker;
+    ApplicationController m_applicationController;
 
     // Components
     PasteController m_pasteController;
     HistoryRenderer m_historyRenderer;
     KeyboardHandler m_keyboardHandler;
-    UpdateChecker m_updateChecker;
     std::unique_ptr<SettingsWindow> m_settingsWindow;
 
     // UI controls
@@ -359,9 +358,7 @@ private:
     bool m_pasteInProgress = false;
 
     // Tray icon
-    NOTIFYICONDATAW m_notifyIcon{};
-    HICON m_trayIcon = nullptr;
-    bool m_trayIconAdded = false;
+    TrayIcon m_trayIcon;
 
     // State flags
     bool m_modalShowing = false;

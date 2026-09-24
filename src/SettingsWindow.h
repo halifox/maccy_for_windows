@@ -2,6 +2,7 @@
 
 #include "PlatformConfig.h"
 #include "Constants.h"
+#include "Win32Resources.h"
 
 #include <array>
 #include <algorithm>
@@ -492,7 +493,7 @@ private:
     bool m_loading = false;
     bool m_destroying = false;
     bool m_updateCheckBusy = false;
-    HICON m_windowIcon = nullptr;
+    UniqueIcon m_windowIcon;
 
     AppSettings m_settings{};
     std::array<std::vector<std::wstring>, 3> m_ignoredLists;

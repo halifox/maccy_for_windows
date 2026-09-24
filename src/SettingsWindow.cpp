@@ -1089,10 +1089,10 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     // Keep preferences as a normal top-level window so it remains visible in
     // the taskbar and Alt+Tab without inheriting the main window's topmost state.
     SetWindowText(L"偏好设置");
-    m_windowIcon = LoadApplicationIcon();
-    if (m_windowIcon != nullptr) {
-        SetIcon(m_windowIcon, TRUE);
-        SetIcon(m_windowIcon, FALSE);
+    m_windowIcon.Reset(LoadApplicationIcon());
+    if (m_windowIcon) {
+        SetIcon(m_windowIcon.Get(), TRUE);
+        SetIcon(m_windowIcon.Get(), FALSE);
     }
     ModifyStyleEx(
         WS_EX_TOOLWINDOW,
@@ -1279,11 +1279,10 @@ LRESULT SettingsWindow::OnPinsListKeyDown(int, LPNMHDR header, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    if (m_windowIcon != nullptr) {
+    if (m_windowIcon) {
         SetIcon(nullptr, TRUE);
         SetIcon(nullptr, FALSE);
-        ::DestroyIcon(m_windowIcon);
-        m_windowIcon = nullptr;
+        m_windowIcon.Reset();
     }
     if (!m_ignoreImageList.IsNull()) {
         m_ignoreImageList.Destroy();

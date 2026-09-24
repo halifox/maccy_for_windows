@@ -1,6 +1,7 @@
 #include "PreviewWindow.h"
 #include "ClipboardRules.h"
 #include "Constants.h"
+#include "GdiScope.h"
 #include "UiFont.h"
 
 #include <dwmapi.h>
@@ -208,6 +209,7 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         return 0;
     }
     handled = TRUE;
+    ScopedDcState dc_state(draw->hDC);
     ::FillRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_WINDOW));
     if (m_bitmap.IsNull()) {
         ::SetBkMode(draw->hDC, TRANSPARENT);
@@ -236,7 +238,13 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     if (!source.CreateCompatibleDC(draw->hDC)) {
         return 0;
     }
-    HBITMAP previous = source.SelectBitmap(m_bitmap);
+    ScopedGdiObjectSelection selected_bitmap(
+        source.m_hDC,
+        static_cast<HBITMAP>(m_bitmap)
+    );
+    if (!selected_bitmap.IsSelected()) {
+        return 0;
+    }
     ::SetStretchBltMode(draw->hDC, HALFTONE);
     ::SetBrushOrgEx(draw->hDC, 0, 0, nullptr);
     ::StretchBlt(
@@ -252,7 +260,6 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         m_bitmapHeight,
         SRCCOPY
     );
-    source.SelectBitmap(previous);
     ::FrameRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_GRAYTEXT));
     return 0;
 }
@@ -260,6 +267,12 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 LRESULT PreviewWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     ClearBitmap();
+    const HFONT default_font = static_cast<HFONT>(::GetStockObject(DEFAULT_GUI_FONT));
+    m_image.SetFont(default_font, FALSE);
+    m_text.SetFont(default_font, FALSE);
+    m_status.SetFont(default_font, FALSE);
+    m_pinButton.SetFont(default_font, FALSE);
+    m_deleteButton.SetFont(default_font, FALSE);
     m_font.DeleteObject();
     m_image.m_hWnd = nullptr;
     m_text.m_hWnd = nullptr;

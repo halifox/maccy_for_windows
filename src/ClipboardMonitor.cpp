@@ -1,6 +1,7 @@
 #include "ClipboardMonitor.h"
 #include "ClipboardRules.h"
 #include "Constants.h"
+#include "Win32Resources.h"
 
 #include <atlbase.h>
 #include <atlapp.h>
@@ -43,64 +44,6 @@ private:
     bool m_open = false;
 };
 
-class GlobalLockGuard {
-public:
-    explicit GlobalLockGuard(HGLOBAL handle)
-        : m_handle(handle), m_data(handle != nullptr ? ::GlobalLock(handle) : nullptr) {}
-
-    ~GlobalLockGuard() {
-        if (m_data != nullptr) {
-            ::GlobalUnlock(m_handle);
-        }
-    }
-
-    GlobalLockGuard(const GlobalLockGuard &) = delete;
-    GlobalLockGuard &operator=(const GlobalLockGuard &) = delete;
-
-    void *Data() const noexcept { return m_data; }
-
-private:
-    HGLOBAL m_handle = nullptr;
-    void *m_data = nullptr;
-};
-
-class AllocatedGlobal {
-public:
-    AllocatedGlobal() = default;
-    explicit AllocatedGlobal(HGLOBAL handle) : m_handle(handle) {}
-
-    ~AllocatedGlobal() {
-        if (m_handle != nullptr) {
-            ::GlobalFree(m_handle);
-        }
-    }
-
-    AllocatedGlobal(const AllocatedGlobal &) = delete;
-    AllocatedGlobal &operator=(const AllocatedGlobal &) = delete;
-
-    AllocatedGlobal(AllocatedGlobal &&other) noexcept : m_handle(other.Release()) {}
-
-    AllocatedGlobal &operator=(AllocatedGlobal &&other) noexcept {
-        if (this != &other) {
-            if (m_handle != nullptr) {
-                ::GlobalFree(m_handle);
-            }
-            m_handle = other.Release();
-        }
-        return *this;
-    }
-
-    HGLOBAL Get() const noexcept { return m_handle; }
-    HGLOBAL Release() noexcept {
-        const HGLOBAL result = m_handle;
-        m_handle = nullptr;
-        return result;
-    }
-
-private:
-    HGLOBAL m_handle = nullptr;
-};
-
 std::optional<DWORD> ReadClipboardDword(const wchar_t *format_name) {
     const UINT format = RegisterClipboardFormatW(format_name);
     if (format == 0) {
@@ -112,7 +55,7 @@ std::optional<DWORD> ReadClipboardDword(const wchar_t *format_name) {
         return std::nullopt;
     }
 
-    const GlobalLockGuard lock(data);
+    const ScopedGlobalLock lock(data);
     const auto *source = static_cast<const unsigned char *>(lock.Data());
     if (source == nullptr) {
         return std::nullopt;
@@ -348,7 +291,7 @@ std::wstring ClipboardMonitor::ExtractClipboardText() {
     if (capacity == 0 || capacity > ClipboardRules::Limits::kMaximumClipboardCharacters + 1) {
         return {};
     }
-    const GlobalLockGuard lock(data);
+    const ScopedGlobalLock lock(data);
     const auto* text = static_cast<const wchar_t*>(lock.Data());
     if (text == nullptr) {
         return {};
@@ -373,7 +316,7 @@ std::wstring ClipboardMonitor::ExtractClipboardAnsiText() {
     if (storage_bytes == 0 || storage_bytes > ClipboardRules::Limits::kMaximumClipboardCharacters + 1) {
         return {};
     }
-    const GlobalLockGuard lock(data);
+    const ScopedGlobalLock lock(data);
     const auto* source = static_cast<const char*>(lock.Data());
     if (source == nullptr) {
         return {};
@@ -513,7 +456,7 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             if (bytes == 0 || bytes > ClipboardRules::Limits::kMaximumClipboardBytes) {
                 continue;
             }
-            const GlobalLockGuard lock(handle);
+            const ScopedGlobalLock lock(handle);
             const auto* source = static_cast<const unsigned char*>(lock.Data());
             if (source == nullptr) {
                 continue;
@@ -597,7 +540,7 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     );
     struct PendingFormat {
         UINT format = 0;
-        AllocatedGlobal data;
+        UniqueGlobal data;
     };
 
     std::vector<PendingFormat> pending;
@@ -618,12 +561,12 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
             continue;
         }
 
-        AllocatedGlobal handle(::GlobalAlloc(GMEM_MOVEABLE, data.bytes.size()));
+        UniqueGlobal handle(::GlobalAlloc(GMEM_MOVEABLE, data.bytes.size()));
         if (handle.Get() == nullptr) {
             return false;
         }
         {
-            const GlobalLockGuard lock(handle.Get());
+            const ScopedGlobalLock lock(handle.Get());
             if (lock.Data() == nullptr) {
                 return false;
             }

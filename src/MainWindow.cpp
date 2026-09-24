@@ -1,6 +1,6 @@
 #include "MainWindow.h"
-#include "ClipboardMonitor.h"
 #include "Constants.h"
+#include "GdiScope.h"
 #include "PinKeys.h"
 #include "SettingsWindow.h"
 #include "TrayIcon.h"
@@ -114,8 +114,8 @@ MainWindow::MainWindow(
       m_settings(std::move(settings)),
       m_suppressClearAlert(storage.LoadSuppressClearAlert()),
       m_ignoredLists(std::move(ignored_lists)),
-      m_clipboard(m_settings, m_ignoredLists),
       m_previewWorker(preview),
+      m_applicationController(storage, preview, m_settings),
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
       m_search(this, kSearchControlMessageMap),
@@ -127,30 +127,14 @@ MainWindow::MainWindow(
       m_footerAbout(this, kMenuButtonMessageMap),
       m_footerExit(this, kMenuButtonMessageMap),
       m_isolated(isolated) {
-    m_clipboard.SetSaveCallback([this](ClipboardSnapshot capture) {
-        m_storage.SaveClipboardAsync(
-            std::move(capture),
-            m_settings.history_size,
-            [this](bool success, std::string error) {
-                if (!success) {
-                    ::OutputDebugStringA(error.c_str());
-                    ::OutputDebugStringA("\n");
-                    return;
-                }
-                RequestUiUpdate(
-                    AppConstants::UiUpdate::kTray |
-                    (m_popupVisible ? AppConstants::UiUpdate::kHistory : 0)
-                );
-            }
-        );
-    });
+    m_applicationController.SetUiCallbacks(
+        [this](std::uint32_t updates) { RequestUiUpdate(updates); },
+        [this] { return m_popupVisible; }
+    );
 }
 
 MainWindow::~MainWindow() {
-    m_updateChecker.Stop();
-    m_clipboard.SetSaveCallback({});
-    m_previewWorker.SetUiWindow(nullptr);
-    m_storage.SetUiWindow(nullptr);
+    m_applicationController.Shutdown();
 }
 
 void MainWindow::DrawSearchCue(CDC dc) const {
@@ -168,6 +152,7 @@ void MainWindow::DrawSearchCue(CDC dc) const {
         return;
     }
 
+    ScopedDcState dc_state(dc.m_hDC);
     const HFONT font = m_historyRenderer.GetNormalFont();
     const HFONT previous_font = font != nullptr ? dc.SelectFont(font) : nullptr;
     const int previous_mode = dc.SetBkMode(TRANSPARENT);
@@ -179,6 +164,7 @@ void MainWindow::DrawSearchCue(CDC dc) const {
     if (previous_font != nullptr) {
         dc.SelectFont(previous_font);
     }
+    dc_state.Restore();
 }
 
 bool MainWindow::IsSearchClearHit(POINT point) const {
@@ -738,12 +724,8 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
         }
         break;
     case PopupPosition::StatusItem: {
-        NOTIFYICONIDENTIFIER identifier{};
-        identifier.cbSize = sizeof(identifier);
-        identifier.hWnd = m_hWnd;
-        identifier.uID = kTrayIconId;
         RECT tray_rect{};
-        if (m_trayIconAdded && SUCCEEDED(Shell_NotifyIconGetRect(&identifier, &tray_rect))) {
+        if (m_trayIcon.GetRect(tray_rect)) {
             x = tray_rect.left + ((tray_rect.right - tray_rect.left) - PopupWidth()) / 2;
             y = tray_rect.top - PopupHeight() - 6;
         }
@@ -1051,7 +1033,7 @@ void MainWindow::PasteItem(int index) {
                 if (!success && error.empty()) {
                     error = "剪贴板项目不存在";
                 }
-                if (success && !m_clipboard.WriteClipboardItem(*item, plain)) {
+                if (success && !m_applicationController.WriteClipboardItem(*item, plain)) {
                     success = false;
                     error = "无法写入系统剪贴板";
                 }
@@ -1192,7 +1174,7 @@ void MainWindow::ClearHistory(bool all) {
         ::MessageBoxW(m_hWnd, L"无法清空历史。", L"无法清空历史", MB_OK | MB_ICONERROR);
         return;
     }
-    if (clear_clipboard && !m_clipboard.ClearClipboard()) {
+    if (clear_clipboard && !m_applicationController.ClearClipboard()) {
         ::MessageBoxW(m_hWnd, L"无法清空系统剪贴板。", L"无法清空系统剪贴板",
                       MB_OK | MB_ICONERROR);
     }
@@ -1237,12 +1219,12 @@ void MainWindow::OpenSettings() {
     if (!m_settingsWindow->CreateOrShow()) {
         ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"maccy", MB_OK | MB_ICONERROR);
     } else {
-        m_settingsWindow->SetUpdateCheckBusy(m_updateChecker.IsChecking());
+        m_settingsWindow->SetUpdateCheckBusy(m_applicationController.IsUpdateChecking());
     }
 }
 
 bool MainWindow::StartUpdateCheck(UpdateCheckMode mode) {
-    if (!m_updateChecker.Start(mode)) {
+    if (!m_applicationController.StartUpdateCheck(mode)) {
         return false;
     }
     if (m_settingsWindow != nullptr) {
@@ -1305,7 +1287,7 @@ void MainWindow::ExitApplication(ExitReason reason) {
     if (reason == ExitReason::User &&
         m_settings.clear_on_quit &&
         m_settings.clear_system_clipboard) {
-        m_clipboard.ClearClipboard();
+        m_applicationController.ClearClipboard();
     }
     RemoveTrayIcon();
     if (m_settingsWindow != nullptr) {
@@ -1364,73 +1346,45 @@ void MainWindow::ScheduleSearchFromCurrentEdit() {
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
 }
 
-void MainWindow::UpdateTrayTooltip() {
-    ::lstrcpynW(m_notifyIcon.szTip, L"剪贴板历史", ARRAYSIZE(m_notifyIcon.szTip));
-    if (m_trayIconAdded) {
-        m_notifyIcon.uFlags = NIF_TIP | NIF_ICON | NIF_MESSAGE;
-        ::Shell_NotifyIconW(NIM_MODIFY, &m_notifyIcon);
-    }
-}
-
 void MainWindow::UpdateTrayIcon() {
     if (!m_settings.show_in_status_bar) {
         RemoveTrayIcon();
         return;
     }
-    if (!m_trayIconAdded) {
+    if (!m_trayIcon.IsAdded()) {
         AddTrayIcon();
         return;
     }
-    const HICON icon = LoadTrayIcon(m_settings.menu_icon);
-    if (icon == nullptr) {
-        return;
-    }
-    const HICON previous_icon = m_trayIcon;
-    m_trayIcon = icon;
-    m_notifyIcon.hIcon = m_trayIcon;
-    m_notifyIcon.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
-    UpdateTrayTooltip();
-    if (previous_icon != nullptr) {
-        DestroyIcon(previous_icon);
-    }
+    m_trayIcon.UpdateIcon(m_settings.menu_icon);
 }
 
 void MainWindow::ShowTrayMenu() {
-    HMENU menu = CreatePopupMenu();
-    if (menu == nullptr) {
+    UniqueMenu menu(::CreatePopupMenu());
+    if (!menu) {
         return;
     }
     m_trayMenuShowing = true;
-    AppendMenuW(menu, MF_STRING, kTrayCommandShow, L"打开");
-    AppendMenuW(menu, MF_STRING, kTrayCommandSettings, L"设置");
-    AppendMenuW(menu, MF_STRING, kTrayCommandClear, L"清空");
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandShow, L"打开");
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandSettings, L"设置");
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandClear, L"清空");
     AppendMenuW(
-        menu,
+        menu.Get(),
         MF_STRING | (m_settings.ignore_events ? MF_CHECKED : MF_UNCHECKED),
         kTrayCommandIgnore,
         L"暂停"
     );
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kTrayCommandExit, L"退出");
+    AppendMenuW(menu.Get(), MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandExit, L"退出");
     POINT cursor{};
     GetCursorPos(&cursor);
     SetForegroundWindow(m_hWnd);
-    TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_LEFTALIGN, cursor.x, cursor.y, 0, m_hWnd, nullptr);
+    TrackPopupMenu(menu.Get(), TPM_RIGHTBUTTON | TPM_LEFTALIGN, cursor.x, cursor.y, 0, m_hWnd, nullptr);
     PostMessage(WM_NULL, 0, 0);
     m_trayMenuShowing = false;
-    DestroyMenu(menu);
 }
 
 void MainWindow::RemoveTrayIcon() {
-    if (m_trayIconAdded) {
-        Shell_NotifyIconW(NIM_DELETE, &m_notifyIcon);
-        m_trayIconAdded = false;
-    }
-    if (m_trayIcon != nullptr) {
-        DestroyIcon(m_trayIcon);
-        m_trayIcon = nullptr;
-    }
-    m_notifyIcon.hIcon = nullptr;
+    m_trayIcon.Remove();
 }
 
 void MainWindow::RequestUiUpdate(std::uint32_t updateMask) {
@@ -1554,7 +1508,7 @@ void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t re
     const std::uint32_t updates = ApplySettings(settings, requestedUpdates);
     if ((requestedUpdates & AppConstants::UiUpdate::kIgnoreRules) != 0) {
         m_ignoredLists = m_storage.LoadIgnoreLists();
-        m_clipboard.ReloadIgnoreLists(m_ignoredLists);
+        m_applicationController.ReloadIgnoreLists(m_ignoredLists);
         if (m_settingsWindow != nullptr) {
             m_settingsWindow->SetStateSnapshot(m_settings, m_ignoredLists);
         }
@@ -1619,8 +1573,7 @@ void MainWindow::OnHideWindowCallback(void* context) {
 // Message handlers
 LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    m_updateChecker.SetWindow(m_hWnd);
-    m_storage.SetUiWindow(m_hWnd);
+    m_applicationController.AttachWindow(m_hWnd);
     if (!m_historyRenderer.Initialize(CWindow(m_hWnd))) {
         m_initializationError = L"无法初始化历史记录字体。";
         handled = TRUE;
@@ -1635,12 +1588,11 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     }
 
     m_pasteController.SetOwner(m_hWnd);
-    if (!m_clipboard.Initialize(m_hWnd)) {
+    if (!m_applicationController.InitializeClipboard(m_hWnd, m_ignoredLists)) {
         m_initializationError = L"无法注册剪贴板监听。";
         handled = TRUE;
         return FALSE;
     }
-    m_clipboard.ReloadIgnoreLists(m_ignoredLists);
 
     m_keyboardHandler.Initialize(m_hWnd, m_search, m_historyList, m_pinsList, FooterButtons());
     m_keyboardHandler.SetCallbacks(
@@ -2130,39 +2082,25 @@ LRESULT MainWindow::OnUiUpdate(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
 
 LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    const bool previous_ignore_events = m_settings.ignore_events;
-    const bool previous_ignore_only = m_settings.ignore_only_next_event;
-    try {
-        m_clipboard.OnClipboardUpdate();
-    } catch (const std::exception &error) {
-        ::OutputDebugStringA(error.what());
-        ::OutputDebugStringA("\n");
-    } catch (...) {
-        ::OutputDebugStringA("Unhandled clipboard update exception\n");
-    }
-    if (previous_ignore_events != m_settings.ignore_events ||
-        previous_ignore_only != m_settings.ignore_only_next_event) {
-        PersistSettings();
-        RequestUiUpdate(AppConstants::UiUpdate::kFooter | AppConstants::UiUpdate::kTray);
-    }
+    m_applicationController.HandleClipboardUpdate();
     return 0;
 }
 
 LRESULT MainWindow::OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    m_previewWorker.DrainUiCallbacks();
+    m_applicationController.DrainPreviewCallbacks();
     return 0;
 }
 
 LRESULT MainWindow::OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    m_storage.DrainUiCallbacks();
+    m_applicationController.DrainStorageCallbacks();
     return 0;
 }
 
 LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    for (const auto &result : m_updateChecker.TakeResults()) {
+    for (const auto &result : m_applicationController.TakeUpdateResults()) {
         HandleUpdateCheckResult(result);
     }
     return 0;
@@ -2170,17 +2108,23 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
-    m_updateChecker.Stop();
+    m_applicationController.StopUpdateChecks();
     KillTimer(AppConstants::Timer::kSearchResultCommit);
     m_deferredHistoryResult.reset();
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
     m_keyboardHandler.Shutdown();
-    m_previewWorker.SetUiWindow(nullptr);
-    m_clipboard.Shutdown();
-    m_clipboard.SetSaveCallback({});
-    m_storage.SetUiWindow(nullptr);
+    m_applicationController.Shutdown();
     RemoveTrayIcon();
+    const HFONT default_font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+    m_search.SetFont(default_font, FALSE);
+    m_historyList.SetFont(default_font, FALSE);
+    m_pinsList.SetFont(default_font, FALSE);
+    m_previewToggle.SetFont(default_font, FALSE);
+    m_footerClear.SetFont(default_font, FALSE);
+    m_footerSettings.SetFont(default_font, FALSE);
+    m_footerAbout.SetFont(default_font, FALSE);
+    m_footerExit.SetFont(default_font, FALSE);
     m_historyRenderer.Shutdown();
     PostQuitMessage(0);
     return 0;
@@ -2191,25 +2135,13 @@ bool MainWindow::AddTrayIcon() {
         RemoveTrayIcon();
         return true;
     }
-    m_trayIcon = LoadTrayIcon(m_settings.menu_icon);
-    if (m_trayIcon == nullptr) {
-        return false;
-    }
-    m_notifyIcon = {};
-    m_notifyIcon.cbSize = sizeof(m_notifyIcon);
-    m_notifyIcon.hWnd = m_hWnd;
-    m_notifyIcon.uID = kTrayIconId;
-    m_notifyIcon.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
-    m_notifyIcon.uCallbackMessage = AppConstants::kTrayIconMessage;
-    m_notifyIcon.hIcon = m_trayIcon;
-    UpdateTrayTooltip();
-    m_trayIconAdded = Shell_NotifyIconW(NIM_ADD, &m_notifyIcon) == TRUE;
-    if (!m_trayIconAdded) {
-        DestroyIcon(m_trayIcon);
-        m_trayIcon = nullptr;
-        m_notifyIcon.hIcon = nullptr;
-    }
-    return m_trayIconAdded;
+    return m_trayIcon.Add(
+        m_hWnd,
+        kTrayIconId,
+        AppConstants::kTrayIconMessage,
+        L"剪贴板历史",
+        m_settings.menu_icon
+    );
 }
 
 void MainWindow::ShowMainWindow() {
