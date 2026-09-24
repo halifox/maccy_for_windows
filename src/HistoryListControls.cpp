@@ -150,8 +150,9 @@ LRESULT HistoryListControls::OnHistoryListScroll(
     LPARAM lParam,
     BOOL &handled
 ) {
-    CListBox &list = CurrentHistoryList();
-    const LRESULT result = list.DefWindowProc(message, wParam, lParam);
+    CContainedWindowT<CListBox> &listWindow =
+        m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
+    const LRESULT result = listWindow.DefWindowProc(message, wParam, lParam);
     if (IsConfigured()) {
         m_keyboardHandler->UpdateHistoryHoverFromCursor(
             *m_items,

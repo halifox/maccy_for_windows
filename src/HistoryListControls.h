@@ -30,6 +30,8 @@ public:
 
     CContainedWindowT<CListBox> &HistoryListWindow() noexcept { return m_historyList; }
     CContainedWindowT<CListBox> &PinsListWindow() noexcept { return m_pinsList; }
+    const CContainedWindowT<CListBox> &HistoryListWindow() const noexcept { return m_historyList; }
+    const CContainedWindowT<CListBox> &PinsListWindow() const noexcept { return m_pinsList; }
 
     void Configure(KeyboardHandler &keyboard_handler,
                    HistoryRenderer &renderer,
