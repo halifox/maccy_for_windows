@@ -1089,7 +1089,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     // Keep preferences as a normal top-level window so it remains visible in
     // the taskbar and Alt+Tab without inheriting the main window's topmost state.
     SetWindowText(L"偏好设置");
-    m_windowIcon.Reset(LoadApplicationIcon());
+    m_windowIcon = LoadApplicationIcon();
     if (m_windowIcon) {
         SetIcon(m_windowIcon.Get(), TRUE);
         SetIcon(m_windowIcon.Get(), FALSE);

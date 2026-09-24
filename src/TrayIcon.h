@@ -7,8 +7,8 @@
 
 #include <string_view>
 
-HICON LoadTrayIcon(std::wstring_view name);
-HICON LoadApplicationIcon();
+UniqueIcon LoadTrayIcon(std::wstring_view name);
+UniqueIcon LoadApplicationIcon();
 
 class TrayIcon {
 public:

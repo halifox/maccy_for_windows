@@ -21,7 +21,6 @@ constexpr UINT kTrayIconId = 1;
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
-constexpr int kHistoryItemHeight = 22;
 constexpr int kHistoryFooterHeight = 22;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
@@ -119,8 +118,6 @@ MainWindow::MainWindow(
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
       m_search(this, kSearchControlMessageMap),
-      m_historyList(this, kHistoryListMessageMap),
-      m_pinsList(this, kHistoryListMessageMap),
       m_previewToggle(this, kMenuButtonMessageMap),
       m_footerClear(this, kMenuButtonMessageMap),
       m_footerSettings(this, kMenuButtonMessageMap),
@@ -154,17 +151,16 @@ void MainWindow::DrawSearchCue(CDC dc) const {
 
     ScopedDcState dc_state(dc.m_hDC);
     const HFONT font = m_historyRenderer.GetNormalFont();
-    const HFONT previous_font = font != nullptr ? dc.SelectFont(font) : nullptr;
+    ScopedGdiObjectSelection font_selection(
+        dc.m_hDC,
+        font != nullptr ? font : ::GetStockObject(DEFAULT_GUI_FONT)
+    );
     const int previous_mode = dc.SetBkMode(TRANSPARENT);
     const COLORREF previous_color = dc.SetTextColor(::GetSysColor(COLOR_GRAYTEXT));
     dc.DrawText(kHistorySearchCue, -1, &rect,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     dc.SetTextColor(previous_color);
     dc.SetBkMode(previous_mode);
-    if (previous_font != nullptr) {
-        dc.SelectFont(previous_font);
-    }
-    dc_state.Restore();
 }
 
 bool MainWindow::IsSearchClearHit(POINT point) const {
@@ -183,10 +179,6 @@ void MainWindow::ClearSearch() {
         m_search.IsWindowVisible() != FALSE);
 }
 
-CListBox& MainWindow::CurrentHistoryList() noexcept {
-    return m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
-}
-
 CButton* MainWindow::CurrentMenuButton() noexcept {
     if (m_footerClear.GetCurrentMessage() != nullptr) return &m_footerClear;
     if (m_footerSettings.GetCurrentMessage() != nullptr) return &m_footerSettings;
@@ -194,28 +186,6 @@ CButton* MainWindow::CurrentMenuButton() noexcept {
     if (m_footerExit.GetCurrentMessage() != nullptr) return &m_footerExit;
     if (m_previewToggle.GetCurrentMessage() != nullptr) return &m_previewToggle;
     return nullptr;
-}
-
-LRESULT MainWindow::HandleHistoryListKey(UINT message, WPARAM key, BOOL& handled) {
-    RequestFooterUpdateForKeyMessage(message, key);
-    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
-        m_keyboardHandler.HandlePopupKey(key, m_search, m_items)) {
-        handled = TRUE;
-        return 0;
-    }
-    handled = FALSE;
-    return 0;
-}
-
-LRESULT MainWindow::HandleHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam,
-                                           BOOL& handled) {
-    const LRESULT result = m_historyList.GetCurrentMessage() != nullptr
-        ? m_historyList.DefWindowProc(message, wParam, lParam)
-        : m_pinsList.DefWindowProc(message, wParam, lParam);
-    m_keyboardHandler.UpdateHistoryHoverFromCursor(
-        m_items, m_historyList, m_pinsList, m_popupVisible);
-    handled = TRUE;
-    return result;
 }
 
 LRESULT MainWindow::HandleMenuButtonKey(UINT message, WPARAM key, BOOL& handled) {
@@ -296,59 +266,6 @@ LRESULT MainWindow::OnSearchControlPaint(UINT message, WPARAM wParam, LPARAM lPa
     return result;
 }
 
-LRESULT MainWindow::OnHistoryListMouseMove(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
-    CListBox& list = CurrentHistoryList();
-    m_keyboardHandler.OnHistoryMouseMove(
-        list.m_hWnd,
-        POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)},
-        m_items,
-        m_historyList,
-        m_pinsList,
-        m_popupVisible
-    );
-    handled = FALSE;
-    return 0;
-}
-
-LRESULT MainWindow::OnHistoryListMouseLeave(UINT, WPARAM, LPARAM, BOOL& handled) {
-    m_keyboardHandler.OnHistoryMouseLeave();
-    handled = FALSE;
-    return 0;
-}
-
-LRESULT MainWindow::OnHistoryListKeyDown(UINT message, WPARAM key, LPARAM, BOOL& handled) {
-    return HandleHistoryListKey(message, key, handled);
-}
-
-LRESULT MainWindow::OnHistoryListChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
-    if (character >= 0x20 && character != 0x7f) {
-        m_keyboardHandler.TypeToSearch(character, m_search);
-        handled = TRUE;
-    } else {
-        handled = FALSE;
-    }
-    return 0;
-}
-
-LRESULT MainWindow::OnHistoryListButtonUp(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
-    CListBox& list = CurrentHistoryList();
-    const int index = m_keyboardHandler.HistoryItemAtPoint(
-        list.m_hWnd,
-        POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)},
-        m_historyList,
-        m_pinsList,
-        m_items
-    );
-    if (index >= 0) PasteItem(index);
-    handled = TRUE;
-    return 0;
-}
-
-LRESULT MainWindow::OnHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam,
-                                       BOOL& handled) {
-    return HandleHistoryListScroll(message, wParam, lParam, handled);
-}
-
 LRESULT MainWindow::OnMenuButtonMouseMove(UINT, WPARAM, LPARAM, BOOL& handled) {
     CButton* button = CurrentMenuButton();
     if (button == nullptr || !m_keyboardHandler.MouseCanSelect()) {
@@ -388,8 +305,11 @@ std::array<CButton, AppConstants::UI::kFooterButtonCount> MainWindow::FooterButt
 void MainWindow::RedrawHistoryLists() {
     // A resized owner-draw list can retain pixels from the previous item
     // width. Repaint the complete visible list after its final geometry is set.
-    // CContainedWindowT owns its ATL thunk, so keep the wrappers in place while iterating.
-    for (CListBox* list : {&m_historyList, &m_pinsList}) {
+    // HistoryListControls owns these wrappers and their ATL thunks.
+    for (CListBox* list : {
+             &m_historyListControls.HistoryListWindow(),
+             &m_historyListControls.PinsListWindow()
+         }) {
         if (list->m_hWnd == nullptr || !list->IsWindowVisible()) {
             continue;
         }
@@ -422,8 +342,10 @@ bool MainWindow::BindControls() {
         return false;
     }
 
-    if (!m_search.SubclassWindow(search) || !m_historyList.SubclassWindow(history) ||
-        !m_pinsList.SubclassWindow(pins) || !m_footerClear.SubclassWindow(footerClear) ||
+    if (!m_search.SubclassWindow(search) ||
+        !m_historyListControls.HistoryListWindow().SubclassWindow(history) ||
+        !m_historyListControls.PinsListWindow().SubclassWindow(pins) ||
+        !m_footerClear.SubclassWindow(footerClear) ||
         !m_footerSettings.SubclassWindow(footerSettings) ||
         !m_footerAbout.SubclassWindow(footerAbout) || !m_footerExit.SubclassWindow(footerExit)) {
         m_initializationError = L"无法关联主窗口控件的 WTL 消息处理器。";
@@ -455,7 +377,10 @@ bool MainWindow::BindControls() {
         SWP_NOACTIVATE | SWP_FRAMECHANGED;
     m_search.ModifyStyle(WS_BORDER | ES_MULTILINE, ES_AUTOHSCROLL, frameUpdateFlags);
     m_search.ModifyStyleEx(WS_EX_CLIENTEDGE, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    for (CListBox* control : {&m_historyList, &m_pinsList}) {
+    for (CListBox* control : {
+             &m_historyListControls.HistoryListWindow(),
+             &m_historyListControls.PinsListWindow()
+         }) {
         control->ModifyStyle(WS_BORDER, 0, frameUpdateFlags);
         control->ModifyStyleEx(WS_EX_CLIENTEDGE, 0, frameUpdateFlags);
     }
@@ -472,6 +397,27 @@ bool MainWindow::BindControls() {
     previewInfo.lpszText = m_previewTip.data();
     m_tooltips.AddTool(&previewInfo);
 
+    m_historyListControls.Configure(
+        m_keyboardHandler,
+        m_historyRenderer,
+        m_search.m_hWnd,
+        m_items,
+        m_searchQuery,
+        m_loadingList,
+        m_popupVisible,
+        [this](UINT message, WPARAM key) {
+            RequestFooterUpdateForKeyMessage(message, key);
+        },
+        [this](int index) { PasteItem(index); },
+        [this](sqlite3_int64 item_id) {
+            if (m_previewWorker.IsVisible()) {
+                ShowPreviewForItem(item_id);
+            } else {
+                SchedulePreviewForItem(item_id);
+            }
+        }
+    );
+
     // The empty-state cue is painted by the search edit's WTL alternate map so it shares the edit's
     // actual client rectangle and vertical-centering rules.
 
@@ -481,8 +427,8 @@ bool MainWindow::BindControls() {
 void MainWindow::ApplyHistoryFonts() {
     const HFONT font = m_historyRenderer.GetNormalFont();
     m_search.SetFont(font, TRUE);
-    m_historyList.SetFont(font, TRUE);
-    m_pinsList.SetFont(font, TRUE);
+    m_historyListControls.HistoryListWindow().SetFont(font, TRUE);
+    m_historyListControls.PinsListWindow().SetFont(font, TRUE);
     m_footerClear.SetFont(font, TRUE);
     m_footerSettings.SetFont(font, TRUE);
     m_footerAbout.SetFont(font, TRUE);
@@ -491,7 +437,8 @@ void MainWindow::ApplyHistoryFonts() {
 }
 
 void MainWindow::LayoutHistoryControls() {
-    if (m_search.m_hWnd == nullptr || m_historyList.m_hWnd == nullptr || !IsWindow()) return;
+    if (m_search.m_hWnd == nullptr ||
+        m_historyListControls.HistoryListWindow().m_hWnd == nullptr || !IsWindow()) return;
     RECT client{};
     GetClientRect(&client);
     const SearchHeaderLayout::Metrics headerMetrics =
@@ -504,12 +451,14 @@ void MainWindow::LayoutHistoryControls() {
     if (header && m_settings.show_title) {
         CClientDC dc(m_hWnd);
         const HFONT font = m_historyRenderer.GetSmallFont();
-        const HFONT oldFont = font != nullptr ? dc.SelectFont(font) : nullptr;
+        ScopedGdiObjectSelection font_selection(
+            dc.m_hDC,
+            font != nullptr ? font : ::GetStockObject(DEFAULT_GUI_FONT)
+        );
         SIZE textSize{};
         if (dc.GetTextExtent(L"maccy", 5, &textSize)) {
             titleWidth = textSize.cx + headerMetrics.titlePadding;
         }
-        if (oldFont != nullptr) dc.SelectFont(oldFont);
     }
 
     const SearchHeaderLayout::Geometry headerLayout =
@@ -524,15 +473,15 @@ void MainWindow::LayoutHistoryControls() {
         static_cast<int>(client.bottom) - margin - footerHeight
     );
     const int available = std::max(1, bottom - top);
-    const int pinCount = m_pinsList.GetCount();
-    const int historyCount = m_historyList.GetCount();
+    const int pinCount = m_historyListControls.PinsListWindow().GetCount();
+    const int historyCount = m_historyListControls.HistoryListWindow().GetCount();
     const bool havePins = pinCount > 0;
     const bool haveHistory = historyCount > 0;
     const int gap = havePins && haveHistory ? kHistorySectionGap : 0;
-    const int requestedPinsHeight = pinCount * kHistoryItemHeight;
+    const int requestedPinsHeight = pinCount * AppConstants::UI::kHistoryItemHeight;
     const int pinsHeight = havePins
         ? std::min(requestedPinsHeight, haveHistory
-            ? std::max(1, available - gap - kHistoryItemHeight)
+            ? std::max(1, available - gap - AppConstants::UI::kHistoryItemHeight)
             : available)
         : 0;
     const int historyHeight = haveHistory ? std::max(1, available - pinsHeight - gap) : 1;
@@ -559,12 +508,12 @@ void MainWindow::LayoutHistoryControls() {
 
     m_previewToggle.ShowWindow(header ? SW_SHOW : SW_HIDE);
 
-    m_pinsList.SetWindowPos(nullptr, margin, pinTop, width, pinsHeight,
+    m_historyListControls.PinsListWindow().SetWindowPos(nullptr, margin, pinTop, width, pinsHeight,
         SWP_NOZORDER | SWP_NOACTIVATE);
-    m_pinsList.ShowWindow(havePins ? SW_SHOW : SW_HIDE);
-    m_historyList.SetWindowPos(nullptr, margin, historyTop, width, historyHeight,
+    m_historyListControls.PinsListWindow().ShowWindow(havePins ? SW_SHOW : SW_HIDE);
+    m_historyListControls.HistoryListWindow().SetWindowPos(nullptr, margin, historyTop, width, historyHeight,
         SWP_NOZORDER | SWP_NOACTIVATE);
-    m_historyList.ShowWindow(haveHistory || !havePins ? SW_SHOW : SW_HIDE);
+    m_historyListControls.HistoryListWindow().ShowWindow(haveHistory || !havePins ? SW_SHOW : SW_HIDE);
 
     m_pinSeparatorY = gap ? (pinsAtBottom ? pinTop - gap / 2 : historyTop - gap / 2) : -1;
     m_footerSeparatorY = m_settings.show_footer ? bottom + 5 : -1;
@@ -617,7 +566,8 @@ void MainWindow::RequestFooterUpdateForKeyMessage(UINT message, WPARAM key) {
 
 bool MainWindow::IsOurWindow(HWND window) const {
     if (window == nullptr) return false;
-    return window == m_hWnd || window == m_search.m_hWnd || window == m_historyList.m_hWnd ||
+    return window == m_hWnd || window == m_search.m_hWnd ||
+        window == m_historyListControls.HistoryListWindow().m_hWnd ||
         ::IsChild(m_hWnd, window) || m_previewWorker.ContainsWindow(window) ||
         (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
 }
@@ -837,7 +787,10 @@ void MainWindow::ApplyHistoryItems(
         m_searchQuery = ownedQuery;
 
         m_loadingList = true;
-        for (CListBox* list : {&m_historyList, &m_pinsList}) {
+        for (CListBox* list : {
+                 &m_historyListControls.HistoryListWindow(),
+                 &m_historyListControls.PinsListWindow()
+             }) {
             if (list->m_hWnd == nullptr) {
                 continue;
             }
@@ -848,7 +801,9 @@ void MainWindow::ApplyHistoryItems(
         int selected = -1;
         for (size_t index = 0; index < m_items.size(); ++index) {
             const auto& item = m_items[index];
-            CListBox& list = item.pinned ? m_pinsList : m_historyList;
+            CListBox& list = item.pinned
+                ? m_historyListControls.PinsListWindow()
+                : m_historyListControls.HistoryListWindow();
             if (list.m_hWnd == nullptr) {
                 continue;
             }
@@ -883,13 +838,16 @@ void MainWindow::ApplyHistoryItems(
             m_keyboardHandler.SetActiveHistoryItem(
                 selected,
                 m_items,
-                m_historyList,
-                m_pinsList
+                m_historyListControls.HistoryListWindow(),
+                m_historyListControls.PinsListWindow()
             );
         }
 
         m_loadingList = false;
-        for (CListBox* list : {&m_historyList, &m_pinsList}) {
+        for (CListBox* list : {
+                 &m_historyListControls.HistoryListWindow(),
+                 &m_historyListControls.PinsListWindow()
+             }) {
             if (list->m_hWnd != nullptr) {
                 list->SetRedraw(TRUE);
             }
@@ -902,7 +860,10 @@ void MainWindow::ApplyHistoryItems(
         }
     } catch (const std::exception& error) {
         m_loadingList = false;
-        for (CListBox* list : {&m_historyList, &m_pinsList}) {
+        for (CListBox* list : {
+                 &m_historyListControls.HistoryListWindow(),
+                 &m_historyListControls.PinsListWindow()
+             }) {
             if (list->m_hWnd != nullptr) {
                 list->SetRedraw(TRUE);
             }
@@ -982,7 +943,12 @@ void MainWindow::ShowPreviewForSelection() {
         HidePreview();
         return;
     }
-    m_keyboardHandler.SetActiveHistoryItem(selected, m_items, m_historyList, m_pinsList);
+    m_keyboardHandler.SetActiveHistoryItem(
+        selected,
+        m_items,
+        m_historyListControls.HistoryListWindow(),
+        m_historyListControls.PinsListWindow()
+    );
     ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
 }
 
@@ -1594,7 +1560,13 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         return FALSE;
     }
 
-    m_keyboardHandler.Initialize(m_hWnd, m_search, m_historyList, m_pinsList, FooterButtons());
+    m_keyboardHandler.Initialize(
+        m_hWnd,
+        m_search,
+        m_historyListControls.HistoryListWindow(),
+        m_historyListControls.PinsListWindow(),
+        FooterButtons()
+    );
     m_keyboardHandler.SetCallbacks(
         this,
         OnPreviewCallback,
@@ -1789,17 +1761,6 @@ LRESULT MainWindow::OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& 
     return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
 }
 
-LRESULT MainWindow::OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
-    auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
-    if (measure == nullptr || (measure->CtlID != kHistoryListControlId && measure->CtlID != IDC_HISTORY_PINS)) {
-        handled = FALSE;
-        return 0;
-    }
-    handled = TRUE;
-    measure->itemHeight = kHistoryItemHeight;
-    return 0;
-}
-
 LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     auto* draw = reinterpret_cast<DRAWITEMSTRUCT*>(lParam);
     if (draw && draw->CtlType == ODT_BUTTON) {
@@ -1807,13 +1768,7 @@ LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
         handled = TRUE;
         return 0;
     }
-    if (draw == nullptr || (draw->CtlID != kHistoryListControlId && draw->CtlID != IDC_HISTORY_PINS)) {
-        handled = FALSE;
-        return 0;
-    }
-    handled = TRUE;
-    m_historyRenderer.DrawHistoryItem(draw, m_items, m_keyboardHandler.GetActiveItemIndex(),
-        m_keyboardHandler.GetActiveFooter(), m_searchQuery);
+    handled = FALSE;
     return 0;
 }
 
@@ -1857,7 +1812,12 @@ LRESULT MainWindow::OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled)
         }
 
         const auto item_index = static_cast<int>(std::distance(m_items.begin(), item));
-        m_keyboardHandler.SetActiveHistoryItem(item_index, m_items, m_historyList, m_pinsList);
+        m_keyboardHandler.SetActiveHistoryItem(
+            item_index,
+            m_items,
+            m_historyListControls.HistoryListWindow(),
+            m_historyListControls.PinsListWindow()
+        );
         if (command == IDC_PREVIEW_PIN) ToggleSelectedPin();
         else DeleteSelectedItem();
         return 0;
@@ -1872,41 +1832,6 @@ LRESULT MainWindow::OnSearchChanged(WORD, WORD, HWND, BOOL& handled) {
         InvalidateRect(&m_searchHeader.searchClear, FALSE);
     }
     ScheduleSearchFromCurrentEdit();
-    return 0;
-}
-
-LRESULT MainWindow::OnHistoryListSelectionChanged(WORD, WORD id, HWND, BOOL& handled) {
-    handled = TRUE;
-    if (m_loadingList) {
-        return 0;
-    }
-
-    CListBox& list = id == IDC_HISTORY_PINS ? m_pinsList : m_historyList;
-    const int selected = list.GetCurSel();
-    if (selected == LB_ERR) {
-        return 0;
-    }
-
-    const int selected_index = m_keyboardHandler.ItemIndexAtRow(
-        list,
-        selected,
-        m_items
-    );
-    if (selected_index < 0) {
-        return 0;
-    }
-
-    const bool selected_by_mouse = m_keyboardHandler.GetHoveredItemIndex() == selected_index;
-    m_keyboardHandler.SetActiveHistoryItem(selected_index, m_items, m_historyList,
-        m_pinsList, !selected_by_mouse);
-    if (!selected_by_mouse) {
-        m_keyboardHandler.ClearHistoryHover();
-        if (m_previewWorker.IsVisible()) {
-            ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
-        } else {
-            SchedulePreviewForItem(m_keyboardHandler.GetActiveItemId());
-        }
-    }
     return 0;
 }
 
@@ -2113,13 +2038,14 @@ LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_deferredHistoryResult.reset();
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
+    m_historyListControls.Shutdown();
     m_keyboardHandler.Shutdown();
     m_applicationController.Shutdown();
     RemoveTrayIcon();
     const HFONT default_font = static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
     m_search.SetFont(default_font, FALSE);
-    m_historyList.SetFont(default_font, FALSE);
-    m_pinsList.SetFont(default_font, FALSE);
+    m_historyListControls.HistoryListWindow().SetFont(default_font, FALSE);
+    m_historyListControls.PinsListWindow().SetFont(default_font, FALSE);
     m_previewToggle.SetFont(default_font, FALSE);
     m_footerClear.SetFont(default_font, FALSE);
     m_footerSettings.SetFont(default_font, FALSE);
@@ -2170,5 +2096,10 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
         SetFocus();
     }
     UpdateWindow();
-    m_keyboardHandler.UpdateHistoryHoverFromCursor(m_items, m_historyList, m_pinsList, m_popupVisible);
+    m_keyboardHandler.UpdateHistoryHoverFromCursor(
+        m_items,
+        m_historyListControls.HistoryListWindow(),
+        m_historyListControls.PinsListWindow(),
+        m_popupVisible
+    );
 }

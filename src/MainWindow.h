@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "HistoryRenderer.h"
+#include "HistoryListControls.h"
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
@@ -56,7 +57,6 @@ public:
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
-        MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
         MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
@@ -78,8 +78,6 @@ public:
         MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
         MESSAGE_HANDLER(AppConstants::kUpdateCheckerResultMessage, OnUpdateCheckerResult)
         COMMAND_HANDLER(IDC_HISTORY_SEARCH, EN_CHANGE, OnSearchChanged)
-        COMMAND_HANDLER(IDC_HISTORY_LIST, LBN_SELCHANGE, OnHistoryListSelectionChanged)
-        COMMAND_HANDLER(IDC_HISTORY_PINS, LBN_SELCHANGE, OnHistoryListSelectionChanged)
         COMMAND_HANDLER(IDC_HISTORY_CLEAR, BN_CLICKED, OnClearHistoryButton)
         COMMAND_HANDLER(IDC_HISTORY_SETTINGS, BN_CLICKED, OnSettingsButton)
         COMMAND_HANDLER(IDC_HISTORY_ABOUT, BN_CLICKED, OnAboutButton)
@@ -93,6 +91,7 @@ public:
         // Preview actions carry an item ID in lParam, so this final WM_COMMAND
         // handler is retained for that nonstandard notification payload.
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
+        REFLECT_NOTIFICATIONS()
     ALT_MSG_MAP(kSearchControlMessageMap)
         MESSAGE_HANDLER(WM_KEYDOWN, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_SYSKEYDOWN, OnSearchControlKeyDown)
@@ -103,18 +102,6 @@ public:
         MESSAGE_HANDLER(WM_SETFOCUS, OnSearchControlFocusChanged)
         MESSAGE_HANDLER(WM_KILLFOCUS, OnSearchControlFocusChanged)
         MESSAGE_HANDLER(WM_PAINT, OnSearchControlPaint)
-
-    ALT_MSG_MAP(kHistoryListMessageMap)
-        MESSAGE_HANDLER(WM_MOUSEMOVE, OnHistoryListMouseMove)
-        MESSAGE_HANDLER(WM_MOUSELEAVE, OnHistoryListMouseLeave)
-        MESSAGE_HANDLER(WM_KEYDOWN, OnHistoryListKeyDown)
-        MESSAGE_HANDLER(WM_SYSKEYDOWN, OnHistoryListKeyDown)
-        MESSAGE_HANDLER(WM_KEYUP, OnHistoryListKeyDown)
-        MESSAGE_HANDLER(WM_SYSKEYUP, OnHistoryListKeyDown)
-        MESSAGE_HANDLER(WM_CHAR, OnHistoryListChar)
-        MESSAGE_HANDLER(WM_LBUTTONUP, OnHistoryListButtonUp)
-        MESSAGE_HANDLER(WM_MOUSEWHEEL, OnHistoryListScroll)
-        MESSAGE_HANDLER(WM_VSCROLL, OnHistoryListScroll)
 
     ALT_MSG_MAP(kMenuButtonMessageMap)
         MESSAGE_HANDLER(WM_MOUSEMOVE, OnMenuButtonMouseMove)
@@ -143,8 +130,7 @@ private:
 
     enum : DWORD {
         kSearchControlMessageMap = 1,
-        kHistoryListMessageMap = 2,
-        kMenuButtonMessageMap = 3
+        kMenuButtonMessageMap = 2
     };
 
     enum class ExitReason {
@@ -156,10 +142,7 @@ private:
     void DrawSearchCue(CDC dc) const;
     bool IsSearchClearHit(POINT point) const;
     void ClearSearch();
-    CListBox& CurrentHistoryList() noexcept;
     CButton* CurrentMenuButton() noexcept;
-    LRESULT HandleHistoryListKey(UINT message, WPARAM key, BOOL& handled);
-    LRESULT HandleHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT HandleMenuButtonKey(UINT message, WPARAM key, BOOL& handled);
 
     // Control management
@@ -242,14 +225,12 @@ private:
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
-    LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
-    LRESULT OnHistoryListSelectionChanged(WORD, WORD id, HWND, BOOL& handled);
     LRESULT OnClearHistoryButton(WORD, WORD, HWND, BOOL& handled);
     LRESULT OnSettingsButton(WORD, WORD, HWND, BOOL& handled);
     LRESULT OnAboutButton(WORD, WORD, HWND, BOOL& handled);
@@ -275,18 +256,13 @@ private:
     LRESULT OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
-    // Contained control windows route input through WTL alternate message maps.
+    // Search and menu controls route input through WTL alternate message maps;
+    // history lists use the dedicated HistoryListControls message map.
     LRESULT OnSearchControlKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlFocusChanged(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlPaint(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnHistoryListMouseMove(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnHistoryListMouseLeave(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnHistoryListKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnHistoryListChar(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnHistoryListButtonUp(UINT, WPARAM, LPARAM, BOOL& handled);
-    LRESULT OnHistoryListScroll(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnMenuButtonMouseMove(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnMenuButtonKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnMenuButtonChar(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -318,8 +294,7 @@ private:
 
     // UI controls
     CContainedWindowT<CEdit> m_search;
-    CContainedWindowT<CListBox> m_historyList;
-    CContainedWindowT<CListBox> m_pinsList;
+    HistoryListControls m_historyListControls;
     CContainedWindowT<CButton> m_previewToggle;
     CToolTipCtrl m_tooltips;
     CContainedWindowT<CButton> m_footerClear;

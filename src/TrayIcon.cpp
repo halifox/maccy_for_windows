@@ -86,33 +86,33 @@ bool IsDarkSystemTheme() noexcept {
     return result == ERROR_SUCCESS && value_type == REG_DWORD && value == 0;
 }
 
-HICON CreateIconFromPngResource(int resource_id) noexcept {
+UniqueIcon CreateIconFromPngResource(int resource_id) noexcept {
     HINSTANCE instance = GetModuleHandleW(nullptr);
     const HRSRC resource = FindResourceW(instance, MAKEINTRESOURCEW(resource_id), RT_RCDATA);
     if (resource == nullptr) {
-        return nullptr;
+        return {};
     }
 
     const HGLOBAL loaded = LoadResource(instance, resource);
     const DWORD resource_size = SizeofResource(instance, resource);
     if (loaded == nullptr || resource_size == 0) {
-        return nullptr;
+        return {};
     }
 
     UniqueGlobal stream_memory(GlobalAlloc(GMEM_MOVEABLE, resource_size));
     if (!stream_memory) {
-        return nullptr;
+        return {};
     }
     ScopedGlobalLock destination(stream_memory.Get());
     if (destination.Data() == nullptr) {
-        return nullptr;
+        return {};
     }
     CopyMemory(destination.Data(), LockResource(loaded), resource_size);
     destination.Unlock();
 
     CComPtr<IStream> stream;
     if (FAILED(CreateStreamOnHGlobal(stream_memory.Get(), TRUE, &stream))) {
-        return nullptr;
+        return {};
     }
     stream_memory.Release();
 
@@ -123,7 +123,7 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
             CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&factory)
         ))) {
-        return nullptr;
+        return {};
     }
 
     CComPtr<IWICBitmapDecoder> decoder;
@@ -133,19 +133,19 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
             WICDecodeMetadataCacheOnLoad,
             &decoder
         ))) {
-        return nullptr;
+        return {};
     }
 
     CComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(0, &frame))) {
-        return nullptr;
+        return {};
     }
 
     UINT width = 0;
     UINT height = 0;
     if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0 ||
         width > 256 || height > 256) {
-        return nullptr;
+        return {};
     }
 
     CComPtr<IWICFormatConverter> converter;
@@ -158,7 +158,7 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
             0.0,
             WICBitmapPaletteTypeCustom
         ))) {
-        return nullptr;
+        return {};
     }
 
     const UINT stride = width * 4;
@@ -183,7 +183,7 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
     ));
     if (color_bitmap.IsNull() || pixels == nullptr ||
         FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(pixels)))) {
-        return nullptr;
+        return {};
     }
 
     CBitmap mask_bitmap;
@@ -195,44 +195,50 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
         nullptr
     ));
     if (mask_bitmap.IsNull()) {
-        return nullptr;
+        return {};
     }
 
     ICONINFO icon_info{};
     icon_info.fIcon = TRUE;
     icon_info.hbmColor = color_bitmap;
     icon_info.hbmMask = mask_bitmap;
-    return CreateIconIndirect(&icon_info);
+    return UniqueIcon(CreateIconIndirect(&icon_info));
 }
 
-HICON CreateFallbackIcon() noexcept {
+UniqueIcon CreateFallbackIcon() noexcept {
     const HICON application_icon = LoadIconW(nullptr, IDI_APPLICATION);
-    return application_icon == nullptr ? nullptr : CopyIcon(application_icon);
+    return UniqueIcon(application_icon == nullptr ? nullptr : CopyIcon(application_icon));
 }
 
 } // namespace
 
-HICON LoadApplicationIcon() {
-    HICON icon = CreateIconFromPngResource(IDR_APP_MACCY_PNG);
-    return icon != nullptr ? icon : CreateFallbackIcon();
+UniqueIcon LoadApplicationIcon() {
+    UniqueIcon icon = CreateIconFromPngResource(IDR_APP_MACCY_PNG);
+    if (icon) {
+        return icon;
+    }
+    return CreateFallbackIcon();
 }
 
-HICON LoadTrayIcon(std::wstring_view name) {
+UniqueIcon LoadTrayIcon(std::wstring_view name) {
     const TrayIconResources& resources = ResourcesForName(name);
     const bool use_large_icon = GetSystemMetrics(SM_CXSMICON) > 16;
     const bool dark_theme = IsDarkSystemTheme();
     const int resource_id = dark_theme
         ? (use_large_icon ? resources.dark_32 : resources.dark_16)
         : (use_large_icon ? resources.light_32 : resources.light_16);
-    HICON icon = CreateIconFromPngResource(resource_id);
-    return icon != nullptr ? icon : CreateFallbackIcon();
+    UniqueIcon icon = CreateIconFromPngResource(resource_id);
+    if (icon) {
+        return icon;
+    }
+    return CreateFallbackIcon();
 }
 
 bool TrayIcon::Add(HWND owner, UINT icon_id, UINT callback_message,
                    std::wstring_view tooltip, std::wstring_view icon_name) {
     Remove();
 
-    UniqueIcon icon(LoadTrayIcon(icon_name));
+    UniqueIcon icon = LoadTrayIcon(icon_name);
     if (!icon) {
         return false;
     }
@@ -264,7 +270,7 @@ bool TrayIcon::UpdateIcon(std::wstring_view icon_name) {
         return false;
     }
 
-    UniqueIcon icon(LoadTrayIcon(icon_name));
+    UniqueIcon icon = LoadTrayIcon(icon_name);
     if (!icon) {
         return false;
     }

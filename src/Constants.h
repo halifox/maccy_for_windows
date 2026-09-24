@@ -59,6 +59,7 @@ namespace AppConstants {
     // ========================================================================
     namespace UI {
         constexpr int kFooterButtonCount = 4;
+        constexpr int kHistoryItemHeight = 22;
         constexpr int kMinimumPopupWidth = 320;
         constexpr int kMaximumPopupWidth = 1600;
         constexpr int kMinimumPopupHeight = 150;
