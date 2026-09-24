@@ -96,20 +96,6 @@ std::wstring KeyName(UINT virtual_key) {
     }
 }
 
-BYTE ControlFlags(UINT modifiers) {
-    BYTE flags = 0;
-    if ((modifiers & MOD_ALT) != 0) {
-        flags |= HOTKEYF_ALT;
-    }
-    if ((modifiers & MOD_CONTROL) != 0) {
-        flags |= HOTKEYF_CONTROL;
-    }
-    if ((modifiers & MOD_SHIFT) != 0) {
-        flags |= HOTKEYF_SHIFT;
-    }
-    return flags;
-}
-
 } // namespace
 
 AppSettings AppSettings::Load(const Database &database) {
@@ -330,38 +316,6 @@ std::wstring HotKeyToText(const HotKeyConfig &hotkey) {
         text += L"Win+";
     }
     return text + KeyName(hotkey.virtual_key);
-}
-
-HotKeyConfig HotKeyFromControl(HWND control) {
-    if (control == nullptr) {
-        return {};
-    }
-    const WORD value = static_cast<WORD>(::SendMessageW(control, HKM_GETHOTKEY, 0, 0));
-    const BYTE virtual_key = LOBYTE(value);
-    const BYTE flags = HIBYTE(value);
-    UINT modifiers = 0;
-    if ((flags & HOTKEYF_CONTROL) != 0) {
-        modifiers |= MOD_CONTROL;
-    }
-    if ((flags & HOTKEYF_ALT) != 0) {
-        modifiers |= MOD_ALT;
-    }
-    if ((flags & HOTKEYF_SHIFT) != 0) {
-        modifiers |= MOD_SHIFT;
-    }
-    return HotKeyConfig{modifiers, virtual_key};
-}
-
-void SetHotKeyControl(HWND control, const HotKeyConfig &hotkey) {
-    if (control == nullptr) {
-        return;
-    }
-    ::SendMessageW(
-        control,
-        HKM_SETHOTKEY,
-        MAKEWORD(static_cast<BYTE>(hotkey.virtual_key), ControlFlags(hotkey.modifiers)),
-        0
-    );
 }
 
 bool IsHotKeyPressed(const HotKeyConfig &hotkey, WPARAM virtual_key) {

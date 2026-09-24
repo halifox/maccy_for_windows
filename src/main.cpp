@@ -6,6 +6,7 @@
 
 #include <atlbase.h>
 #include <atlapp.h>
+#include <atlwin.h>
 
 #include <filesystem>
 #include <stdexcept>
@@ -99,61 +100,23 @@ private:
     bool m_owned = false;
 };
 
-LRESULT CALLBACK ActivationWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-    if (message == kActivateExistingInstanceMessage) {
-        if (g_mainWindow != nullptr && ::IsWindow(g_mainWindow->Window())) {
-            g_mainWindow->ShowMainWindow();
-        } else {
-            g_activationRequested = true;
-        }
-        return 0;
-    }
-    if (message == AppConstants::kInstallerShutdownMessage) {
-        if (g_mainWindow != nullptr && ::IsWindow(g_mainWindow->Window())) {
-            g_mainWindow->ExitForInstaller();
-        } else {
-            g_installerShutdownRequested = true;
-        }
-        return 1;
-    }
-    return ::DefWindowProcW(window, message, wParam, lParam);
-}
-
-class ActivationWindow {
+class ActivationWindow : public CWindowImpl<ActivationWindow> {
 public:
+    DECLARE_WND_CLASS_EX(_T("Maccy.SingleInstance.ActivationWindow"), 0, COLOR_WINDOW)
+
+    BEGIN_MSG_MAP(ActivationWindow)
+        MESSAGE_HANDLER(kActivateExistingInstanceMessage, OnActivateExistingInstance)
+        MESSAGE_HANDLER(AppConstants::kInstallerShutdownMessage, OnInstallerShutdown)
+    END_MSG_MAP()
+
     ~ActivationWindow() {
         Destroy();
     }
 
     bool Create(HINSTANCE instance, DWORD &error) noexcept {
-        WNDCLASSEXW window_class{};
-        window_class.cbSize = sizeof(window_class);
-        window_class.lpfnWndProc = ActivationWindowProc;
-        window_class.hInstance = instance;
-        window_class.lpszClassName = kActivationWindowClassName;
-        if (::RegisterClassExW(&window_class) == 0) {
+        (void)instance;
+        if (CWindowImpl<ActivationWindow>::Create(HWND_MESSAGE) == nullptr) {
             error = ::GetLastError();
-            return false;
-        }
-        m_classRegistered = true;
-
-        m_window = ::CreateWindowExW(
-            0,
-            kActivationWindowClassName,
-            L"",
-            0,
-            0,
-            0,
-            0,
-            0,
-            HWND_MESSAGE,
-            nullptr,
-            instance,
-            nullptr
-        );
-        if (m_window == nullptr) {
-            error = ::GetLastError();
-            Destroy();
             return false;
         }
         error = ERROR_SUCCESS;
@@ -161,19 +124,31 @@ public:
     }
 
     void Destroy() noexcept {
-        if (m_window != nullptr) {
-            ::DestroyWindow(m_window);
-            m_window = nullptr;
-        }
-        if (m_classRegistered) {
-            ::UnregisterClassW(kActivationWindowClassName, ::GetModuleHandleW(nullptr));
-            m_classRegistered = false;
+        if (IsWindow()) {
+            DestroyWindow();
         }
     }
 
 private:
-    HWND m_window = nullptr;
-    bool m_classRegistered = false;
+    LRESULT OnActivateExistingInstance(UINT, WPARAM, LPARAM, BOOL &handled) {
+        handled = TRUE;
+        if (g_mainWindow != nullptr && ::IsWindow(g_mainWindow->Window())) {
+            g_mainWindow->ShowMainWindow();
+        } else {
+            g_activationRequested = true;
+        }
+        return 0;
+    }
+
+    LRESULT OnInstallerShutdown(UINT, WPARAM, LPARAM, BOOL &handled) {
+        handled = TRUE;
+        if (g_mainWindow != nullptr && ::IsWindow(g_mainWindow->Window())) {
+            g_mainWindow->ExitForInstaller();
+        } else {
+            g_installerShutdownRequested = true;
+        }
+        return 1;
+    }
 };
 
 enum class ExistingInstanceResult {
@@ -271,21 +246,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         }
     }
 
+    const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(com_result)) {
+        const std::wstring message = L"COM 初始化失败。HRESULT：" +
+            std::to_wstring(static_cast<unsigned long>(com_result));
+        MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+    const HRESULT module_result = _Module.Init(nullptr, instance);
+    if (FAILED(module_result)) {
+        CoUninitialize();
+        const std::wstring message = L"WTL 模块初始化失败。HRESULT：" +
+            std::to_wstring(static_cast<unsigned long>(module_result));
+        MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+        return 1;
+    }
+
     ActivationWindow activation_window;
     if (!activation_window.Create(instance, instance_error)) {
         const std::wstring message = L"Unable to create application activation window: " +
             std::to_wstring(instance_error);
+        _Module.Term();
+        CoUninitialize();
         MessageBoxW(nullptr, message.c_str(), L"maccy error", MB_OK | MB_ICONERROR);
         return 1;
     }
 
-    if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
-        return 1;
-    }
-    if (FAILED(_Module.Init(nullptr, instance))) {
-        CoUninitialize();
-        return 1;
-    }
     // The application uses only the Tab and HotKey common controls.  The
     // standard controls (buttons, edits, list boxes, etc.) are provided by
     // USER32 and do not need to be included here.  In particular, asking
@@ -297,6 +283,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     };
     if (!::InitCommonControlsEx(&common_controls)) {
         const DWORD error = GetLastError();
+        activation_window.Destroy();
         _Module.Term();
         CoUninitialize();
         const std::wstring message = L"InitCommonControlsEx failed: " + std::to_wstring(error);
@@ -315,10 +302,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         PreviewWorker preview(storage.Path());
         MainWindow window(storage, preview, std::move(settings), std::move(ignored_lists));
         if (!window.Create(nullptr)) {
+            const DWORD error = GetLastError();
             storage.Stop();
             activation_window.Destroy();
             _Module.Term();
             CoUninitialize();
+            const std::wstring message = L"无法创建主窗口。Windows 错误代码：" +
+                std::to_wstring(error);
+            MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+            return 1;
+        }
+        if (!window.IsInitialized()) {
+            const std::wstring message = window.InitializationError().empty()
+                ? L"主窗口初始化未完成。"
+                : window.InitializationError();
+            window.DestroyWindow();
+            storage.Stop();
+            activation_window.Destroy();
+            _Module.Term();
+            CoUninitialize();
+            MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
             return 1;
         }
         g_mainWindow = &window;
@@ -337,11 +340,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             window.ExitForInstaller();
         }
 
-        MSG message{};
-        while (GetMessageW(&message, nullptr, 0, 0) > 0) {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
+        CMessageLoop messageLoop;
+        _Module.AddMessageLoop(&messageLoop);
+        const int exitCode = messageLoop.Run();
+        _Module.RemoveMessageLoop();
         g_mainWindow = nullptr;
         preview.Stop();
         storage.Stop();
@@ -349,7 +351,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         instance_mutex.Release();
         _Module.Term();
         CoUninitialize();
-        return static_cast<int>(message.wParam);
+        return exitCode;
     } catch (const std::exception &error) {
         g_mainWindow = nullptr;
         MessageBoxA(nullptr, error.what(), "maccy error", MB_OK | MB_ICONERROR);

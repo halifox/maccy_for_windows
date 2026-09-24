@@ -3,6 +3,9 @@
 #include "PlatformConfig.h"
 
 #include <atlbase.h>
+#include <atlapp.h>
+#include <atlctrls.h>
+#include <atlgdi.h>
 #include <atlwin.h>
 
 #include <string>
@@ -21,7 +24,8 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
-        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
+        COMMAND_HANDLER(IDC_PREVIEW_PIN, BN_CLICKED, OnCommand)
+        COMMAND_HANDLER(IDC_PREVIEW_DELETE, BN_CLICKED, OnCommand)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnControlColor)
         MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnControlColor)
         MESSAGE_HANDLER(WM_CTLCOLORDLG, OnControlColor)
@@ -45,14 +49,16 @@ private:
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled);
-    LRESULT OnCommand(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnCommand(WORD, WORD id, HWND, BOOL &handled);
     LRESULT OnControlColor(UINT, WPARAM, LPARAM, BOOL &handled);
 
-    HWND m_image = nullptr;
-    HWND m_text = nullptr;
-    HWND m_status = nullptr;
-    HBITMAP m_bitmap = nullptr;
-    HFONT m_font = nullptr;
+    CStatic m_image;
+    CEdit m_text;
+    CStatic m_status;
+    CButton m_pinButton;
+    CButton m_deleteButton;
+    CBitmap m_bitmap;
+    CFont m_font;
     int m_bitmapWidth = 0;
     int m_bitmapHeight = 0;
     sqlite3_int64 m_itemId = 0;

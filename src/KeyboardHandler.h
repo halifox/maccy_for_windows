@@ -4,6 +4,9 @@
 #include "Constants.h"
 
 #include <array>
+#include <atlbase.h>
+#include <atlapp.h>
+#include <atlctrls.h>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -21,8 +24,8 @@ public:
     KeyboardHandler& operator=(const KeyboardHandler&) = delete;
 
     // Lifecycle
-    bool Initialize(HWND owner, HWND search, HWND historyList, HWND pinsList,
-                    const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons);
+    bool Initialize(CWindow owner, CEdit search, CListBox historyList, CListBox pinsList,
+                    const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons);
     void Shutdown();
 
     // Hotkey management
@@ -31,28 +34,28 @@ public:
     bool IsHotkeyRegistered() const { return m_hotkeyRegistered; }
 
     // Input handling
-    bool HandlePopupKey(WPARAM key, HWND search, const std::vector<ClipboardItem>& items);
+    bool HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items);
     bool HandlePopupShortcut(WPARAM key, const std::vector<ClipboardItem>& items);
     bool OnChar(WPARAM character);
 
     // Navigation
     void SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,
-                              HWND historyList, HWND pinsList,
+                              CListBox historyList, CListBox pinsList,
                               bool scrollIntoView = true);
     void NavigateHistoryFromSearch(bool forward, const std::vector<ClipboardItem>& items,
-                                   HWND historyList, HWND pinsList, bool showFooter);
+                                   CListBox historyList, CListBox pinsList, bool showFooter);
     int GetActiveItemIndex() const { return m_activeItemIndex; }
     sqlite3_int64 GetActiveItemId() const { return m_activeItemId; }
     int GetActiveFooter() const { return m_activeFooter; }
 
     // Mouse interaction
-    void OnHistoryMouseMove(HWND window, POINT point,
+    void OnHistoryMouseMove(CListBox window, POINT point,
                             const std::vector<ClipboardItem>& items,
-                            HWND historyList, HWND pinsList,
+                            CListBox historyList, CListBox pinsList,
                             bool popupVisible);
     void OnHistoryMouseLeave();
     void UpdateHistoryHoverFromCursor(const std::vector<ClipboardItem>& items,
-                                     HWND historyList, HWND pinsList,
+                                     CListBox historyList, CListBox pinsList,
                                      bool popupVisible);
     void ClearHistoryHover();
 
@@ -66,21 +69,21 @@ public:
 
     // Utilities
     bool MouseCanSelect();
-    void TypeToSearch(WPARAM character, HWND search);
-    void FocusSearchOrPopup(HWND search, HWND mainWindow, bool searchVisible);
+    void TypeToSearch(WPARAM character, CEdit& search);
+    void FocusSearchOrPopup(CEdit& search, CWindow mainWindow, bool searchVisible);
 
     // IME
-    bool IsComposing(HWND window) const;
+    bool IsComposing(CWindow window) const;
     void SetImeComposing(bool composing) { m_imeComposing = composing; }
 
     // Helper for list operations
-    int ItemIndexAtRow(HWND list, int row,
+    int ItemIndexAtRow(CListBox list, int row,
                        const std::vector<ClipboardItem>& items) const;
-    int HistoryItemAtPoint(HWND window, POINT point,
-                           HWND historyList, HWND pinsList,
+    int HistoryItemAtPoint(CListBox window, POINT point,
+                           CListBox historyList, CListBox pinsList,
                            const std::vector<ClipboardItem>& items) const;
     void InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
-                              HWND historyList, HWND pinsList);
+                              CListBox historyList, CListBox pinsList);
 
     // Callbacks
     using PreviewCallback = void (*)(void* context, sqlite3_int64 itemId, bool keyboard);
@@ -108,20 +111,20 @@ public:
 
 private:
     // Helper methods
-    HWND ListForItem(int index, const std::vector<ClipboardItem>& items,
-                    HWND historyList, HWND pinsList) const;
+    CListBox ListForItem(int index, const std::vector<ClipboardItem>& items,
+                         CListBox historyList, CListBox pinsList) const;
     int RowForItem(int index, const std::vector<ClipboardItem>& items,
-                  HWND historyList, HWND pinsList) const;
-    void SetListSelection(HWND list, int row) const;
+                   CListBox historyList, CListBox pinsList) const;
+    void SetListSelection(CListBox list, int row) const;
     void InvalidateFooterButtons() const;
     void BeginHistoryMouseTracking();
 
     AppSettings& m_settings;
-    HWND m_owner = nullptr;
-    HWND m_search = nullptr;
-    HWND m_historyList = nullptr;
-    HWND m_pinsList = nullptr;
-    std::array<HWND, AppConstants::UI::kFooterButtonCount> m_footerButtons{};
+    CWindow m_owner;
+    CEdit m_search;
+    CListBox m_historyList;
+    CListBox m_pinsList;
+    std::array<CButton, AppConstants::UI::kFooterButtonCount> m_footerButtons{};
 
     bool m_hotkeyRegistered = false;
     bool m_keyboardNavigating = false;
@@ -135,7 +138,7 @@ private:
     sqlite3_int64 m_hoveredItemId = 0;
     int m_activeFooter = -1;
 
-    HWND m_hoverList = nullptr;
+    CListBox m_hoverList;
 
     // Callbacks
     void* m_callbackContext = nullptr;

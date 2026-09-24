@@ -5,7 +5,10 @@
 
 #include <atlbase.h>
 #include <atlapp.h>
+#include <atlctrls.h>
 #include <atlwin.h>
+
+#include "ApplicationController.h"
 
 #include <array>
 #include <cstdint>
@@ -16,15 +19,15 @@
 #include <vector>
 
 #include "HistoryRenderer.h"
+#include "HistoryListControls.h"
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
-#include "ClipboardMonitor.h"
 #include "ClipboardData.h"
 #include "StorageWorker.h"
-#include "UpdateChecker.h"
+#include "TrayIcon.h"
 #include "resource.h"
 
 class SettingsWindow;
@@ -54,12 +57,10 @@ public:
         MESSAGE_HANDLER(WM_PAINT, OnPaint)
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
-        MESSAGE_HANDLER(WM_MEASUREITEM, OnMeasureItem)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
         MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
-        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
         MESSAGE_HANDLER(WM_KEYDOWN, OnKeyDown)
@@ -76,29 +77,73 @@ public:
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
         MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
         MESSAGE_HANDLER(AppConstants::kUpdateCheckerResultMessage, OnUpdateCheckerResult)
+        COMMAND_HANDLER(IDC_HISTORY_SEARCH, EN_CHANGE, OnSearchChanged)
+        COMMAND_HANDLER(IDC_HISTORY_CLEAR, BN_CLICKED, OnClearHistoryButton)
+        COMMAND_HANDLER(IDC_HISTORY_SETTINGS, BN_CLICKED, OnSettingsButton)
+        COMMAND_HANDLER(IDC_HISTORY_ABOUT, BN_CLICKED, OnAboutButton)
+        COMMAND_HANDLER(IDC_HISTORY_PREVIEW, BN_CLICKED, OnPreviewToggleButton)
+        COMMAND_HANDLER(IDC_HISTORY_EXIT, BN_CLICKED, OnExitButton)
+        COMMAND_ID_HANDLER(kTrayCommandShow, OnTrayShowCommand)
+        COMMAND_ID_HANDLER(kTrayCommandSettings, OnTraySettingsCommand)
+        COMMAND_ID_HANDLER(kTrayCommandClear, OnTrayClearCommand)
+        COMMAND_ID_HANDLER(kTrayCommandIgnore, OnTrayIgnoreCommand)
+        COMMAND_ID_HANDLER(kTrayCommandExit, OnTrayExitCommand)
+        // Preview actions carry an item ID in lParam, so this final WM_COMMAND
+        // handler is retained for that nonstandard notification payload.
+        MESSAGE_HANDLER(WM_COMMAND, OnCommand)
+        REFLECT_NOTIFICATIONS()
+    ALT_MSG_MAP(kSearchControlMessageMap)
+        MESSAGE_HANDLER(WM_KEYDOWN, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYDOWN, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_KEYUP, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYUP, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_IME_STARTCOMPOSITION, OnSearchControlImeStart)
+        MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnSearchControlImeEnd)
+        MESSAGE_HANDLER(WM_SETFOCUS, OnSearchControlFocusChanged)
+        MESSAGE_HANDLER(WM_KILLFOCUS, OnSearchControlFocusChanged)
+        MESSAGE_HANDLER(WM_PAINT, OnSearchControlPaint)
+
+    ALT_MSG_MAP(kMenuButtonMessageMap)
+        MESSAGE_HANDLER(WM_MOUSEMOVE, OnMenuButtonMouseMove)
+        MESSAGE_HANDLER(WM_KEYDOWN, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYDOWN, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_KEYUP, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYUP, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_CHAR, OnMenuButtonChar)
     END_MSG_MAP()
 
     bool AddTrayIcon();
     void ShowMainWindow();
     void ExitForInstaller();
     HWND Window() const noexcept { return m_hWnd; }
+    bool IsInitialized() const noexcept { return m_initialized; }
+    const std::wstring& InitializationError() const noexcept { return m_initializationError; }
 
 private:
+    enum : UINT {
+        kTrayCommandShow = 1001,
+        kTrayCommandSettings = 1002,
+        kTrayCommandClear = 1003,
+        kTrayCommandIgnore = 1004,
+        kTrayCommandExit = 1005
+    };
+
+    enum : DWORD {
+        kSearchControlMessageMap = 1,
+        kMenuButtonMessageMap = 2
+    };
+
     enum class ExitReason {
         User,
         Installer
     };
 
-    // Window procedure callbacks for subclassed controls
-    static LRESULT CALLBACK SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    static LRESULT CALLBACK HistoryListWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    static LRESULT CALLBACK MenuControlProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-                                           UINT_PTR, DWORD_PTR data);
-
     // Search edit rendering
-    void DrawSearchCue(HWND window, HDC dc) const;
+    void DrawSearchCue(CDC dc) const;
     bool IsSearchClearHit(POINT point) const;
     void ClearSearch();
+    CButton* CurrentMenuButton() noexcept;
+    LRESULT HandleMenuButtonKey(UINT message, WPARAM key, BOOL& handled);
 
     // Control management
     bool BindControls();
@@ -106,9 +151,7 @@ private:
     void LayoutHistoryControls();
     void RedrawHistoryLists();
     void RedrawFooterButtons();
-    void RestoreControlSubclass(HWND control, WNDPROC original);
-    void RestoreControlSubclasses();
-    std::array<HWND, AppConstants::UI::kFooterButtonCount> FooterButtons() const;
+    std::array<CButton, AppConstants::UI::kFooterButtonCount> FooterButtons() const;
 
     // Window positioning
     void PositionPopup(PopupPosition popup_position);
@@ -153,7 +196,6 @@ private:
     void HandlePopupActivation(HWND activating_window);
 
     // Tray icon
-    void UpdateTrayTooltip();
     void UpdateTrayIcon();
     void ShowTrayMenu();
     void RemoveTrayIcon();
@@ -183,12 +225,22 @@ private:
     LRESULT OnPaint(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
-    LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
+    LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnClearHistoryButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnSettingsButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnAboutButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnPreviewToggleButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnExitButton(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayShowCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTraySettingsCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayClearCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayIgnoreCommand(WORD, WORD, HWND, BOOL& handled);
+    LRESULT OnTrayExitCommand(WORD, WORD, HWND, BOOL& handled);
     LRESULT OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled);
@@ -203,6 +255,17 @@ private:
     LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
+
+    // Search and menu controls route input through WTL alternate message maps;
+    // history lists use the dedicated HistoryListControls message map.
+    LRESULT OnSearchControlKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlFocusChanged(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlPaint(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnMenuButtonMouseMove(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnMenuButtonKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnMenuButtonChar(UINT, WPARAM, LPARAM, BOOL& handled);
 
     // Callback handlers for KeyboardHandler
     static void OnPreviewCallback(void* context, sqlite3_int64 itemId, bool keyboard);
@@ -220,31 +283,24 @@ private:
     AppSettings m_settings;
     bool m_suppressClearAlert = false;
     StorageWorker::IgnoreLists m_ignoredLists;
-    ClipboardMonitor m_clipboard;
     PreviewWorker &m_previewWorker;
+    ApplicationController m_applicationController;
 
     // Components
     PasteController m_pasteController;
     HistoryRenderer m_historyRenderer;
     KeyboardHandler m_keyboardHandler;
-    UpdateChecker m_updateChecker;
     std::unique_ptr<SettingsWindow> m_settingsWindow;
 
     // UI controls
-    HWND m_search = nullptr;
-    HWND m_historyList = nullptr;
-    HWND m_pinsList = nullptr;
-    HWND m_previewToggle = nullptr;
-    HWND m_tooltips = nullptr;
-    HWND m_footerClear = nullptr;
-    HWND m_footerSettings = nullptr;
-    HWND m_footerAbout = nullptr;
-    HWND m_footerExit = nullptr;
-
-    // Window procedures
-    WNDPROC m_originalSearchProc = nullptr;
-    WNDPROC m_originalHistoryListProc = nullptr;
-    WNDPROC m_originalPinsProc = nullptr;
+    CContainedWindowT<CEdit> m_search;
+    HistoryListControls m_historyListControls;
+    CContainedWindowT<CButton> m_previewToggle;
+    CToolTipCtrl m_tooltips;
+    CContainedWindowT<CButton> m_footerClear;
+    CContainedWindowT<CButton> m_footerSettings;
+    CContainedWindowT<CButton> m_footerAbout;
+    CContainedWindowT<CButton> m_footerExit;
 
     // History data
     std::vector<ClipboardItem> m_items;
@@ -277,13 +333,13 @@ private:
     bool m_pasteInProgress = false;
 
     // Tray icon
-    NOTIFYICONDATAW m_notifyIcon{};
-    HICON m_trayIcon = nullptr;
-    bool m_trayIconAdded = false;
+    TrayIcon m_trayIcon;
 
     // State flags
     bool m_modalShowing = false;
     bool m_exiting = false;
     bool m_trayMenuShowing = false;
     bool m_isolated = false;
+    bool m_initialized = false;
+    std::wstring m_initializationError;
 };

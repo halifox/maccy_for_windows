@@ -2,6 +2,10 @@
 
 #include "PlatformConfig.h"
 
+#include <atlbase.h>
+#include <atlapp.h>
+#include <atlgdi.h>
+
 namespace UiFont {
 
 constexpr int kBodyPointSize = 9;
@@ -9,12 +13,10 @@ constexpr int kSmallPointSize = 7;
 
 inline UINT DpiForWindow(HWND window) {
     if (window != nullptr) {
-        if (HDC dc = ::GetDC(window)) {
-            const int dpi = ::GetDeviceCaps(dc, LOGPIXELSY);
-            ::ReleaseDC(window, dc);
-            if (dpi > 0) {
-                return static_cast<UINT>(dpi);
-            }
+        CClientDC dc(window);
+        const int dpi = dc.GetDeviceCaps(LOGPIXELSY);
+        if (dpi > 0) {
+            return static_cast<UINT>(dpi);
         }
     }
     return USER_DEFAULT_SCREEN_DPI;

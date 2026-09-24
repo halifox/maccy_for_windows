@@ -2,22 +2,34 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Removed direct clipboard monitor usage from main window, replaced with application controller
+- Removed direct update checker usage from main window, replaced with application controller
+
 ### Added
 
-- Added experimental foo command
-- Added visual indicator for search clear button in history view
+- Added application controller to manage clipboard and preview operations, with improved event handling and reduced direct dependencies
+- Added experimental tray icon management with improved icon loading and updating
+- Added visual indicator for search clear button in history view, with improved interaction and feedback
 
 ### Changed
 
-- Added support for Ctrl+U shortcut to clear search input, with improved keyboard navigation and focus handling
-- Improved search clear button interaction with mouse and keyboard and visual feedback
-- Updated MSVC runtime detection to sort by version numerically, with improved compatibility checks and fallback logic, including enhanced error handling
+- Updated clipboard handling to use new application controller architecture
+- Improved tray icon management with new class-based implementation
+- Refactored clipboard monitoring with safer global memory handling
+- Added support for Ctrl+U shortcut to clear search input with improved keyboard navigation and focus handling, now works with new application controller architecture
+- Improved search clear button interaction with mouse and keyboard with visual feedback
+- Updated MSVC runtime detection to sort by version numerically with improved compatibility checks and fallback logic
 
 ### Fixed
 
+- Fixed clipboard write operation to use new application controller architecture
+- Fixed clipboard clear operation to use new application controller architecture
 - Added check to ensure MSVC runtime is not older than the toolset version
 
 ### Security
 
+- Added secure handling of global memory buffers in clipboard operations
 - Added option to fail if MSVC runtime DLLs cannot be bundled
 

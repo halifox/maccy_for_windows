@@ -71,8 +71,10 @@ configure_file(
 )
 
 set(MACCY_SOURCES
+        "${MACCY_SOURCE_DIR}/ApplicationController.cpp"
         "${MACCY_SOURCE_DIR}/main.cpp"
         "${MACCY_SOURCE_DIR}/MainWindow.cpp"
+        "${MACCY_SOURCE_DIR}/HistoryListControls.cpp"
         "${MACCY_SOURCE_DIR}/ClipboardMonitor.cpp"
         "${MACCY_SOURCE_DIR}/ClipboardRules.cpp"
         "${MACCY_SOURCE_DIR}/PasteController.cpp"

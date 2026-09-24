@@ -1,7 +1,11 @@
 #include "PreviewDecoder.h"
 #include "ClipboardRules.h"
+#include "GdiScope.h"
+#include "Win32Resources.h"
 
 #include <atlbase.h>
+#include <atlapp.h>
+#include <atlgdi.h>
 #include <wincodec.h>
 
 #include <algorithm>
@@ -130,29 +134,28 @@ std::optional<PreviewBitmap> CreateBitmapFromDib(
     }
 
     void *destination = nullptr;
-    HBITMAP bitmap = CreateOutputBitmap(width, height, &destination);
-    if (bitmap == nullptr || destination == nullptr) {
-        if (bitmap != nullptr) {
-            ::DeleteObject(bitmap);
-        }
+    CBitmap bitmap;
+    bitmap.Attach(CreateOutputBitmap(width, height, &destination));
+    if (bitmap.IsNull() || destination == nullptr) {
         return std::nullopt;
     }
 
     if (stop_token.stop_requested()) {
-        ::DeleteObject(bitmap);
         return std::nullopt;
     }
 
-    HDC dc = ::CreateCompatibleDC(nullptr);
-    if (dc == nullptr) {
-        ::DeleteObject(bitmap);
+    CDC dc;
+    if (!dc.CreateCompatibleDC(nullptr)) {
         return std::nullopt;
     }
-    const HGDIOBJ previous = ::SelectObject(dc, bitmap);
-    ::SetStretchBltMode(dc, HALFTONE);
-    ::SetBrushOrgEx(dc, 0, 0, nullptr);
+    ScopedGdiObjectSelection selected_bitmap(dc.m_hDC, static_cast<HBITMAP>(bitmap));
+    if (!selected_bitmap.IsSelected()) {
+        return std::nullopt;
+    }
+    ::SetStretchBltMode(dc.m_hDC, HALFTONE);
+    ::SetBrushOrgEx(dc.m_hDC, 0, 0, nullptr);
     const int result = ::StretchDIBits(
-        dc,
+        dc.m_hDC,
         0,
         0,
         static_cast<int>(width),
@@ -166,13 +169,10 @@ std::optional<PreviewBitmap> CreateBitmapFromDib(
         DIB_RGB_COLORS,
         SRCCOPY
     );
-    ::SelectObject(dc, previous);
-    ::DeleteDC(dc);
     if (result == GDI_ERROR || stop_token.stop_requested()) {
-        ::DeleteObject(bitmap);
         return std::nullopt;
     }
-    return PreviewBitmap(bitmap, static_cast<int>(width), static_cast<int>(height));
+    return PreviewBitmap(bitmap.Detach(), static_cast<int>(width), static_cast<int>(height));
 }
 
 std::optional<PreviewBitmap> CreateBitmapFromEncoded(
@@ -195,23 +195,22 @@ std::optional<PreviewBitmap> CreateBitmapFromEncoded(
         return std::nullopt;
     }
 
-    HGLOBAL memory = ::GlobalAlloc(GMEM_MOVEABLE, bytes.size());
-    if (memory == nullptr) {
+    UniqueGlobal memory(::GlobalAlloc(GMEM_MOVEABLE, bytes.size()));
+    if (!memory) {
         return std::nullopt;
     }
-    void *destination = ::GlobalLock(memory);
-    if (destination == nullptr) {
-        ::GlobalFree(memory);
+    ScopedGlobalLock destination(memory.Get());
+    if (destination.Data() == nullptr) {
         return std::nullopt;
     }
-    std::memcpy(destination, bytes.data(), bytes.size());
-    ::GlobalUnlock(memory);
+    std::memcpy(destination.Data(), bytes.data(), bytes.size());
+    destination.Unlock();
 
     CComPtr<IStream> stream;
-    if (FAILED(::CreateStreamOnHGlobal(memory, TRUE, &stream))) {
-        ::GlobalFree(memory);
+    if (FAILED(::CreateStreamOnHGlobal(memory.Get(), TRUE, &stream))) {
         return std::nullopt;
     }
+    memory.Release();
 
     CComPtr<IWICBitmapDecoder> decoder;
     if (FAILED(factory->CreateDecoderFromStream(
@@ -277,11 +276,9 @@ std::optional<PreviewBitmap> CreateBitmapFromEncoded(
     }
 
     void *bits = nullptr;
-    HBITMAP bitmap = CreateOutputBitmap(width, height, &bits);
-    if (bitmap == nullptr || bits == nullptr) {
-        if (bitmap != nullptr) {
-            ::DeleteObject(bitmap);
-        }
+    CBitmap bitmap;
+    bitmap.Attach(CreateOutputBitmap(width, height, &bits));
+    if (bitmap.IsNull() || bits == nullptr) {
         return std::nullopt;
     }
 
@@ -290,17 +287,15 @@ std::optional<PreviewBitmap> CreateBitmapFromEncoded(
     if (stride_value > std::numeric_limits<UINT>::max() ||
         buffer_size_value > std::numeric_limits<UINT>::max() ||
         stop_token.stop_requested()) {
-        ::DeleteObject(bitmap);
         return std::nullopt;
     }
     const UINT stride = static_cast<UINT>(stride_value);
     const UINT buffer_size = static_cast<UINT>(buffer_size_value);
     if (FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(bits))) ||
         stop_token.stop_requested()) {
-        ::DeleteObject(bitmap);
         return std::nullopt;
     }
-    return PreviewBitmap(bitmap, static_cast<int>(width), static_cast<int>(height));
+    return PreviewBitmap(bitmap.Detach(), static_cast<int>(width), static_cast<int>(height));
 }
 
 } // namespace

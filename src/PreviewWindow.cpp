@@ -1,6 +1,7 @@
 #include "PreviewWindow.h"
 #include "ClipboardRules.h"
 #include "Constants.h"
+#include "GdiScope.h"
 #include "UiFont.h"
 
 #include <dwmapi.h>
@@ -61,9 +62,8 @@ bool PreviewWindow::Initialize(HWND owner) {
 }
 
 void PreviewWindow::ClearBitmap() {
-    if (m_bitmap != nullptr) {
-        ::DeleteObject(m_bitmap);
-        m_bitmap = nullptr;
+    if (!m_bitmap.IsNull()) {
+        m_bitmap.DeleteObject();
     }
     m_bitmapWidth = 0;
     m_bitmapHeight = 0;
@@ -71,7 +71,7 @@ void PreviewWindow::ClearBitmap() {
 
 void PreviewWindow::GetImageSize(UINT &width, UINT &height) const noexcept {
     RECT client{};
-    if (m_image != nullptr && ::GetClientRect(m_image, &client)) {
+    if (m_image.m_hWnd != nullptr && m_image.GetClientRect(&client)) {
         width = client.right > client.left
             ? static_cast<UINT>(client.right - client.left)
             : kFallbackPreviewWidth;
@@ -85,7 +85,7 @@ void PreviewWindow::GetImageSize(UINT &width, UINT &height) const noexcept {
 }
 
 void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
-    if (m_status == nullptr) {
+    if (m_status.m_hWnd == nullptr) {
         return;
     }
 
@@ -93,74 +93,70 @@ void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
     status += L"\r\n第一次复制时间：" + FormatCopyTime(item.first_copied_at);
     status += L"\r\n最后一次复制时间：" + FormatCopyTime(item.copied_at);
     status += L"\r\n复制次数：" + std::to_wstring(std::max(1, item.copy_count));
-    ::SetWindowTextW(m_status, status.c_str());
+    m_status.SetWindowText(status.c_str());
 }
 
 void PreviewWindow::SetItem(const ClipboardItem &item, std::wstring text, PreviewBitmap bitmap) {
     m_itemId = item.id;
-    ::SetWindowTextW(::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN), item.pinned ? L"取消置顶" : L"置顶");
+    m_pinButton.SetWindowText(item.pinned ? L"取消置顶" : L"置顶");
     ClearBitmap();
     m_bitmapWidth = bitmap.width;
     m_bitmapHeight = bitmap.height;
-    m_bitmap = bitmap.Release();
-    const bool image_loaded = m_bitmap != nullptr && m_bitmapWidth > 0 && m_bitmapHeight > 0;
-    ::SetWindowTextW(m_text, text.c_str());
-    ::SendMessageW(m_text, EM_SETSEL, 0, 0);
-    ::ShowWindow(m_image, image_loaded ? SW_SHOW : SW_HIDE);
-    ::ShowWindow(m_text, image_loaded ? SW_HIDE : SW_SHOW);
+    m_bitmap.Attach(bitmap.Release());
+    const bool image_loaded = !m_bitmap.IsNull() && m_bitmapWidth > 0 && m_bitmapHeight > 0;
+    m_text.SetWindowText(text.c_str());
+    m_text.SetSel(0, 0);
+    m_image.ShowWindow(image_loaded ? SW_SHOW : SW_HIDE);
+    m_text.ShowWindow(image_loaded ? SW_HIDE : SW_SHOW);
     UpdateStatus(item);
-    ::InvalidateRect(m_image, nullptr, TRUE);
+    m_image.InvalidateRect(nullptr, TRUE);
 }
 
 void PreviewWindow::Hide() {
     if (m_hWnd != nullptr) {
         ClearBitmap();
-        if (m_text != nullptr) {
-            ::SetWindowTextW(m_text, L"");
+        if (m_text.m_hWnd != nullptr) {
+            m_text.SetWindowText(L"");
         }
-        if (m_status != nullptr) {
-            ::SetWindowTextW(m_status, L"");
+        if (m_status.m_hWnd != nullptr) {
+            m_status.SetWindowText(L"");
         }
-        ::ShowWindow(m_image, SW_HIDE);
-        ::ShowWindow(m_text, SW_HIDE);
-        ::ShowWindow(m_hWnd, SW_HIDE);
+        m_image.ShowWindow(SW_HIDE);
+        m_text.ShowWindow(SW_HIDE);
+        ShowWindow(SW_HIDE);
         m_itemId = 0;
     }
 }
 
 bool PreviewWindow::IsVisible() const noexcept {
-    return m_hWnd != nullptr && ::IsWindowVisible(m_hWnd) != FALSE;
+    return m_hWnd != nullptr && IsWindowVisible() != FALSE;
 }
 
 LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     ApplySystemRoundedCorners(m_hWnd);
-    m_image = ::GetDlgItem(m_hWnd, IDC_PREVIEW_IMAGE);
-    m_text = ::GetDlgItem(m_hWnd, IDC_PREVIEW_TEXT);
-    m_status = ::GetDlgItem(m_hWnd, IDC_PREVIEW_STATUS);
+    m_image = GetDlgItem(IDC_PREVIEW_IMAGE);
+    m_text = GetDlgItem(IDC_PREVIEW_TEXT);
+    m_status = GetDlgItem(IDC_PREVIEW_STATUS);
+    m_pinButton = GetDlgItem(IDC_PREVIEW_PIN);
+    m_deleteButton = GetDlgItem(IDC_PREVIEW_DELETE);
     UpdateFont(UiFont::DpiForWindow(m_hWnd));
-    ::SendMessageW(
-        m_text,
-        EM_SETLIMITTEXT,
-        ClipboardRules::Limits::kMaximumPreviewTextCharacters,
-        0
-    );
-    ::ShowWindow(m_image, SW_HIDE);
-    ::ShowWindow(m_text, SW_HIDE);
+    m_text.SetLimitText(ClipboardRules::Limits::kMaximumPreviewTextCharacters);
+    m_image.ShowWindow(SW_HIDE);
+    m_text.ShowWindow(SW_HIDE);
     return TRUE;
 }
 
 bool PreviewWindow::UpdateFont(UINT dpi) {
     HFONT font = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
     if (font == nullptr) return false;
-    for (HWND control : {m_image, m_text, m_status, ::GetDlgItem(m_hWnd, IDC_PREVIEW_PIN),
-        ::GetDlgItem(m_hWnd, IDC_PREVIEW_DELETE)}) {
-        if (control != nullptr) {
-            ::SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
-        }
-    }
-    if (m_font != nullptr) DeleteObject(m_font);
-    m_font = font;
+    m_image.SetFont(font, TRUE);
+    m_text.SetFont(font, TRUE);
+    m_status.SetFont(font, TRUE);
+    m_pinButton.SetFont(font, TRUE);
+    m_deleteButton.SetFont(font, TRUE);
+    m_font.DeleteObject();
+    m_font.Attach(font);
     return true;
 }
 
@@ -177,31 +173,29 @@ LRESULT PreviewWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL &hand
     }
 
     handled = TRUE;
-    const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
-    if (owner != nullptr) {
-        ::PostMessageW(owner, AppConstants::kPopupActivationMessage, wParam, lParam);
+    CWindow owner(::GetWindow(m_hWnd, GW_OWNER));
+    if (owner.IsWindow()) {
+        owner.PostMessage(AppConstants::kPopupActivationMessage, wParam, lParam);
     }
     return 0;
 }
 
 LRESULT PreviewWindow::OnClose(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
-    if (owner != nullptr) {
-        ::PostMessageW(owner, WM_COMMAND, MAKEWPARAM(IDC_HISTORY_PREVIEW, BN_CLICKED), 0);
+    CWindow owner(::GetWindow(m_hWnd, GW_OWNER));
+    if (owner.IsWindow()) {
+        owner.PostMessage(WM_COMMAND, MAKEWPARAM(IDC_HISTORY_PREVIEW, BN_CLICKED), 0);
     }
     return 0;
 }
 
-LRESULT PreviewWindow::OnCommand(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
-    const int id = LOWORD(wParam);
+LRESULT PreviewWindow::OnCommand(WORD, WORD id, HWND, BOOL &handled) {
     handled = id == IDC_PREVIEW_PIN || id == IDC_PREVIEW_DELETE;
-    const HWND owner = ::GetWindow(m_hWnd, GW_OWNER);
-    if (handled && owner != nullptr && m_itemId != 0) {
-        ::PostMessageW(
-            owner,
+    CWindow owner(::GetWindow(m_hWnd, GW_OWNER));
+    if (handled && owner.IsWindow() && m_itemId != 0) {
+        owner.PostMessage(
             WM_COMMAND,
-            wParam,
+            MAKEWPARAM(id, BN_CLICKED),
             static_cast<LPARAM>(m_itemId)
         );
     }
@@ -215,8 +209,9 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         return 0;
     }
     handled = TRUE;
+    ScopedDcState dc_state(draw->hDC);
     ::FillRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_WINDOW));
-    if (m_bitmap == nullptr) {
+    if (m_bitmap.IsNull()) {
         ::SetBkMode(draw->hDC, TRANSPARENT);
         ::DrawTextW(
             draw->hDC,
@@ -239,11 +234,17 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
     const int left = draw->rcItem.left + (draw->rcItem.right - draw->rcItem.left - width) / 2;
     const int top = draw->rcItem.top + (draw->rcItem.bottom - draw->rcItem.top - height) / 2;
 
-    HDC source = ::CreateCompatibleDC(draw->hDC);
-    if (source == nullptr) {
+    CDC source;
+    if (!source.CreateCompatibleDC(draw->hDC)) {
         return 0;
     }
-    HGDIOBJ previous = ::SelectObject(source, m_bitmap);
+    ScopedGdiObjectSelection selected_bitmap(
+        source.m_hDC,
+        static_cast<HBITMAP>(m_bitmap)
+    );
+    if (!selected_bitmap.IsSelected()) {
+        return 0;
+    }
     ::SetStretchBltMode(draw->hDC, HALFTONE);
     ::SetBrushOrgEx(draw->hDC, 0, 0, nullptr);
     ::StretchBlt(
@@ -259,8 +260,6 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         m_bitmapHeight,
         SRCCOPY
     );
-    ::SelectObject(source, previous);
-    ::DeleteDC(source);
     ::FrameRect(draw->hDC, &draw->rcItem, ::GetSysColorBrush(COLOR_GRAYTEXT));
     return 0;
 }
@@ -268,10 +267,18 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
 LRESULT PreviewWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     ClearBitmap();
-    if (m_font) { DeleteObject(m_font); m_font = nullptr; }
-    m_image = nullptr;
-    m_text = nullptr;
-    m_status = nullptr;
+    const HFONT default_font = static_cast<HFONT>(::GetStockObject(DEFAULT_GUI_FONT));
+    m_image.SetFont(default_font, FALSE);
+    m_text.SetFont(default_font, FALSE);
+    m_status.SetFont(default_font, FALSE);
+    m_pinButton.SetFont(default_font, FALSE);
+    m_deleteButton.SetFont(default_font, FALSE);
+    m_font.DeleteObject();
+    m_image.m_hWnd = nullptr;
+    m_text.m_hWnd = nullptr;
+    m_status.m_hWnd = nullptr;
+    m_pinButton.m_hWnd = nullptr;
+    m_deleteButton.m_hWnd = nullptr;
     m_itemId = 0;
     m_hWnd = nullptr;
     return 0;

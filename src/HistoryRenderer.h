@@ -10,6 +10,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Win32Resources.h"
+
+#include <atlbase.h>
+#include <atlapp.h>
+#include <atlctrls.h>
+#include <atlgdi.h>
+
 #include "ClipboardData.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
@@ -24,7 +31,7 @@ public:
     HistoryRenderer& operator=(const HistoryRenderer&) = delete;
 
     // Lifecycle
-    bool Initialize(HWND owner);
+    bool Initialize(CWindow owner);
     bool UpdateFonts(UINT dpi);
     void Shutdown();
     void PrepareHistory(const std::vector<ClipboardItem> &items);
@@ -37,7 +44,7 @@ public:
                          std::wstring_view searchQuery);
     void DrawMenuButton(DRAWITEMSTRUCT* draw,
                         int activeFooter,
-                        const std::array<HWND, AppConstants::UI::kFooterButtonCount>& footerButtons);
+                        const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons);
     void OnPaint(HDC dc, const RECT& client,
                  int pinSeparatorY,
                  int footerSeparatorY,
@@ -78,18 +85,17 @@ private:
     HICON IconForApplication(std::wstring_view application);
 
     struct IconCacheEntry {
-        HICON icon = nullptr;
+        UniqueIcon icon;
         std::list<std::wstring>::iterator lru;
     };
 
     AppSettings& m_settings;
-    HWND m_owner = nullptr;
 
-    HFONT m_normalFont = nullptr;
-    HFONT m_smallFont = nullptr;
-    HFONT m_boldFont = nullptr;
-    HFONT m_italicFont = nullptr;
-    HFONT m_underlineFont = nullptr;
+    CFont m_normalFont;
+    CFont m_smallFont;
+    CFont m_boldFont;
+    CFont m_italicFont;
+    CFont m_underlineFont;
 
     std::unordered_map<std::wstring, IconCacheEntry> m_iconCache;
     std::list<std::wstring> m_iconLru;

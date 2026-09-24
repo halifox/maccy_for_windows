@@ -3,10 +3,14 @@
 #include "resource.h"
 
 #include <atlbase.h>
+#include <atlapp.h>
+#include <atlgdi.h>
 #include <wincodec.h>
 #include <winreg.h>
 
+#include <algorithm>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -82,36 +86,35 @@ bool IsDarkSystemTheme() noexcept {
     return result == ERROR_SUCCESS && value_type == REG_DWORD && value == 0;
 }
 
-HICON CreateIconFromPngResource(int resource_id) noexcept {
+UniqueIcon CreateIconFromPngResource(int resource_id) noexcept {
     HINSTANCE instance = GetModuleHandleW(nullptr);
     const HRSRC resource = FindResourceW(instance, MAKEINTRESOURCEW(resource_id), RT_RCDATA);
     if (resource == nullptr) {
-        return nullptr;
+        return {};
     }
 
     const HGLOBAL loaded = LoadResource(instance, resource);
     const DWORD resource_size = SizeofResource(instance, resource);
     if (loaded == nullptr || resource_size == 0) {
-        return nullptr;
+        return {};
     }
 
-    HGLOBAL stream_memory = GlobalAlloc(GMEM_MOVEABLE, resource_size);
-    if (stream_memory == nullptr) {
-        return nullptr;
+    UniqueGlobal stream_memory(GlobalAlloc(GMEM_MOVEABLE, resource_size));
+    if (!stream_memory) {
+        return {};
     }
-    void* destination = GlobalLock(stream_memory);
-    if (destination == nullptr) {
-        GlobalFree(stream_memory);
-        return nullptr;
+    ScopedGlobalLock destination(stream_memory.Get());
+    if (destination.Data() == nullptr) {
+        return {};
     }
-    CopyMemory(destination, LockResource(loaded), resource_size);
-    GlobalUnlock(stream_memory);
+    CopyMemory(destination.Data(), LockResource(loaded), resource_size);
+    destination.Unlock();
 
     CComPtr<IStream> stream;
-    if (FAILED(CreateStreamOnHGlobal(stream_memory, TRUE, &stream))) {
-        GlobalFree(stream_memory);
-        return nullptr;
+    if (FAILED(CreateStreamOnHGlobal(stream_memory.Get(), TRUE, &stream))) {
+        return {};
     }
+    stream_memory.Release();
 
     CComPtr<IWICImagingFactory> factory;
     if (FAILED(CoCreateInstance(
@@ -120,7 +123,7 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
             CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&factory)
         ))) {
-        return nullptr;
+        return {};
     }
 
     CComPtr<IWICBitmapDecoder> decoder;
@@ -130,19 +133,19 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
             WICDecodeMetadataCacheOnLoad,
             &decoder
         ))) {
-        return nullptr;
+        return {};
     }
 
     CComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(0, &frame))) {
-        return nullptr;
+        return {};
     }
 
     UINT width = 0;
     UINT height = 0;
     if (FAILED(frame->GetSize(&width, &height)) || width == 0 || height == 0 ||
         width > 256 || height > 256) {
-        return nullptr;
+        return {};
     }
 
     CComPtr<IWICFormatConverter> converter;
@@ -155,7 +158,7 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
             0.0,
             WICBitmapPaletteTypeCustom
         ))) {
-        return nullptr;
+        return {};
     }
 
     const UINT stride = width * 4;
@@ -169,63 +172,138 @@ HICON CreateIconFromPngResource(int resource_id) noexcept {
     bitmap_info.bmiHeader.biCompression = BI_RGB;
 
     void* pixels = nullptr;
-    HBITMAP color_bitmap = CreateDIBSection(
+    CBitmap color_bitmap;
+    color_bitmap.Attach(CreateDIBSection(
         nullptr,
         &bitmap_info,
         DIB_RGB_COLORS,
         &pixels,
         nullptr,
         0
-    );
-    if (color_bitmap == nullptr || pixels == nullptr ||
+    ));
+    if (color_bitmap.IsNull() || pixels == nullptr ||
         FAILED(converter->CopyPixels(nullptr, stride, buffer_size, static_cast<BYTE *>(pixels)))) {
-        if (color_bitmap != nullptr) {
-            DeleteObject(color_bitmap);
-        }
-        return nullptr;
+        return {};
     }
 
-    HBITMAP mask_bitmap = CreateBitmap(
+    CBitmap mask_bitmap;
+    mask_bitmap.Attach(CreateBitmap(
         static_cast<int>(width),
         static_cast<int>(height),
         1,
         1,
         nullptr
-    );
-    if (mask_bitmap == nullptr) {
-        DeleteObject(color_bitmap);
-        return nullptr;
+    ));
+    if (mask_bitmap.IsNull()) {
+        return {};
     }
 
     ICONINFO icon_info{};
     icon_info.fIcon = TRUE;
     icon_info.hbmColor = color_bitmap;
     icon_info.hbmMask = mask_bitmap;
-    HICON icon = CreateIconIndirect(&icon_info);
-    DeleteObject(mask_bitmap);
-    DeleteObject(color_bitmap);
-    return icon;
+    return UniqueIcon(CreateIconIndirect(&icon_info));
 }
 
-HICON CreateFallbackIcon() noexcept {
+UniqueIcon CreateFallbackIcon() noexcept {
     const HICON application_icon = LoadIconW(nullptr, IDI_APPLICATION);
-    return application_icon == nullptr ? nullptr : CopyIcon(application_icon);
+    return UniqueIcon(application_icon == nullptr ? nullptr : CopyIcon(application_icon));
 }
 
 } // namespace
 
-HICON LoadApplicationIcon() {
-    HICON icon = CreateIconFromPngResource(IDR_APP_MACCY_PNG);
-    return icon != nullptr ? icon : CreateFallbackIcon();
+UniqueIcon LoadApplicationIcon() {
+    UniqueIcon icon = CreateIconFromPngResource(IDR_APP_MACCY_PNG);
+    if (icon) {
+        return icon;
+    }
+    return CreateFallbackIcon();
 }
 
-HICON LoadTrayIcon(std::wstring_view name) {
+UniqueIcon LoadTrayIcon(std::wstring_view name) {
     const TrayIconResources& resources = ResourcesForName(name);
     const bool use_large_icon = GetSystemMetrics(SM_CXSMICON) > 16;
     const bool dark_theme = IsDarkSystemTheme();
     const int resource_id = dark_theme
         ? (use_large_icon ? resources.dark_32 : resources.dark_16)
         : (use_large_icon ? resources.light_32 : resources.light_16);
-    HICON icon = CreateIconFromPngResource(resource_id);
-    return icon != nullptr ? icon : CreateFallbackIcon();
+    UniqueIcon icon = CreateIconFromPngResource(resource_id);
+    if (icon) {
+        return icon;
+    }
+    return CreateFallbackIcon();
+}
+
+bool TrayIcon::Add(HWND owner, UINT icon_id, UINT callback_message,
+                   std::wstring_view tooltip, std::wstring_view icon_name) {
+    Remove();
+
+    UniqueIcon icon = LoadTrayIcon(icon_name);
+    if (!icon) {
+        return false;
+    }
+
+    NOTIFYICONDATAW data{};
+    data.cbSize = sizeof(data);
+    data.hWnd = owner;
+    data.uID = icon_id;
+    data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    data.uCallbackMessage = callback_message;
+    data.hIcon = icon.Get();
+    const auto tooltip_length = std::min(tooltip.size(), ARRAYSIZE(data.szTip) - 1);
+    if (tooltip_length != 0) {
+        std::copy_n(tooltip.data(), tooltip_length, data.szTip);
+    }
+    data.szTip[tooltip_length] = L'\0';
+    if (!::Shell_NotifyIconW(NIM_ADD, &data)) {
+        return false;
+    }
+
+    m_data = data;
+    m_icon = std::move(icon);
+    m_added = true;
+    return true;
+}
+
+bool TrayIcon::UpdateIcon(std::wstring_view icon_name) {
+    if (!m_added) {
+        return false;
+    }
+
+    UniqueIcon icon = LoadTrayIcon(icon_name);
+    if (!icon) {
+        return false;
+    }
+
+    NOTIFYICONDATAW data = m_data;
+    data.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+    data.hIcon = icon.Get();
+    if (!::Shell_NotifyIconW(NIM_MODIFY, &data)) {
+        return false;
+    }
+
+    m_data = data;
+    m_icon = std::move(icon);
+    return true;
+}
+
+bool TrayIcon::GetRect(RECT &rect) const noexcept {
+    if (!m_added) {
+        return false;
+    }
+
+    NOTIFYICONIDENTIFIER identifier{};
+    identifier.cbSize = sizeof(identifier);
+    identifier.hWnd = m_data.hWnd;
+    identifier.uID = m_data.uID;
+    return SUCCEEDED(::Shell_NotifyIconGetRect(&identifier, &rect));
+}
+
+void TrayIcon::Remove() noexcept {
+    if (m_added) {
+        ::Shell_NotifyIconW(NIM_DELETE, &m_data);
+        m_added = false;
+    }
+    m_icon.Reset();
+    m_data = {};
 }
