@@ -48,10 +48,10 @@ void KeyboardHandler::UnregisterGlobalHotKey(UINT hotkeyId) {
     }
 }
 
-bool KeyboardHandler::IsComposing(HWND window) const {
-    HIMC context = ImmGetContext(window);
+bool KeyboardHandler::IsComposing(CWindow window) const {
+    HIMC context = ImmGetContext(window.m_hWnd);
     const bool composing = context && ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0) > 0;
-    if (context) ImmReleaseContext(window, context);
+    if (context) ImmReleaseContext(window.m_hWnd, context);
     return m_imeComposing || composing;
 }
 

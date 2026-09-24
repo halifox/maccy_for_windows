@@ -92,12 +92,44 @@ public:
         // Preview actions carry an item ID in lParam, so this final WM_COMMAND
         // handler is retained for that nonstandard notification payload.
         MESSAGE_HANDLER(WM_COMMAND, OnCommand)
+    ALT_MSG_MAP(kSearchControlMessageMap)
+        MESSAGE_HANDLER(WM_KEYDOWN, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYDOWN, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_KEYUP, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYUP, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_IME_STARTCOMPOSITION, OnSearchControlImeStart)
+        MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnSearchControlImeEnd)
+        MESSAGE_HANDLER(WM_SETFOCUS, OnSearchControlFocusChanged)
+        MESSAGE_HANDLER(WM_KILLFOCUS, OnSearchControlFocusChanged)
+        MESSAGE_HANDLER(WM_PAINT, OnSearchControlPaint)
+
+    ALT_MSG_MAP(kHistoryListMessageMap)
+        MESSAGE_HANDLER(WM_MOUSEMOVE, OnHistoryListMouseMove)
+        MESSAGE_HANDLER(WM_MOUSELEAVE, OnHistoryListMouseLeave)
+        MESSAGE_HANDLER(WM_KEYDOWN, OnHistoryListKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYDOWN, OnHistoryListKeyDown)
+        MESSAGE_HANDLER(WM_KEYUP, OnHistoryListKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYUP, OnHistoryListKeyDown)
+        MESSAGE_HANDLER(WM_CHAR, OnHistoryListChar)
+        MESSAGE_HANDLER(WM_LBUTTONUP, OnHistoryListButtonUp)
+        MESSAGE_HANDLER(WM_MOUSEWHEEL, OnHistoryListScroll)
+        MESSAGE_HANDLER(WM_VSCROLL, OnHistoryListScroll)
+
+    ALT_MSG_MAP(kMenuButtonMessageMap)
+        MESSAGE_HANDLER(WM_MOUSEMOVE, OnMenuButtonMouseMove)
+        MESSAGE_HANDLER(WM_KEYDOWN, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYDOWN, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_KEYUP, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_SYSKEYUP, OnMenuButtonKeyDown)
+        MESSAGE_HANDLER(WM_CHAR, OnMenuButtonChar)
     END_MSG_MAP()
 
     bool AddTrayIcon();
     void ShowMainWindow();
     void ExitForInstaller();
     HWND Window() const noexcept { return m_hWnd; }
+    bool IsInitialized() const noexcept { return m_initialized; }
+    const std::wstring& InitializationError() const noexcept { return m_initializationError; }
 
 private:
     enum : UINT {
@@ -108,21 +140,26 @@ private:
         kTrayCommandExit = 1005
     };
 
+    enum : DWORD {
+        kSearchControlMessageMap = 1,
+        kHistoryListMessageMap = 2,
+        kMenuButtonMessageMap = 3
+    };
+
     enum class ExitReason {
         User,
         Installer
     };
 
-    // Window procedure callbacks for subclassed controls
-    static LRESULT CALLBACK SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    static LRESULT CALLBACK HistoryListWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
-    static LRESULT CALLBACK MenuControlProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-                                           UINT_PTR, DWORD_PTR data);
-
     // Search edit rendering
-    void DrawSearchCue(HWND window, HDC dc) const;
+    void DrawSearchCue(CDC dc) const;
     bool IsSearchClearHit(POINT point) const;
     void ClearSearch();
+    CListBox& CurrentHistoryList() noexcept;
+    CButton* CurrentMenuButton() noexcept;
+    LRESULT HandleHistoryListKey(UINT message, WPARAM key, BOOL& handled);
+    LRESULT HandleHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam, BOOL& handled);
+    LRESULT HandleMenuButtonKey(UINT message, WPARAM key, BOOL& handled);
 
     // Control management
     bool BindControls();
@@ -130,8 +167,6 @@ private:
     void LayoutHistoryControls();
     void RedrawHistoryLists();
     void RedrawFooterButtons();
-    void RestoreControlSubclass(HWND control, WNDPROC original);
-    void RestoreControlSubclasses();
     std::array<CButton, AppConstants::UI::kFooterButtonCount> FooterButtons() const;
 
     // Window positioning
@@ -240,6 +275,22 @@ private:
     LRESULT OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
+    // Contained control windows route input through WTL alternate message maps.
+    LRESULT OnSearchControlKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlFocusChanged(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlPaint(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryListMouseMove(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryListMouseLeave(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryListKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryListChar(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryListButtonUp(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryListScroll(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnMenuButtonMouseMove(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnMenuButtonKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnMenuButtonChar(UINT, WPARAM, LPARAM, BOOL& handled);
+
     // Callback handlers for KeyboardHandler
     static void OnPreviewCallback(void* context, sqlite3_int64 itemId, bool keyboard);
     static void OnPasteCallback(void* context, int index);
@@ -267,20 +318,15 @@ private:
     std::unique_ptr<SettingsWindow> m_settingsWindow;
 
     // UI controls
-    CEdit m_search;
-    CListBox m_historyList;
-    CListBox m_pinsList;
-    CButton m_previewToggle;
+    CContainedWindowT<CEdit> m_search;
+    CContainedWindowT<CListBox> m_historyList;
+    CContainedWindowT<CListBox> m_pinsList;
+    CContainedWindowT<CButton> m_previewToggle;
     CToolTipCtrl m_tooltips;
-    CButton m_footerClear;
-    CButton m_footerSettings;
-    CButton m_footerAbout;
-    CButton m_footerExit;
-
-    // Window procedures
-    WNDPROC m_originalSearchProc = nullptr;
-    WNDPROC m_originalHistoryListProc = nullptr;
-    WNDPROC m_originalPinsProc = nullptr;
+    CContainedWindowT<CButton> m_footerClear;
+    CContainedWindowT<CButton> m_footerSettings;
+    CContainedWindowT<CButton> m_footerAbout;
+    CContainedWindowT<CButton> m_footerExit;
 
     // History data
     std::vector<ClipboardItem> m_items;
@@ -322,4 +368,6 @@ private:
     bool m_exiting = false;
     bool m_trayMenuShowing = false;
     bool m_isolated = false;
+    bool m_initialized = false;
+    std::wstring m_initializationError;
 };

@@ -128,7 +128,7 @@ void PreviewWindow::Hide() {
 }
 
 bool PreviewWindow::IsVisible() const noexcept {
-    return m_hWnd != nullptr && ::IsWindowVisible(m_hWnd) != FALSE;
+    return m_hWnd != nullptr && IsWindowVisible() != FALSE;
 }
 
 LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {

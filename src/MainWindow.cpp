@@ -7,6 +7,7 @@
 #include "UiFont.h"
 
 #include <shellapi.h>
+#include <atltypes.h>
 
 #include <algorithm>
 #include <array>
@@ -27,7 +28,6 @@ constexpr int kHistorySectionGap = 6;
 constexpr int kResizeBorder = 8;
 
 constexpr wchar_t kHistorySearchCue[] = L"搜索剪贴板内容…";
-constexpr wchar_t kControlOwnerProperty[] = L"maccyMainWindow";
 
 std::wstring DisplayVersion(std::wstring_view version) {
     if (!version.empty() && (version.front() == L'v' || version.front() == L'V')) {
@@ -118,6 +118,14 @@ MainWindow::MainWindow(
       m_previewWorker(preview),
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
+      m_search(this, kSearchControlMessageMap),
+      m_historyList(this, kHistoryListMessageMap),
+      m_pinsList(this, kHistoryListMessageMap),
+      m_previewToggle(this, kMenuButtonMessageMap),
+      m_footerClear(this, kMenuButtonMessageMap),
+      m_footerSettings(this, kMenuButtonMessageMap),
+      m_footerAbout(this, kMenuButtonMessageMap),
+      m_footerExit(this, kMenuButtonMessageMap),
       m_isolated(isolated) {
     m_clipboard.SetSaveCallback([this](ClipboardSnapshot capture) {
         m_storage.SaveClipboardAsync(
@@ -145,13 +153,13 @@ MainWindow::~MainWindow() {
     m_storage.SetUiWindow(nullptr);
 }
 
-void MainWindow::DrawSearchCue(HWND window, HDC dc) const {
-    if (window == nullptr || dc == nullptr || window != m_search.m_hWnd ||
-        ::GetFocus() == window || m_search.GetWindowTextLength() != 0) {
+void MainWindow::DrawSearchCue(CDC dc) const {
+    if (dc.m_hDC == nullptr || m_search.m_hWnd == nullptr ||
+        ::GetFocus() == m_search.m_hWnd || m_search.GetWindowTextLength() != 0) {
         return;
     }
 
-    RECT rect{};
+    CRect rect;
     m_search.GetClientRect(&rect);
     const DWORD margins = m_search.GetMargins();
     rect.left += LOWORD(margins);
@@ -161,15 +169,15 @@ void MainWindow::DrawSearchCue(HWND window, HDC dc) const {
     }
 
     const HFONT font = m_historyRenderer.GetNormalFont();
-    const HGDIOBJ previous_font = font != nullptr ? ::SelectObject(dc, font) : nullptr;
-    const int previous_mode = ::SetBkMode(dc, TRANSPARENT);
-    const COLORREF previous_color = ::SetTextColor(dc, ::GetSysColor(COLOR_GRAYTEXT));
-    ::DrawTextW(dc, kHistorySearchCue, -1, &rect,
+    const HFONT previous_font = font != nullptr ? dc.SelectFont(font) : nullptr;
+    const int previous_mode = dc.SetBkMode(TRANSPARENT);
+    const COLORREF previous_color = dc.SetTextColor(::GetSysColor(COLOR_GRAYTEXT));
+    dc.DrawText(kHistorySearchCue, -1, &rect,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    ::SetTextColor(dc, previous_color);
-    ::SetBkMode(dc, previous_mode);
+    dc.SetTextColor(previous_color);
+    dc.SetBkMode(previous_mode);
     if (previous_font != nullptr) {
-        ::SelectObject(dc, previous_font);
+        dc.SelectFont(previous_font);
     }
 }
 
@@ -189,110 +197,202 @@ void MainWindow::ClearSearch() {
         m_search.IsWindowVisible() != FALSE);
 }
 
-LRESULT CALLBACK MainWindow::SearchWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-    auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
-    if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
-    owner->RequestFooterUpdateForKeyMessage(message, wParam);
-    if (message == WM_IME_STARTCOMPOSITION) owner->m_keyboardHandler.SetImeComposing(true);
-    if (message == WM_IME_ENDCOMPOSITION) owner->m_keyboardHandler.SetImeComposing(false);
-    if (message == WM_KEYDOWN && wParam == 'U' &&
-        !owner->m_keyboardHandler.IsComposing(window) &&
-        (::GetKeyState(VK_CONTROL) & 0x8000) != 0) {
-        if (!ReadWindowText(window).empty()) {
-            owner->ClearSearch();
-        }
-        return 0;
-    }
-    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
-        !owner->m_keyboardHandler.IsComposing(window) &&
-        owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
-        return 0;
-    }
+CListBox& MainWindow::CurrentHistoryList() noexcept {
+    return m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
+}
 
-    // Search from EN_CHANGE after the edit control has actually changed its
-    // text. Scheduling from WM_KEYDOWN can enqueue a query for the old text.
-    const LRESULT result = CallWindowProcW(owner->m_originalSearchProc, window, message, wParam, lParam);
-    if (message == WM_SETFOCUS || message == WM_KILLFOCUS) {
-        ::InvalidateRect(window, nullptr, TRUE);
+CButton* MainWindow::CurrentMenuButton() noexcept {
+    if (m_footerClear.GetCurrentMessage() != nullptr) return &m_footerClear;
+    if (m_footerSettings.GetCurrentMessage() != nullptr) return &m_footerSettings;
+    if (m_footerAbout.GetCurrentMessage() != nullptr) return &m_footerAbout;
+    if (m_footerExit.GetCurrentMessage() != nullptr) return &m_footerExit;
+    if (m_previewToggle.GetCurrentMessage() != nullptr) return &m_previewToggle;
+    return nullptr;
+}
+
+LRESULT MainWindow::HandleHistoryListKey(UINT message, WPARAM key, BOOL& handled) {
+    RequestFooterUpdateForKeyMessage(message, key);
+    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
+        m_keyboardHandler.HandlePopupKey(key, m_search, m_items)) {
+        handled = TRUE;
+        return 0;
     }
-    if (message == WM_PAINT && owner->m_search.m_hWnd == window &&
-        owner->m_search.GetWindowTextLength() == 0) {
-        CClientDC dc(window);
-        owner->DrawSearchCue(window, dc);
-    }
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::HandleHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam,
+                                           BOOL& handled) {
+    const LRESULT result = m_historyList.GetCurrentMessage() != nullptr
+        ? m_historyList.DefWindowProc(message, wParam, lParam)
+        : m_pinsList.DefWindowProc(message, wParam, lParam);
+    m_keyboardHandler.UpdateHistoryHoverFromCursor(
+        m_items, m_historyList, m_pinsList, m_popupVisible);
+    handled = TRUE;
     return result;
 }
 
-LRESULT CALLBACK MainWindow::HistoryListWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-    auto* owner = reinterpret_cast<MainWindow*>(GetPropW(window, kControlOwnerProperty));
-    if (!owner) return ::DefWindowProcW(window, message, wParam, lParam);
-    owner->RequestFooterUpdateForKeyMessage(message, wParam);
-    if (message == WM_MOUSEMOVE) {
-        owner->m_keyboardHandler.OnHistoryMouseMove(
-            window,
-            POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)},
-            owner->m_items,
-            owner->m_historyList,
-            owner->m_pinsList,
-            owner->m_popupVisible
-        );
-    }
-    if (message == WM_MOUSELEAVE) owner->m_keyboardHandler.OnHistoryMouseLeave();
-    if (message == WM_KEYDOWN || message == WM_SYSKEYDOWN) {
-        if (owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) return 0;
-    }
-    if (message == WM_CHAR && wParam >= 0x20 && wParam != 0x7f) {
-        owner->m_keyboardHandler.TypeToSearch(wParam, owner->m_search);
+LRESULT MainWindow::HandleMenuButtonKey(UINT message, WPARAM key, BOOL& handled) {
+    CButton* button = CurrentMenuButton();
+    if (button == nullptr) {
+        handled = FALSE;
         return 0;
     }
-    if (message == WM_LBUTTONUP) {
-        const int index = owner->m_keyboardHandler.HistoryItemAtPoint(
-            window,
-            {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)},
-            owner->m_historyList,
-            owner->m_pinsList,
-            owner->m_items);
-        if (index >= 0) owner->PasteItem(index);
+
+    RequestFooterUpdateForKeyMessage(message, key);
+    if (message != WM_KEYDOWN && message != WM_SYSKEYDOWN) {
+        handled = FALSE;
         return 0;
     }
-    const LRESULT result = CallWindowProcW(owner->m_originalHistoryListProc, window, message, wParam, lParam);
-    if (message == WM_MOUSEWHEEL || message == WM_VSCROLL) {
-        owner->m_keyboardHandler.UpdateHistoryHoverFromCursor(owner->m_items,
-            owner->m_historyList, owner->m_pinsList, owner->m_popupVisible);
+    if (key == VK_RETURN && button == &m_previewToggle) {
+        OnPreviewToggleButton(BN_CLICKED, IDC_HISTORY_PREVIEW, m_previewToggle.m_hWnd, handled);
+        return 0;
     }
+    if (m_keyboardHandler.HandlePopupKey(key, m_search, m_items)) {
+        handled = TRUE;
+        return 0;
+    }
+
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnSearchControlKeyDown(UINT message, WPARAM key, LPARAM, BOOL& handled) {
+    RequestFooterUpdateForKeyMessage(message, key);
+    if (message != WM_KEYDOWN && message != WM_SYSKEYDOWN) {
+        handled = FALSE;
+        return 0;
+    }
+    if (message == WM_KEYDOWN && key == 'U' &&
+        !m_keyboardHandler.IsComposing(m_search) &&
+        (::GetKeyState(VK_CONTROL) & 0x8000) != 0 && !ReadWindowText(m_search).empty()) {
+        ClearSearch();
+        handled = TRUE;
+        return 0;
+    }
+    if (!m_keyboardHandler.IsComposing(m_search) &&
+        m_keyboardHandler.HandlePopupKey(key, m_search, m_items)) {
+        handled = TRUE;
+        return 0;
+    }
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled) {
+    m_keyboardHandler.SetImeComposing(true);
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnSearchControlImeEnd(UINT, WPARAM, LPARAM, BOOL& handled) {
+    m_keyboardHandler.SetImeComposing(false);
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnSearchControlFocusChanged(UINT message, WPARAM wParam, LPARAM lParam,
+                                               BOOL& handled) {
+    const LRESULT result = m_search.DefWindowProc(message, wParam, lParam);
+    m_search.Invalidate(TRUE);
+    handled = TRUE;
     return result;
 }
 
-LRESULT CALLBACK MainWindow::MenuControlProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-                                            UINT_PTR, DWORD_PTR data) {
-    auto* owner = reinterpret_cast<MainWindow*>(data);
-    owner->RequestFooterUpdateForKeyMessage(message, wParam);
-    if (message == WM_MOUSEMOVE) {
-        if (!owner->m_keyboardHandler.MouseCanSelect()) return DefSubclassProc(window, message, wParam, lParam);
-        const auto buttons = owner->FooterButtons();
-        const auto it = std::find_if(buttons.begin(), buttons.end(), [window](const CButton& button) {
-            return button.m_hWnd == window;
-        });
-        if (it != buttons.end()) {
-            owner->m_keyboardHandler.SetActiveFooter(static_cast<int>(it - buttons.begin()),
-                owner->m_items);
-        }
+LRESULT MainWindow::OnSearchControlPaint(UINT message, WPARAM wParam, LPARAM lParam,
+                                        BOOL& handled) {
+    const LRESULT result = m_search.DefWindowProc(message, wParam, lParam);
+    if (m_search.GetWindowTextLength() == 0) {
+        CClientDC dc(m_search);
+        DrawSearchCue(dc);
     }
-    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) && wParam == VK_RETURN &&
-        ::GetDlgCtrlID(window) == IDC_HISTORY_PREVIEW) {
-        owner->SendMessage(WM_COMMAND, MAKEWPARAM(::GetDlgCtrlID(window), BN_CLICKED),
-            reinterpret_cast<LPARAM>(window));
+    handled = TRUE;
+    return result;
+}
+
+LRESULT MainWindow::OnHistoryListMouseMove(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    CListBox& list = CurrentHistoryList();
+    m_keyboardHandler.OnHistoryMouseMove(
+        list.m_hWnd,
+        POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)},
+        m_items,
+        m_historyList,
+        m_pinsList,
+        m_popupVisible
+    );
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnHistoryListMouseLeave(UINT, WPARAM, LPARAM, BOOL& handled) {
+    m_keyboardHandler.OnHistoryMouseLeave();
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnHistoryListKeyDown(UINT message, WPARAM key, LPARAM, BOOL& handled) {
+    return HandleHistoryListKey(message, key, handled);
+}
+
+LRESULT MainWindow::OnHistoryListChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
+    if (character >= 0x20 && character != 0x7f) {
+        m_keyboardHandler.TypeToSearch(character, m_search);
+        handled = TRUE;
+    } else {
+        handled = FALSE;
+    }
+    return 0;
+}
+
+LRESULT MainWindow::OnHistoryListButtonUp(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    CListBox& list = CurrentHistoryList();
+    const int index = m_keyboardHandler.HistoryItemAtPoint(
+        list.m_hWnd,
+        POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)},
+        m_historyList,
+        m_pinsList,
+        m_items
+    );
+    if (index >= 0) PasteItem(index);
+    handled = TRUE;
+    return 0;
+}
+
+LRESULT MainWindow::OnHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam,
+                                       BOOL& handled) {
+    return HandleHistoryListScroll(message, wParam, lParam, handled);
+}
+
+LRESULT MainWindow::OnMenuButtonMouseMove(UINT, WPARAM, LPARAM, BOOL& handled) {
+    CButton* button = CurrentMenuButton();
+    if (button == nullptr || !m_keyboardHandler.MouseCanSelect()) {
+        handled = FALSE;
         return 0;
     }
-    if ((message == WM_KEYDOWN || message == WM_SYSKEYDOWN) &&
-        owner->m_keyboardHandler.HandlePopupKey(wParam, owner->m_search, owner->m_items)) {
-        return 0;
+
+    auto buttons = FooterButtons();
+    const auto it = std::find_if(buttons.begin(), buttons.end(), [button](const CButton& item) {
+        return item.m_hWnd == button->m_hWnd;
+    });
+    if (it != buttons.end()) {
+        m_keyboardHandler.SetActiveFooter(static_cast<int>(it - buttons.begin()), m_items);
     }
-    if (message == WM_CHAR && wParam >= 0x20 && wParam != 0x7f) {
-        owner->m_keyboardHandler.TypeToSearch(wParam, owner->m_search);
-        return 0;
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT MainWindow::OnMenuButtonKeyDown(UINT message, WPARAM key, LPARAM, BOOL& handled) {
+    return HandleMenuButtonKey(message, key, handled);
+}
+
+LRESULT MainWindow::OnMenuButtonChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
+    if (character >= 0x20 && character != 0x7f) {
+        m_keyboardHandler.TypeToSearch(character, m_search);
+        handled = TRUE;
+    } else {
+        handled = FALSE;
     }
-    return DefSubclassProc(window, message, wParam, lParam);
+    return 0;
 }
 
 std::array<CButton, AppConstants::UI::kFooterButtonCount> MainWindow::FooterButtons() const {
@@ -302,11 +402,12 @@ std::array<CButton, AppConstants::UI::kFooterButtonCount> MainWindow::FooterButt
 void MainWindow::RedrawHistoryLists() {
     // A resized owner-draw list can retain pixels from the previous item
     // width. Repaint the complete visible list after its final geometry is set.
-    for (CListBox list : {m_historyList, m_pinsList}) {
-        if (list.m_hWnd == nullptr || !list.IsWindowVisible()) {
+    // CContainedWindowT owns its ATL thunk, so keep the wrappers in place while iterating.
+    for (CListBox* list : {&m_historyList, &m_pinsList}) {
+        if (list->m_hWnd == nullptr || !list->IsWindowVisible()) {
             continue;
         }
-        list.RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE);
+        list->RedrawWindow(nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE);
     }
 }
 
@@ -320,17 +421,26 @@ void MainWindow::RedrawFooterButtons() {
 }
 
 bool MainWindow::BindControls() {
-    m_search = GetDlgItem(kSearchControlId);
-    m_historyList = GetDlgItem(kHistoryListControlId);
-    m_pinsList = GetDlgItem(IDC_HISTORY_PINS);
-    m_footerClear = GetDlgItem(IDC_HISTORY_CLEAR);
-    m_footerSettings = GetDlgItem(IDC_HISTORY_SETTINGS);
-    m_footerAbout = GetDlgItem(IDC_HISTORY_ABOUT);
-    m_footerExit = GetDlgItem(IDC_HISTORY_EXIT);
+    const HWND search = GetDlgItem(kSearchControlId);
+    const HWND history = GetDlgItem(kHistoryListControlId);
+    const HWND pins = GetDlgItem(IDC_HISTORY_PINS);
+    const HWND footerClear = GetDlgItem(IDC_HISTORY_CLEAR);
+    const HWND footerSettings = GetDlgItem(IDC_HISTORY_SETTINGS);
+    const HWND footerAbout = GetDlgItem(IDC_HISTORY_ABOUT);
+    const HWND footerExit = GetDlgItem(IDC_HISTORY_EXIT);
 
-    if (m_search.m_hWnd == nullptr || m_historyList.m_hWnd == nullptr ||
-        m_footerClear.m_hWnd == nullptr || m_footerSettings.m_hWnd == nullptr ||
-        m_footerAbout.m_hWnd == nullptr || m_footerExit.m_hWnd == nullptr) {
+    if (search == nullptr || history == nullptr || pins == nullptr ||
+        footerClear == nullptr || footerSettings == nullptr || footerAbout == nullptr ||
+        footerExit == nullptr) {
+        m_initializationError = L"主窗口资源缺少必需控件。";
+        return false;
+    }
+
+    if (!m_search.SubclassWindow(search) || !m_historyList.SubclassWindow(history) ||
+        !m_pinsList.SubclassWindow(pins) || !m_footerClear.SubclassWindow(footerClear) ||
+        !m_footerSettings.SubclassWindow(footerSettings) ||
+        !m_footerAbout.SubclassWindow(footerAbout) || !m_footerExit.SubclassWindow(footerExit)) {
+        m_initializationError = L"无法关联主窗口控件的 WTL 消息处理器。";
         return false;
     }
 
@@ -339,6 +449,8 @@ bool MainWindow::BindControls() {
     const DWORD buttonStyle = WS_CHILD | WS_TABSTOP | BS_OWNERDRAW;
     RECT initialPreviewRect{0, 0, 1, 1};
     if (m_previewToggle.Create(
+            this,
+            kMenuButtonMessageMap,
             m_hWnd,
             initialPreviewRect,
             L"预览",
@@ -346,26 +458,11 @@ bool MainWindow::BindControls() {
             0,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_PREVIEW))
         ) == nullptr) {
+        m_initializationError = L"无法创建预览按钮。";
         return false;
     }
 
-    SetPropW(m_search, kControlOwnerProperty, reinterpret_cast<HANDLE>(this));
-    SetPropW(m_historyList, kControlOwnerProperty, reinterpret_cast<HANDLE>(this));
-    m_originalSearchProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(
-        m_search, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&MainWindow::SearchWindowProc)));
-    m_originalHistoryListProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(
-        m_historyList, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(&MainWindow::HistoryListWindowProc)));
-
     ApplyHistoryFonts();
-
-    SetPropW(m_pinsList, kControlOwnerProperty, reinterpret_cast<HANDLE>(this));
-    m_originalPinsProc = reinterpret_cast<WNDPROC>(::SetWindowLongPtrW(m_pinsList, GWLP_WNDPROC,
-        reinterpret_cast<LONG_PTR>(&MainWindow::HistoryListWindowProc)));
-
-    for (HWND button : FooterButtons()) {
-        SetWindowSubclass(button, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
-    }
-    SetWindowSubclass(m_previewToggle.m_hWnd, MenuControlProc, 1, reinterpret_cast<DWORD_PTR>(this));
 
     // Remove borders
     const UINT frameUpdateFlags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
@@ -389,7 +486,7 @@ bool MainWindow::BindControls() {
     previewInfo.lpszText = m_previewTip.data();
     m_tooltips.AddTool(&previewInfo);
 
-    // The empty-state cue is painted by SearchWindowProc so it shares the edit's
+    // The empty-state cue is painted by the search edit's WTL alternate map so it shares the edit's
     // actual client rectangle and vertical-centering rules.
 
     return true;
@@ -410,7 +507,7 @@ void MainWindow::ApplyHistoryFonts() {
 void MainWindow::LayoutHistoryControls() {
     if (m_search.m_hWnd == nullptr || m_historyList.m_hWnd == nullptr || !IsWindow()) return;
     RECT client{};
-    ::GetClientRect(m_hWnd, &client);
+    GetClientRect(&client);
     const SearchHeaderLayout::Metrics headerMetrics =
         SearchHeaderLayout::ForDpi(UiFont::DpiForWindow(m_hWnd));
     const int margin = headerMetrics.windowMargin;
@@ -421,12 +518,12 @@ void MainWindow::LayoutHistoryControls() {
     if (header && m_settings.show_title) {
         CClientDC dc(m_hWnd);
         const HFONT font = m_historyRenderer.GetSmallFont();
-        const HGDIOBJ oldFont = font != nullptr ? ::SelectObject(dc, font) : nullptr;
+        const HFONT oldFont = font != nullptr ? dc.SelectFont(font) : nullptr;
         SIZE textSize{};
-        if (::GetTextExtentPoint32W(dc, L"maccy", 5, &textSize)) {
+        if (dc.GetTextExtent(L"maccy", 5, &textSize)) {
             titleWidth = textSize.cx + headerMetrics.titlePadding;
         }
-        if (oldFont != nullptr) ::SelectObject(dc, oldFont);
+        if (oldFont != nullptr) dc.SelectFont(oldFont);
     }
 
     const SearchHeaderLayout::Geometry headerLayout =
@@ -486,19 +583,19 @@ void MainWindow::LayoutHistoryControls() {
     m_pinSeparatorY = gap ? (pinsAtBottom ? pinTop - gap / 2 : historyTop - gap / 2) : -1;
     m_footerSeparatorY = m_settings.show_footer ? bottom + 5 : -1;
 
-    const auto buttons = FooterButtons();
+    auto buttons = FooterButtons();
     for (int i = 0; i < 4; ++i) {
-        ::SetWindowPos(buttons[i], nullptr, margin,
-                       bottom + kHistoryFooterGap + i * kHistoryFooterHeight,
-                       width, kHistoryFooterHeight,
-                       SWP_NOZORDER | SWP_NOACTIVATE);
-        ::ShowWindow(buttons[i], m_settings.show_footer ? SW_SHOW : SW_HIDE);
+        buttons[i].SetWindowPos(nullptr, margin,
+                                bottom + kHistoryFooterGap + i * kHistoryFooterHeight,
+                                width, kHistoryFooterHeight,
+                                SWP_NOZORDER | SWP_NOACTIVATE);
+        buttons[i].ShowWindow(m_settings.show_footer ? SW_SHOW : SW_HIDE);
     }
 
     UpdateFooterControls();
     RedrawHistoryLists();
     RedrawFooterButtons();
-    ::InvalidateRect(m_hWnd, nullptr, TRUE);
+    Invalidate(TRUE);
 }
 
 void MainWindow::ApplyHistoryVisibility() {
@@ -530,20 +627,6 @@ void MainWindow::RequestFooterUpdateForKeyMessage(UINT message, WPARAM key) {
     if (key_up || (key_down && IsShiftKey(key))) {
         RequestUiUpdate(AppConstants::UiUpdate::kFooter);
     }
-}
-
-void MainWindow::RestoreControlSubclass(HWND control, WNDPROC original) {
-    if (control == nullptr || original == nullptr || !::IsWindow(control)) return;
-    ::SetWindowLongPtrW(control, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(original));
-    RemovePropW(control, kControlOwnerProperty);
-}
-
-void MainWindow::RestoreControlSubclasses() {
-    RestoreControlSubclass(m_search, m_originalSearchProc);
-    RestoreControlSubclass(m_historyList, m_originalHistoryListProc);
-    RestoreControlSubclass(m_pinsList, m_originalPinsProc);
-    m_originalSearchProc = nullptr;
-    m_originalHistoryListProc = nullptr;
 }
 
 bool MainWindow::IsOurWindow(HWND window) const {
@@ -684,7 +767,7 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
     const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - PopupHeight());
     x = std::clamp(x, static_cast<int>(work_area.left), static_cast<int>(max_x));
     y = std::clamp(y, static_cast<int>(work_area.top), static_cast<int>(max_y));
-    ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
+    SetWindowPos(HWND_TOPMOST, x, y, PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
 }
 
 void MainWindow::RefreshHistory(std::wstring_view query) {
@@ -704,7 +787,7 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
                             std::vector<ClipboardItem> items,
                             std::string error) mutable {
             if (result_generation != m_historyGeneration ||
-                m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_search.m_hWnd == nullptr ||
+                m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
                 owned_query != ReadWindowText(m_search)) {
                 return;
             }
@@ -743,7 +826,7 @@ void MainWindow::ApplyDeferredHistoryResult() {
     auto result = std::move(*m_deferredHistoryResult);
     m_deferredHistoryResult.reset();
     if (result.generation != m_historyGeneration ||
-        m_hWnd == nullptr || !::IsWindow(m_hWnd) || m_search.m_hWnd == nullptr ||
+        m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
         result.query != ReadWindowText(m_search)) {
         return;
     }
@@ -754,7 +837,7 @@ void MainWindow::ApplyHistoryItems(
     std::wstring query,
     std::vector<ClipboardItem> items
 ) {
-    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+    if (m_hWnd == nullptr || !IsWindow()) {
         return;
     }
     try {
@@ -1237,7 +1320,7 @@ void MainWindow::ExitForInstaller() {
 
 void MainWindow::SaveWindowGeometry(bool resized) {
     RECT rect{};
-    if (!::GetWindowRect(m_hWnd, &rect)) {
+    if (!GetWindowRect(&rect)) {
         return;
     }
 
@@ -1333,7 +1416,7 @@ void MainWindow::ShowTrayMenu() {
     GetCursorPos(&cursor);
     SetForegroundWindow(m_hWnd);
     TrackPopupMenu(menu, TPM_RIGHTBUTTON | TPM_LEFTALIGN, cursor.x, cursor.y, 0, m_hWnd, nullptr);
-    ::PostMessageW(m_hWnd, WM_NULL, 0, 0);
+    PostMessage(WM_NULL, 0, 0);
     m_trayMenuShowing = false;
     DestroyMenu(menu);
 }
@@ -1351,15 +1434,14 @@ void MainWindow::RemoveTrayIcon() {
 }
 
 void MainWindow::RequestUiUpdate(std::uint32_t updateMask) {
-    if (updateMask == 0 || m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+    if (updateMask == 0 || m_hWnd == nullptr || !IsWindow()) {
         return;
     }
     m_pendingUpdates |= updateMask;
     if (m_updateMessagePosted) {
         return;
     }
-    m_updateMessagePosted = ::PostMessageW(
-        m_hWnd, AppConstants::kUiUpdateMessage, 0, 0) != FALSE;
+    m_updateMessagePosted = PostMessage(AppConstants::kUiUpdateMessage, 0, 0) != FALSE;
 }
 
 void MainWindow::ApplyPendingState() {
@@ -1414,9 +1496,9 @@ std::uint32_t MainWindow::ApplySettings(
         (previous.window_width != m_settings.window_width ||
          previous.window_height != m_settings.window_height)) {
         RECT rect{};
-        if (::GetWindowRect(m_hWnd, &rect)) {
-            ::SetWindowPos(m_hWnd, HWND_TOPMOST, rect.left, rect.top,
-                PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
+        if (GetWindowRect(&rect)) {
+            SetWindowPos(HWND_TOPMOST, rect.left, rect.top,
+                         PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
         }
     }
     if (!m_isolated && (!SameHotKey(previous.open_hotkey, m_settings.open_hotkey) ||
@@ -1539,16 +1621,23 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     m_updateChecker.SetWindow(m_hWnd);
     m_storage.SetUiWindow(m_hWnd);
-    if (!m_historyRenderer.Initialize(m_hWnd) ||
-        !BindControls()) {
-        handled = FALSE;
+    if (!m_historyRenderer.Initialize(CWindow(m_hWnd))) {
+        m_initializationError = L"无法初始化历史记录字体。";
+        handled = TRUE;
+        return FALSE;
+    }
+    if (!BindControls()) {
+        if (m_initializationError.empty()) {
+            m_initializationError = L"无法初始化主窗口控件。请检查程序资源是否完整。";
+        }
+        handled = TRUE;
         return FALSE;
     }
 
     m_pasteController.SetOwner(m_hWnd);
     if (!m_clipboard.Initialize(m_hWnd)) {
-        ::MessageBoxW(m_hWnd, L"无法注册剪贴板监听。", L"maccy", MB_OK | MB_ICONERROR);
-        handled = FALSE;
+        m_initializationError = L"无法注册剪贴板监听。";
+        handled = TRUE;
         return FALSE;
     }
     m_clipboard.ReloadIgnoreLists(m_ignoredLists);
@@ -1576,6 +1665,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     if (!m_isolated && m_settings.check_for_updates) {
         StartUpdateCheck(UpdateCheckMode::Automatic);
     }
+    m_initialized = true;
     return TRUE;
 }
 
@@ -1595,9 +1685,9 @@ LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handl
     }
     const auto* suggested = reinterpret_cast<const RECT*>(lParam);
     if (suggested != nullptr) {
-        ::SetWindowPos(m_hWnd, nullptr, suggested->left, suggested->top,
-            suggested->right - suggested->left, suggested->bottom - suggested->top,
-            SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left, suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
     }
     LayoutHistoryControls();
     RedrawHistoryLists();
@@ -1643,14 +1733,14 @@ LRESULT MainWindow::OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL& handled) 
 
 LRESULT MainWindow::OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     RECT rect{};
-    if (!::GetWindowRect(m_hWnd, &rect)) {
+    if (!GetWindowRect(&rect)) {
         handled = FALSE;
         return 0;
     }
 
     const POINT point{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
     POINT clientPoint = point;
-    ::ScreenToClient(m_hWnd, &clientPoint);
+    ScreenToClient(&clientPoint);
     if (IsSearchClearHit(clientPoint)) {
         handled = TRUE;
         return HTCLIENT;
@@ -1712,7 +1802,7 @@ LRESULT MainWindow::OnCaptureChanged(UINT, WPARAM, LPARAM, BOOL& handled) {
 LRESULT MainWindow::OnSetCursor(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     if (LOWORD(lParam) == HTCLIENT) {
         POINT point{};
-        if (::GetCursorPos(&point) && ::ScreenToClient(m_hWnd, &point) &&
+        if (::GetCursorPos(&point) && ScreenToClient(&point) &&
             IsSearchClearHit(point)) {
             ::SetCursor(::LoadCursorW(nullptr, IDC_HAND));
             handled = TRUE;
@@ -2090,7 +2180,6 @@ LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_clipboard.Shutdown();
     m_clipboard.SetSaveCallback({});
     m_storage.SetUiWindow(nullptr);
-    RestoreControlSubclasses();
     RemoveTrayIcon();
     m_historyRenderer.Shutdown();
     PostQuitMessage(0);
@@ -2146,7 +2235,7 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
         m_search.SetFocus();
         m_search.SetSel(0, -1);
     } else {
-        ::SetFocus(m_hWnd);
+        SetFocus();
     }
     UpdateWindow();
     m_keyboardHandler.UpdateHistoryHoverFromCursor(m_items, m_historyList, m_pinsList, m_popupVisible);

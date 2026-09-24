@@ -29,7 +29,7 @@ public:
     HistoryRenderer& operator=(const HistoryRenderer&) = delete;
 
     // Lifecycle
-    bool Initialize(HWND owner);
+    bool Initialize(CWindow owner);
     bool UpdateFonts(UINT dpi);
     void Shutdown();
     void PrepareHistory(const std::vector<ClipboardItem> &items);
@@ -88,7 +88,6 @@ private:
     };
 
     AppSettings& m_settings;
-    HWND m_owner = nullptr;
 
     CFont m_normalFont;
     CFont m_smallFont;

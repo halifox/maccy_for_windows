@@ -246,11 +246,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         }
     }
 
-    if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) {
+    const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(com_result)) {
+        const std::wstring message = L"COM 初始化失败。HRESULT：" +
+            std::to_wstring(static_cast<unsigned long>(com_result));
+        MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
         return 1;
     }
-    if (FAILED(_Module.Init(nullptr, instance))) {
+    const HRESULT module_result = _Module.Init(nullptr, instance);
+    if (FAILED(module_result)) {
         CoUninitialize();
+        const std::wstring message = L"WTL 模块初始化失败。HRESULT：" +
+            std::to_wstring(static_cast<unsigned long>(module_result));
+        MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -294,10 +302,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         PreviewWorker preview(storage.Path());
         MainWindow window(storage, preview, std::move(settings), std::move(ignored_lists));
         if (!window.Create(nullptr)) {
+            const DWORD error = GetLastError();
             storage.Stop();
             activation_window.Destroy();
             _Module.Term();
             CoUninitialize();
+            const std::wstring message = L"无法创建主窗口。Windows 错误代码：" +
+                std::to_wstring(error);
+            MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+            return 1;
+        }
+        if (!window.IsInitialized()) {
+            const std::wstring message = window.InitializationError().empty()
+                ? L"主窗口初始化未完成。"
+                : window.InitializationError();
+            window.DestroyWindow();
+            storage.Stop();
+            activation_window.Destroy();
+            _Module.Term();
+            CoUninitialize();
+            MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
             return 1;
         }
         g_mainWindow = &window;
@@ -316,11 +340,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             window.ExitForInstaller();
         }
 
-        MSG message{};
-        while (GetMessageW(&message, nullptr, 0, 0) > 0) {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
+        CMessageLoop messageLoop;
+        _Module.AddMessageLoop(&messageLoop);
+        const int exitCode = messageLoop.Run();
+        _Module.RemoveMessageLoop();
         g_mainWindow = nullptr;
         preview.Stop();
         storage.Stop();
@@ -328,7 +351,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         instance_mutex.Release();
         _Module.Term();
         CoUninitialize();
-        return static_cast<int>(message.wParam);
+        return exitCode;
     } catch (const std::exception &error) {
         g_mainWindow = nullptr;
         MessageBoxA(nullptr, error.what(), "maccy error", MB_OK | MB_ICONERROR);

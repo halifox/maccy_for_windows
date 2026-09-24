@@ -18,6 +18,24 @@
 #include "PinKeys.h"
 #include "TrayIcon.h"
 
+namespace {
+
+std::wstring ReadWindowText(CWindow window) {
+    if (window.m_hWnd == nullptr) {
+        return {};
+    }
+    const int length = window.GetWindowTextLength();
+    if (length <= 0) {
+        return {};
+    }
+    std::wstring text(static_cast<size_t>(length) + 1, L'\0');
+    const int copied = window.GetWindowText(text.data(), length + 1);
+    text.resize(static_cast<size_t>(std::max(copied, 0)));
+    return text;
+}
+
+} // namespace
+
 std::wstring PinTextContent(const ClipboardItem &item) {
     for (const ClipboardFormatData &data : item.data) {
         if (data.format == CF_UNICODETEXT || data.name == L"CF_UNICODETEXT") {
@@ -46,14 +64,10 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     CenterWindow(GetParent());
 
-    CComboBox keyCombo;
-    CEdit titleEdit;
-    CEdit contentEdit;
-    CStatic hintLabel;
-    keyCombo = GetDlgItem(IDC_EDIT_PIN_KEY);
-    titleEdit = GetDlgItem(IDC_EDIT_PIN_TITLE);
-    contentEdit = GetDlgItem(IDC_EDIT_PIN_CONTENT);
-    hintLabel = GetDlgItem(IDC_P_CONTENT_HINT);
+    m_keyCombo = GetDlgItem(IDC_EDIT_PIN_KEY);
+    m_titleEdit = GetDlgItem(IDC_EDIT_PIN_TITLE);
+    m_contentEdit = GetDlgItem(IDC_EDIT_PIN_CONTENT);
+    m_hintLabel = GetDlgItem(IDC_P_CONTENT_HINT);
 
     ClipboardItem &item = m_item;
     m_key = item.pin;
@@ -66,32 +80,32 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     // 只展示策略允许且当前项目可以使用的键位。
     for (const wchar_t ch : PinKeyPolicy::Available(m_pins, m_settings, m_itemId)) {
         std::wstring key(1, ch);
-        keyCombo.AddString(key.c_str());
+        m_keyCombo.AddString(key.c_str());
     }
     if (m_key.size() == 1 &&
-        keyCombo.FindStringExact(-1, m_key.c_str()) == CB_ERR) {
-        keyCombo.AddString(m_key.c_str());
+        m_keyCombo.FindStringExact(-1, m_key.c_str()) == CB_ERR) {
+        m_keyCombo.AddString(m_key.c_str());
     }
 
     // 设置当前键位
-    int keyIndex = keyCombo.FindStringExact(-1, m_key.c_str());
+    int keyIndex = m_keyCombo.FindStringExact(-1, m_key.c_str());
     if (keyIndex != CB_ERR) {
-        keyCombo.SetCurSel(keyIndex);
+        m_keyCombo.SetCurSel(keyIndex);
     }
 
     // 设置标题和内容
-    titleEdit.SetWindowText(m_title.c_str());
+    m_titleEdit.SetWindowText(m_title.c_str());
 
     // 检查是否可编辑文本内容
     m_textEditable = item.has_text && !item.has_image && !item.has_files;
     if (m_textEditable) {
-        contentEdit.SetWindowText(m_originalContent.c_str());
-        contentEdit.EnableWindow(TRUE);
-        hintLabel.SetWindowText(L"");
+        m_contentEdit.SetWindowText(m_originalContent.c_str());
+        m_contentEdit.EnableWindow(TRUE);
+        m_hintLabel.SetWindowText(L"");
     } else {
-        contentEdit.SetWindowText(m_originalContent.c_str());
-        contentEdit.EnableWindow(FALSE);
-        hintLabel.SetWindowText(L"此项目包含格式或非文本内容，无法在此编辑。");
+        m_contentEdit.SetWindowText(m_originalContent.c_str());
+        m_contentEdit.EnableWindow(FALSE);
+        m_hintLabel.SetWindowText(L"此项目包含格式或非文本内容，无法在此编辑。");
     }
 
     return TRUE;
@@ -100,18 +114,11 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     handled = TRUE;
 
-    CComboBox keyCombo;
-    CEdit titleEdit;
-    CEdit contentEdit;
-    keyCombo = GetDlgItem(IDC_EDIT_PIN_KEY);
-    titleEdit = GetDlgItem(IDC_EDIT_PIN_TITLE);
-    contentEdit = GetDlgItem(IDC_EDIT_PIN_CONTENT);
-
     // 读取键位
-    int keyIndex = keyCombo.GetCurSel();
+    int keyIndex = m_keyCombo.GetCurSel();
     if (keyIndex != CB_ERR) {
         wchar_t keyBuffer[256] = {};
-        keyCombo.GetLBText(keyIndex, keyBuffer);
+        m_keyCombo.GetLBText(keyIndex, keyBuffer);
         m_key = keyBuffer;
     }
 
@@ -125,25 +132,11 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     m_key = keyLower;
 
     // 读取标题
-    const int titleLen = titleEdit.GetWindowTextLength();
-    if (titleLen > 0) {
-        std::vector<wchar_t> buffer(titleLen + 1);
-        titleEdit.GetWindowText(buffer.data(), titleLen + 1);
-        m_title = buffer.data();
-    } else {
-        m_title.clear();
-    }
+    m_title = ReadWindowText(m_titleEdit);
 
     // 读取内容（如果可编辑）
     if (m_textEditable) {
-        const int contentLen = contentEdit.GetWindowTextLength();
-        if (contentLen > 0) {
-            std::vector<wchar_t> buffer(contentLen + 1);
-            contentEdit.GetWindowText(buffer.data(), contentLen + 1);
-            m_content = buffer.data();
-        } else {
-            m_content.clear();
-        }
+        m_content = ReadWindowText(m_contentEdit);
 
         if (m_content != m_originalContent) {
             if (MessageBoxW(L"修改内容将保存为纯文本并移除原有格式。继续？", L"修改置顶内容",
@@ -173,25 +166,23 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     CenterWindow(GetParent());
 
-    CEdit valueEdit;
-    CStatic descLabel;
-    valueEdit = GetDlgItem(IDC_EDIT_IGNORE_VALUE);
-    descLabel = GetDlgItem(IDC_I_DESCRIPTION);
+    m_valueEdit = GetDlgItem(IDC_EDIT_IGNORE_VALUE);
+    m_descriptionLabel = GetDlgItem(IDC_I_DESCRIPTION);
 
-    valueEdit.SetWindowText(m_value.c_str());
-    descLabel.SetWindowText(m_description.c_str());
+    m_valueEdit.SetWindowText(m_value.c_str());
+    m_descriptionLabel.SetWindowText(m_description.c_str());
 
     // 如果是新建，设置默认值
     if (m_value.empty()) {
         if (m_ignorePage == 1) {
-            valueEdit.SetWindowText(L"xxx.yyy.zzz");
+            m_valueEdit.SetWindowText(L"xxx.yyy.zzz");
         } else if (m_ignorePage == 2) {
-            valueEdit.SetWindowText(L"^[a-zA-Z0-9]{50}$");
+            m_valueEdit.SetWindowText(L"^[a-zA-Z0-9]{50}$");
         }
     }
 
-    valueEdit.SetSel(0, -1);
-    valueEdit.SetFocus();
+    m_valueEdit.SetSel(0, -1);
+    m_valueEdit.SetFocus();
 
     return FALSE; // 返回 FALSE 表示我们已经设置了焦点
 }
@@ -199,16 +190,7 @@ LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT EditIgnoreDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     handled = TRUE;
 
-    CEdit valueEdit;
-    valueEdit = GetDlgItem(IDC_EDIT_IGNORE_VALUE);
-    const int len = valueEdit.GetWindowTextLength();
-    if (len > 0) {
-        std::vector<wchar_t> buffer(len + 1);
-        valueEdit.GetWindowText(buffer.data(), len + 1);
-        m_value = buffer.data();
-    } else {
-        m_value.clear();
-    }
+    m_value = ReadWindowText(m_valueEdit);
 
     if (m_value.empty()) {
         MessageBoxW(L"值不能为空。", L"错误", MB_OK | MB_ICONWARNING);
@@ -308,20 +290,6 @@ UINT WindowDpi(CWindow window) {
     return USER_DEFAULT_SCREEN_DPI;
 }
 
-std::wstring ReadWindowText(CWindow window) {
-    if (window.m_hWnd == nullptr) {
-        return {};
-    }
-    const int length = window.GetWindowTextLength();
-    if (length <= 0) {
-        return {};
-    }
-    std::wstring text(static_cast<size_t>(length) + 1, L'\0');
-    const int copied = window.GetWindowText(text.data(), length + 1);
-    text.resize(static_cast<size_t>(std::max(copied, 0)));
-    return text;
-}
-
 void UpdateBehaviorHint(CStatic window, bool paste_default, bool plain_default) {
     std::wstring hint = ReadWindowText(window);
     constexpr std::wstring_view marker = L"• 按住 ";
@@ -374,12 +342,6 @@ int ReadValidatedInteger(CEdit window, int fallback, int minimum, int maximum) {
     }
 }
 
-void SetCheck(CButton window, bool checked) {
-    if (window.m_hWnd != nullptr) {
-        window.SetCheck(checked ? BST_CHECKED : BST_UNCHECKED);
-    }
-}
-
 bool IsChecked(CButton window) {
     return window.m_hWnd != nullptr && window.GetCheck() == BST_CHECKED;
 }
@@ -391,12 +353,6 @@ int ComboSelection(CComboBox window, int fallback = 0) {
 
 void AddComboItem(CComboBox combo, const wchar_t *text) {
     combo.AddString(text);
-}
-
-void SelectCombo(CComboBox combo, int index) {
-    if (combo.m_hWnd != nullptr) {
-        combo.SetCurSel(index);
-    }
 }
 
 void SetControlFont(CWindow window) {
@@ -448,58 +404,27 @@ void AddListViewColumn(CListViewCtrl list, int index, int width, const wchar_t *
 }
 
 struct PageDefinition {
-    UINT resource_id;
     const wchar_t *title;
 };
 
 constexpr std::array<PageDefinition, 6> kPageDefinitions = {
-    PageDefinition{IDD_PAGE_GENERAL, L"通用"},
-    PageDefinition{IDD_PAGE_STORAGE, L"存储"},
-    PageDefinition{IDD_PAGE_APPEARANCE, L"外观"},
-    PageDefinition{IDD_PAGE_PINS, L"置顶项"},
-    PageDefinition{IDD_PAGE_IGNORE, L"忽略"},
-    PageDefinition{IDD_PAGE_ADVANCED, L"高级"},
+    PageDefinition{L"通用"},
+    PageDefinition{L"存储"},
+    PageDefinition{L"外观"},
+    PageDefinition{L"置顶项"},
+    PageDefinition{L"忽略"},
+    PageDefinition{L"高级"},
 };
 
 struct IgnorePageDefinition {
-    UINT resource_id;
     const wchar_t *title;
 };
 
 constexpr std::array<IgnorePageDefinition, 3> kIgnorePageDefinitions = {
-    IgnorePageDefinition{IDD_IGNORE_APPLICATIONS, L"忽略应用"},
-    IgnorePageDefinition{IDD_IGNORE_FORMATS, L"忽略剪贴板类型"},
-    IgnorePageDefinition{IDD_IGNORE_REGEXPS, L"正则表达式"},
+    IgnorePageDefinition{L"忽略应用"},
+    IgnorePageDefinition{L"忽略剪贴板类型"},
+    IgnorePageDefinition{L"正则表达式"},
 };
-
-INT_PTR CALLBACK ResourcePageDialogProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-    if (message == WM_INITDIALOG) {
-        auto *owner = reinterpret_cast<SettingsWindow *>(lParam);
-        ::SetWindowLongPtrW(window, DWLP_USER, reinterpret_cast<LONG_PTR>(owner));
-        return TRUE;
-    }
-
-    auto *owner = reinterpret_cast<SettingsWindow *>(
-        ::GetWindowLongPtrW(window, DWLP_USER)
-    );
-    if (owner != nullptr && ::IsWindow(owner->Window()) &&
-        (message == WM_COMMAND || message == WM_NOTIFY)) {
-        owner->SendMessage(message, wParam, lParam);
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-HWND CreateResourcePage(UINT resource_id, HWND parent, SettingsWindow *owner) {
-    return ::CreateDialogParamW(
-        ::GetModuleHandleW(nullptr),
-        MAKEINTRESOURCEW(resource_id),
-        parent,
-        ResourcePageDialogProc,
-        reinterpret_cast<LPARAM>(owner)
-    );
-}
 
 HotKeyConfig HotKeyFromControl(const CHotKeyCtrl &control) {
     WORD virtual_key = 0;
@@ -552,7 +477,7 @@ void SettingsWindow::SetStateSnapshot(
             m_ignorePageObjects[page]->SetValues(m_ignoredLists[page]);
         }
     }
-    if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+    if (m_hWnd != nullptr && IsWindow()) {
         LoadControlsFromSettings();
     }
 }
@@ -565,7 +490,7 @@ void SettingsWindow::SetUpdateCheckBusy(bool busy) {
 }
 
 bool SettingsWindow::CreateOrShow() {
-    if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+    if (m_hWnd != nullptr && IsWindow()) {
         LoadControlsFromSettings();
         SetWindowPos(
             HWND_NOTOPMOST,
@@ -586,7 +511,7 @@ bool SettingsWindow::CreateOrShow() {
         return false;
     }
 
-    HMONITOR monitor = ::MonitorFromWindow(m_owner, MONITOR_DEFAULTTONEAREST);
+    HMONITOR monitor = ::MonitorFromWindow(m_owner.m_hWnd, MONITOR_DEFAULTTONEAREST);
     if (monitor == nullptr) {
         monitor = ::MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTOPRIMARY);
     }
@@ -610,7 +535,7 @@ bool SettingsWindow::CreateOrShow() {
 
 void SettingsWindow::DestroyForOwner() {
     m_destroying = true;
-    if (m_hWnd != nullptr && ::IsWindow(m_hWnd)) {
+    if (m_hWnd != nullptr && IsWindow()) {
         DestroyWindow();
     }
 }
@@ -633,17 +558,12 @@ bool SettingsWindow::CreatePageWindows() {
     }
 
     for (size_t page = 0; page < kPageDefinitions.size(); ++page) {
-        m_pages[page] = CreateResourcePage(
-            kPageDefinitions[page].resource_id,
-            m_tabs.m_hWnd,
-            this
-        );
-        if (m_pages[page].m_hWnd == nullptr) {
+        if (m_pages[page]->CreatePage(m_tabs.m_hWnd, *this) == nullptr) {
             return false;
         }
     }
 
-    const CWindow ignoreTabWindow = m_pages[kPageIgnore].GetDlgItem(kIgnoreTabs);
+    const CWindow ignoreTabWindow = m_pages[kPageIgnore]->Control(kIgnoreTabs);
     if (ignoreTabWindow.m_hWnd == nullptr) {
         return false;
     }
@@ -657,12 +577,7 @@ bool SettingsWindow::CreatePageWindows() {
     }
 
     for (size_t page = 0; page < kIgnorePageDefinitions.size(); ++page) {
-        m_ignorePages[page] = CreateResourcePage(
-            kIgnorePageDefinitions[page].resource_id,
-            m_ignoreTabs.m_hWnd,
-            this
-        );
-        if (m_ignorePages[page].m_hWnd == nullptr) {
+        if (m_ignorePages[page]->CreatePage(m_ignoreTabs.m_hWnd, *this) == nullptr) {
             return false;
         }
     }
@@ -675,7 +590,7 @@ bool SettingsWindow::CreatePageWindows() {
     for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
         if (m_ignorePageObjects[page] != nullptr) {
             m_ignorePageObjects[page]->Initialize(
-                m_ignorePages[page],
+                m_ignorePages[page]->Window(),
                 m_storage,
                 m_ignoredLists[page]
             );
@@ -687,60 +602,42 @@ bool SettingsWindow::CreatePageWindows() {
 
 void SettingsWindow::BindControls() {
     const auto get = [this](int page, int id) {
-        return m_pages[static_cast<size_t>(page)].GetDlgItem(id);
+        return m_pages[static_cast<size_t>(page)]->Control(id);
     };
 
-    m_gLaunch = get(kPageGeneral, kGLaunch);
-    m_gUpdates = get(kPageGeneral, kGUpdates);
     m_gCheckNow = get(kPageGeneral, kGCheckNow);
     m_gBehaviorHint = get(kPageGeneral, IDC_G_BEHAVIOR_HINT);
     m_gOpenHotKey = get(kPageGeneral, kGOpenHotKey);
     m_gPinHotKey = get(kPageGeneral, kGPinHotKey);
     m_gDeleteHotKey = get(kPageGeneral, kGDeleteHotKey);
     m_gPreviewHotKey = get(kPageGeneral, kGPreviewHotKey);
-    m_gSearchMode = get(kPageGeneral, kGSearchMode);
     m_gPasteByDefault = get(kPageGeneral, kGPasteByDefault);
     m_gRemoveFormatting = get(kPageGeneral, kGRemoveFormatting);
 
     m_aPopupPosition = get(kPageAppearance, kAPopupPosition);
-    m_aPopupScreen = get(kPageAppearance, kAPopupScreen);
     m_aResetPosition = get(kPageAppearance, kAResetPosition);
-    m_aPinTo = get(kPageAppearance, kAPinTo);
     m_aImageHeight = get(kPageAppearance, kAImageHeight);
     m_aOpenPreview = get(kPageAppearance, kAOpenPreview);
     m_aPreviewDelay = get(kPageAppearance, kAPreviewDelay);
-    m_aHighlight = get(kPageAppearance, kAHighlight);
     m_aMenuIcon = get(kPageAppearance, kAMenuIcon);
     m_aShowStatus = get(kPageAppearance, kAShowStatus);
     m_aShowSearch = get(kPageAppearance, kAShowSearch);
     m_aSearchVisibility = get(kPageAppearance, kASearchVisibility);
     m_aShowTitle = get(kPageAppearance, kAShowTitle);
-    m_aShowFooter = get(kPageAppearance, kAShowFooter);
-    m_aShowSpecial = get(kPageAppearance, kAShowSpecial);
-    m_aShowIcons = get(kPageAppearance, kAShowIcons);
-    m_aShowSwatch = get(kPageAppearance, kAShowSwatch);
 
-    m_sSaveFiles = get(kPageStorage, kSSaveFiles);
-    m_sSaveImages = get(kPageStorage, kSSaveImages);
-    m_sSaveText = get(kPageStorage, kSSaveText);
     m_sHistorySize = get(kPageStorage, kSHistorySize);
-    m_sSortBy = get(kPageStorage, kSSortBy);
     m_sStorageSize = get(kPageStorage, kSStorageSize);
     m_sCurrentSize = get(kPageStorage, kSCurrentSize);
 
     m_pList = get(kPagePins, kPList);
-    m_iWhitelist = m_ignorePages[0].GetDlgItem(kIWhitelist);
-
     m_xIgnoreEvents = get(kPageAdvanced, kXIgnoreEvents);
     m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
-    m_xClearOnQuit = get(kPageAdvanced, kXClearOnQuit);
-    m_xClearClipboard = get(kPageAdvanced, kXClearClipboard);
-    m_xRespectWindowsClipboardHistory = get(kPageAdvanced, kXRespectWindowsClipboardHistory);
 
-    AddComboItem(m_gSearchMode, L"精确");
-    AddComboItem(m_gSearchMode, L"模糊");
-    AddComboItem(m_gSearchMode, L"正则表达式");
-    AddComboItem(m_gSearchMode, L"混合");
+    CComboBox searchMode(get(kPageGeneral, kGSearchMode).m_hWnd);
+    AddComboItem(searchMode, L"精确");
+    AddComboItem(searchMode, L"模糊");
+    AddComboItem(searchMode, L"正则表达式");
+    AddComboItem(searchMode, L"混合");
 
     AddComboItem(m_aPopupPosition, L"光标");
     AddComboItem(m_aPopupPosition, L"菜单栏图标");
@@ -748,13 +645,15 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_aPopupPosition, L"屏幕中央");
     AddComboItem(m_aPopupPosition, L"最后位置");
 
-    AddComboItem(m_aPinTo, L"顶部");
-    AddComboItem(m_aPinTo, L"底部");
+    CComboBox pinTo(get(kPageAppearance, kAPinTo).m_hWnd);
+    AddComboItem(pinTo, L"顶部");
+    AddComboItem(pinTo, L"底部");
 
-    AddComboItem(m_aHighlight, L"颜色");
-    AddComboItem(m_aHighlight, L"粗体");
-    AddComboItem(m_aHighlight, L"斜体");
-    AddComboItem(m_aHighlight, L"强调");
+    CComboBox highlight(get(kPageAppearance, kAHighlight).m_hWnd);
+    AddComboItem(highlight, L"颜色");
+    AddComboItem(highlight, L"粗体");
+    AddComboItem(highlight, L"斜体");
+    AddComboItem(highlight, L"强调");
 
     AddComboItem(m_aMenuIcon, L"maccy");
     AddComboItem(m_aMenuIcon, L"剪贴板");
@@ -764,9 +663,10 @@ void SettingsWindow::BindControls() {
     AddComboItem(m_aSearchVisibility, L"始终");
     AddComboItem(m_aSearchVisibility, L"在搜索过程中");
 
-    AddComboItem(m_sSortBy, L"上次复制时间");
-    AddComboItem(m_sSortBy, L"首次复制时间");
-    AddComboItem(m_sSortBy, L"复制次数");
+    CComboBox sortBy(get(kPageStorage, kSSortBy).m_hWnd);
+    AddComboItem(sortBy, L"上次复制时间");
+    AddComboItem(sortBy, L"首次复制时间");
+    AddComboItem(sortBy, L"复制次数");
 
     ConfigureIgnoreList();
     ConfigurePinsList();
@@ -789,7 +689,7 @@ void SettingsWindow::ConfigureIgnoreList() {
 
     for (size_t index = 0; index < m_ignorePages.size(); ++index) {
         CListViewCtrl list;
-        list = m_ignorePages[index].GetDlgItem(kIList);
+        list = m_ignorePages[index]->Control(kIList);
         ConfigureListView(list, index != 0, false);
         AddListViewColumn(list, 0, 100, L"");
         if (index == 0 && !m_ignoreImageList.IsNull()) {
@@ -812,8 +712,9 @@ void SettingsWindow::SetPage(int page) {
     }
 
     for (size_t index = 0; index < m_pages.size(); ++index) {
-        if (m_pages[index].m_hWnd != nullptr) {
-            m_pages[index].ShowWindow(
+        CWindow pageWindow = m_pages[index]->Window();
+        if (pageWindow.m_hWnd != nullptr) {
+            pageWindow.ShowWindow(
                 static_cast<int>(index) == m_currentPage ? SW_SHOW : SW_HIDE
             );
         }
@@ -845,50 +746,29 @@ void SettingsWindow::SetIgnorePage(int page) {
 }
 
 void SettingsWindow::LoadGeneralControls() {
-    SetCheck(m_gLaunch, m_settings.launch_at_login);
-    SetCheck(m_gUpdates, m_settings.check_for_updates);
+    auto &page = *m_pages[kPageGeneral];
+    page.LoadSettings(m_settings);
+    page.ExchangeSettings(DDX_LOAD);
     SetHotKeyControl(m_gOpenHotKey, m_settings.open_hotkey);
     SetHotKeyControl(m_gPinHotKey, m_settings.pin_hotkey);
     SetHotKeyControl(m_gDeleteHotKey, m_settings.delete_hotkey);
     SetHotKeyControl(m_gPreviewHotKey, m_settings.preview_hotkey);
-    SelectCombo(m_gSearchMode, static_cast<int>(m_settings.search_mode));
-    SetCheck(m_gPasteByDefault, m_settings.paste_by_default);
-    SetCheck(m_gRemoveFormatting, m_settings.remove_formatting_by_default);
 }
 
 void SettingsWindow::LoadAppearanceControls() {
-    SelectCombo(m_aPopupPosition, static_cast<int>(m_settings.popup_position));
-    m_aPopupScreen.ResetContent();
+    CComboBox popupScreen(m_pages[kPageAppearance]->Control(kAPopupScreen).m_hWnd);
+    popupScreen.ResetContent();
     const int monitor_count = std::max(1, GetSystemMetrics(SM_CMONITORS));
-    AddComboItem(m_aPopupScreen, L"活动屏幕");
+    AddComboItem(popupScreen, L"活动屏幕");
     for (int index = 0; index < monitor_count; ++index) {
         const std::wstring name = L"显示器 " + std::to_wstring(index + 1);
-        AddComboItem(m_aPopupScreen, name.c_str());
+        AddComboItem(popupScreen, name.c_str());
     }
-    SelectCombo(m_aPopupScreen, std::clamp(m_settings.popup_screen, 0, monitor_count));
-    SelectCombo(m_aPinTo, static_cast<int>(m_settings.pin_to));
+    auto &page = *m_pages[kPageAppearance];
+    page.LoadSettings(m_settings);
+    page.ExchangeSettings(DDX_LOAD);
     m_aImageHeight.SetWindowText(std::to_wstring(m_settings.image_max_height).c_str());
-    SetCheck(m_aOpenPreview, m_settings.open_preview_automatically);
     m_aPreviewDelay.SetWindowText(std::to_wstring(m_settings.preview_delay).c_str());
-    SelectCombo(m_aHighlight, static_cast<int>(m_settings.highlight_match));
-
-    const std::array<std::wstring, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
-    int icon_index = 0;
-    for (size_t index = 0; index < icons.size(); ++index) {
-        if (icons[index] == m_settings.menu_icon) {
-            icon_index = static_cast<int>(index);
-            break;
-        }
-    }
-    SelectCombo(m_aMenuIcon, icon_index);
-    SetCheck(m_aShowStatus, m_settings.show_in_status_bar);
-    SetCheck(m_aShowSearch, m_settings.show_search);
-    SelectCombo(m_aSearchVisibility, static_cast<int>(m_settings.search_visibility));
-    SetCheck(m_aShowTitle, m_settings.show_title);
-    SetCheck(m_aShowFooter, m_settings.show_footer);
-    SetCheck(m_aShowSpecial, m_settings.show_special_symbols);
-    SetCheck(m_aShowIcons, m_settings.show_application_icons);
-    SetCheck(m_aShowSwatch, m_settings.show_hex_color_swatch);
     m_aPreviewDelay.EnableWindow(m_settings.open_preview_automatically);
     UpdateDependencies();
 }
@@ -908,11 +788,10 @@ void SettingsWindow::UpdateDependencies() {
 }
 
 void SettingsWindow::LoadStorageControls() {
-    SetCheck(m_sSaveFiles, m_settings.save_files);
-    SetCheck(m_sSaveImages, m_settings.save_images);
-    SetCheck(m_sSaveText, m_settings.save_text);
+    auto &page = *m_pages[kPageStorage];
+    page.LoadSettings(m_settings);
+    page.ExchangeSettings(DDX_LOAD);
     m_sHistorySize.SetWindowText(std::to_wstring(m_settings.history_size).c_str());
-    SelectCombo(m_sSortBy, m_settings.sort_by);
     const std::uintmax_t storage_bytes = m_storage.StorageBytes();
     const sqlite3_int64 current_count = m_storage.CountItems();
     m_sStorageSize.SetWindowText(FormatByteCount(storage_bytes).c_str());
@@ -922,14 +801,9 @@ void SettingsWindow::LoadStorageControls() {
 }
 
 void SettingsWindow::LoadAdvancedControls() {
-    SetCheck(m_xIgnoreEvents, m_settings.ignore_events);
-    SetCheck(m_xIgnoreNext, m_settings.ignore_only_next_event);
-    SetCheck(m_xClearOnQuit, m_settings.clear_on_quit);
-    SetCheck(m_xClearClipboard, m_settings.clear_system_clipboard);
-    SetCheck(
-        m_xRespectWindowsClipboardHistory,
-        m_settings.respect_windows_clipboard_history_markers
-    );
+    auto &page = *m_pages[kPageAdvanced];
+    page.LoadSettings(m_settings);
+    page.ExchangeSettings(DDX_LOAD);
     m_xIgnoreNext.EnableWindow(m_settings.ignore_events);
 }
 
@@ -942,7 +816,8 @@ void SettingsWindow::LoadControlsFromSettings() {
 
     // The whitelist belongs to the applications page.
     if (m_ignorePageObjects[0] != nullptr) {
-        SetCheck(m_iWhitelist, m_settings.ignore_all_apps_except_listed);
+        m_ignorePages[0]->LoadSettings(m_settings);
+        m_ignorePages[0]->ExchangeSettings(DDX_LOAD);
     }
 
     m_loading = false;
@@ -1034,72 +909,49 @@ void SettingsWindow::SaveCurrentPage() {
     try {
         switch (m_currentPage) {
         case kPageGeneral:
-            m_settings.launch_at_login = IsChecked(m_gLaunch);
-            m_settings.check_for_updates = IsChecked(m_gUpdates);
+            m_pages[kPageGeneral]->AttachSettings(m_settings);
+            m_pages[kPageGeneral]->ExchangeSettings(DDX_SAVE);
             m_settings.open_hotkey = HotKeyFromControl(m_gOpenHotKey);
             m_settings.pin_hotkey = HotKeyFromControl(m_gPinHotKey);
             m_settings.delete_hotkey = HotKeyFromControl(m_gDeleteHotKey);
             m_settings.preview_hotkey = HotKeyFromControl(m_gPreviewHotKey);
-            m_settings.search_mode = static_cast<SearchMode>(ComboSelection(m_gSearchMode));
-            m_settings.paste_by_default = IsChecked(m_gPasteByDefault);
-            m_settings.remove_formatting_by_default = IsChecked(m_gRemoveFormatting);
             break;
         case kPageAppearance: {
-            m_settings.popup_position = static_cast<PopupPosition>(ComboSelection(m_aPopupPosition));
-            m_settings.popup_screen = ComboSelection(m_aPopupScreen);
-            m_settings.pin_to = static_cast<PinPosition>(ComboSelection(m_aPinTo));
+            m_pages[kPageAppearance]->AttachSettings(m_settings);
+            m_pages[kPageAppearance]->ExchangeSettings(DDX_SAVE);
             m_settings.image_max_height = ReadValidatedInteger(
                 m_aImageHeight,
                 m_settings.image_max_height,
                 1,
                 200
             );
-            m_settings.open_preview_automatically = IsChecked(m_aOpenPreview);
             m_settings.preview_delay = ReadValidatedInteger(
                 m_aPreviewDelay,
                 m_settings.preview_delay,
                 200,
                 100000
             );
-            m_settings.highlight_match = static_cast<HighlightMatch>(ComboSelection(m_aHighlight));
-            const std::array<const wchar_t *, 4> icons = {L"maccy", L"clipboard", L"scissors", L"paperclip"};
-            m_settings.menu_icon = icons[static_cast<size_t>(std::clamp(ComboSelection(m_aMenuIcon), 0, 3))];
-            m_settings.show_in_status_bar = IsChecked(m_aShowStatus);
-            m_settings.show_search = IsChecked(m_aShowSearch);
-            m_settings.search_visibility = static_cast<SearchVisibility>(ComboSelection(m_aSearchVisibility));
-            m_settings.show_title = IsChecked(m_aShowTitle);
-            m_settings.show_footer = IsChecked(m_aShowFooter);
-            m_settings.show_special_symbols = IsChecked(m_aShowSpecial);
-            m_settings.show_application_icons = IsChecked(m_aShowIcons);
-            m_settings.show_hex_color_swatch = IsChecked(m_aShowSwatch);
             break;
         }
         case kPageStorage:
-            m_settings.save_files = IsChecked(m_sSaveFiles);
-            m_settings.save_images = IsChecked(m_sSaveImages);
-            m_settings.save_text = IsChecked(m_sSaveText);
+            m_pages[kPageStorage]->AttachSettings(m_settings);
+            m_pages[kPageStorage]->ExchangeSettings(DDX_SAVE);
             m_settings.history_size = ReadValidatedInteger(
                 m_sHistorySize,
                 m_settings.history_size,
                 1,
                 999
             );
-            m_settings.sort_by = std::clamp(ComboSelection(m_sSortBy), 0, 2);
             break;
         case kPageIgnore:
-            // 从 IgnoreFormatsPage 获取 whitelist 复选框状态
             if (m_ignorePageObjects[0] != nullptr) {
-                m_settings.ignore_all_apps_except_listed = IsChecked(m_iWhitelist);
+                m_ignorePages[0]->AttachSettings(m_settings);
+                m_ignorePages[0]->ExchangeSettings(DDX_SAVE);
             }
             break;
         case kPageAdvanced:
-            m_settings.ignore_events = IsChecked(m_xIgnoreEvents);
-            m_settings.ignore_only_next_event = IsChecked(m_xIgnoreNext);
-            m_settings.clear_on_quit = IsChecked(m_xClearOnQuit);
-            m_settings.clear_system_clipboard = IsChecked(m_xClearClipboard);
-            m_settings.respect_windows_clipboard_history_markers = IsChecked(
-                m_xRespectWindowsClipboardHistory
-            );
+            m_pages[kPageAdvanced]->AttachSettings(m_settings);
+            m_pages[kPageAdvanced]->ExchangeSettings(DDX_SAVE);
             break;
         default:
             break;
@@ -1239,8 +1091,8 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     SetWindowText(L"偏好设置");
     m_windowIcon = LoadApplicationIcon();
     if (m_windowIcon != nullptr) {
-        SendMessage(WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(m_windowIcon));
-        SendMessage(WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(m_windowIcon));
+        SetIcon(m_windowIcon, TRUE);
+        SetIcon(m_windowIcon, FALSE);
     }
     ModifyStyleEx(
         WS_EX_TOOLWINDOW,
@@ -1428,8 +1280,8 @@ LRESULT SettingsWindow::OnPinsListKeyDown(int, LPNMHDR header, BOOL &handled) {
 LRESULT SettingsWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     if (m_windowIcon != nullptr) {
-        SendMessage(WM_SETICON, ICON_BIG, 0);
-        SendMessage(WM_SETICON, ICON_SMALL, 0);
+        SetIcon(nullptr, TRUE);
+        SetIcon(nullptr, FALSE);
         ::DestroyIcon(m_windowIcon);
         m_windowIcon = nullptr;
     }

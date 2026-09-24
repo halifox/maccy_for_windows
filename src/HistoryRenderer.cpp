@@ -24,16 +24,16 @@ constexpr int kHistoryItemSlot = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
 
-std::wstring ReadWindowText(HWND window) {
-    if (window == nullptr) {
+std::wstring ReadWindowText(CWindow window) {
+    if (window.m_hWnd == nullptr) {
         return {};
     }
-    const int length = GetWindowTextLengthW(window);
+    const int length = window.GetWindowTextLength();
     if (length <= 0) {
         return {};
     }
     std::wstring text(static_cast<size_t>(length) + 1, L'\0');
-    const int copied = GetWindowTextW(window, text.data(), length + 1);
+    const int copied = window.GetWindowText(text.data(), length + 1);
     text.resize(static_cast<size_t>(std::max(copied, 0)));
     return text;
 }
@@ -86,9 +86,8 @@ HistoryRenderer::~HistoryRenderer() {
     Shutdown();
 }
 
-bool HistoryRenderer::Initialize(HWND owner) {
-    m_owner = owner;
-    return UpdateFonts(UiFont::DpiForWindow(owner));
+bool HistoryRenderer::Initialize(CWindow owner) {
+    return UpdateFonts(UiFont::DpiForWindow(owner.m_hWnd));
 }
 
 bool HistoryRenderer::UpdateFonts(UINT dpi) {
@@ -576,7 +575,7 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         }
         return;
     }
-    const auto title = ReadWindowText(draw->hwndItem);
+    const auto title = ReadWindowText(CWindow(draw->hwndItem));
     DrawTextW(draw->hDC, title.c_str(), -1, &rect, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | (index < 0 ? DT_CENTER : DT_LEFT));
     if (index >= 0) {
         const wchar_t* keys[] = {(GetKeyState(VK_SHIFT) & 0x8000) ? L"Ctrl+Alt+Shift+Backspace" : L"Ctrl+Alt+Backspace", L"Ctrl+,", L"", L"Ctrl+Q"};

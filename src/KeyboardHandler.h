@@ -73,7 +73,7 @@ public:
     void FocusSearchOrPopup(CEdit& search, CWindow mainWindow, bool searchVisible);
 
     // IME
-    bool IsComposing(HWND window) const;
+    bool IsComposing(CWindow window) const;
     void SetImeComposing(bool composing) { m_imeComposing = composing; }
 
     // Helper for list operations
