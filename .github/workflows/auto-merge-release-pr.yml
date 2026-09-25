@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Verify the successful CI run belongs to a Release Please PR
         id: release-pr
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const workflowRun = context.payload.workflow_run;
@@ -64,7 +64,7 @@ jobs:
 
       - name: Enable squash auto-merge for the tested Release Please PR
         if: steps.release-pr.outputs.number != ''
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           RELEASE_PR_NUMBER: ${{ steps.release-pr.outputs.number }}
           RELEASE_PR_HEAD_SHA: ${{ steps.release-pr.outputs.head-sha }}
