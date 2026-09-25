@@ -9,7 +9,7 @@
 
 ### Added
 
-- Added application controller to manage clipboard and preview operations, with improved event handling and reduced direct dependencies
+- Added application controller to manage clipboard and preview operations, with improved event handling and reduced direct dependencies, now used in CI and release workflows
 - Added experimental tray icon management with improved icon loading and updating
 - Added visual indicator for search clear button in history view, with improved interaction and feedback
 

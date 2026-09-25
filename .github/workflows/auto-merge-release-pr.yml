@@ -1,0 +1,115 @@
+name: Auto-merge Release Please PR
+
+on:
+  workflow_run:
+    workflows:
+      - Windows CI
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  enable-auto-merge:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify the successful CI run belongs to a Release Please PR
+        id: release-pr
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const workflowRun = context.payload.workflow_run;
+            const runPullRequest = (workflowRun.pull_requests || []).find(
+              pullRequest => pullRequest.base?.ref === 'master'
+            );
+            if (!runPullRequest) {
+              core.notice('The successful CI run is not associated with a PR targeting master.');
+              return;
+            }
+
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: runPullRequest.number
+            });
+            const isReleasePleasePr =
+              pullRequest.base.ref === 'master' &&
+              pullRequest.head.ref === 'release-please--branches--master' &&
+              pullRequest.user?.type === 'Bot' &&
+              pullRequest.labels.some(label => label.name === 'autorelease: pending') &&
+              pullRequest.body?.includes('Release Please');
+
+            if (!isReleasePleasePr) {
+              core.notice('The PR is not an open Release Please release PR.');
+              return;
+            }
+            if (pullRequest.state !== 'open' || pullRequest.draft) {
+              core.notice('The Release Please PR is closed or still a draft.');
+              return;
+            }
+
+            const testedHeadSha = runPullRequest.head?.sha || workflowRun.head_sha;
+            if (testedHeadSha !== pullRequest.head.sha) {
+              core.notice('The successful CI run tested an older PR commit; waiting for the latest CI run.');
+              return;
+            }
+
+            core.setOutput('number', String(pullRequest.number));
+            core.setOutput('head-sha', pullRequest.head.sha);
+
+      - name: Create GitHub App token
+        if: steps.release-pr.outputs.number != ''
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Enable squash auto-merge for the tested Release Please PR
+        if: steps.release-pr.outputs.number != ''
+        uses: actions/github-script@v8
+        env:
+          RELEASE_PR_NUMBER: ${{ steps.release-pr.outputs.number }}
+          RELEASE_PR_HEAD_SHA: ${{ steps.release-pr.outputs.head-sha }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const pullNumber = Number(process.env.RELEASE_PR_NUMBER);
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber
+            });
+            const isReleasePleasePr =
+              pullRequest.base.ref === 'master' &&
+              pullRequest.head.ref === 'release-please--branches--master' &&
+              pullRequest.user?.type === 'Bot' &&
+              pullRequest.labels.some(label => label.name === 'autorelease: pending') &&
+              pullRequest.body?.includes('Release Please');
+            if (!isReleasePleasePr || pullRequest.state !== 'open' || pullRequest.draft) {
+              core.notice('The PR no longer matches the open Release Please PR conditions.');
+              return;
+            }
+            if (pullRequest.head.sha !== process.env.RELEASE_PR_HEAD_SHA) {
+              core.notice('The Release Please PR changed after verification; waiting for the latest CI run.');
+              return;
+            }
+
+            await github.graphql(
+              `mutation($pullRequestId: ID!) {
+                enablePullRequestAutoMerge(input: {
+                  pullRequestId: $pullRequestId,
+                  mergeMethod: SQUASH
+                }) {
+                  pullRequest { number }
+                }
+              }`,
+              { pullRequestId: pullRequest.node_id }
+            );

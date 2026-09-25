@@ -9,10 +9,51 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  conventional-commits:
+    name: Conventional Commits
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request and commit subjects
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const allowedTypes = new Set([
+              'feat', 'fix', 'docs', 'ci', 'chore', 'build', 'test',
+              'refactor', 'style', 'perf'
+            ]);
+            const headerPattern = /^([a-z][a-z0-9-]*)(?:\(([A-Za-z0-9][A-Za-z0-9._/-]*)\))?(!)?: .+$/;
+            const pullRequest = context.payload.pull_request;
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullRequest.number,
+              per_page: 100
+            });
+            const messages = [
+              ['PR title', pullRequest.title],
+              ...commits.map(commit => [
+                `commit ${commit.sha.slice(0, 7)}`,
+                commit.commit.message.split(/\r?\n/, 1)[0]
+              ])
+            ];
+
+            const errors = [];
+            for (const [source, header] of messages) {
+              const match = header.match(headerPattern);
+              if (!match || !allowedTypes.has(match[1])) {
+                errors.push(`${source} must use an allowed Conventional Commit header: ${header}`);
+              }
+            }
+            if (errors.length > 0) {
+              core.setFailed(errors.join('\n'));
+            }
+
   build:
-    name: ${{ matrix.configuration }} x64
+    name: ${{ matrix.configuration }} ${{ matrix.platform.arch }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -20,6 +61,11 @@ jobs:
         configuration:
           - Debug
           - Release
+        platform:
+          - arch: x64
+            triplet: x64-windows-static-md
+          - arch: x86
+            triplet: x86-windows-static-md
 
     steps:
       - name: Check out source
@@ -32,9 +78,9 @@ jobs:
             '-S', '.',
             '-B', "build/${{ matrix.configuration }}-vcpkg",
             '-G', 'Visual Studio 18 2026',
-            '-A', 'x64',
+            '-A', '${{ matrix.platform.arch }}',
             "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake",
-            '-DVCPKG_TARGET_TRIPLET=x64-windows-static-md'
+            '-DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }}'
           )
           if ($env:GITHUB_REF_NAME -match '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
             $cmakeArgs += "-DMACCY_VERSION=$($Matches[1])"
@@ -85,6 +131,6 @@ jobs:
       - name: Upload staging tree
         uses: actions/upload-artifact@v7
         with:
-          name: maccy-${{ matrix.configuration }}-x64
+          name: maccy-${{ matrix.configuration }}-${{ matrix.platform.arch }}
           path: build/${{ matrix.configuration }}-vcpkg/install
           if-no-files-found: error

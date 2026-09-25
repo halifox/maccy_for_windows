@@ -85,10 +85,10 @@ NSIS 安装程序仅为当前 Windows 用户安装到 `%LOCALAPPDATA%\Programs\m
 在 Visual Studio x64 Developer PowerShell 的仓库根目录运行下面这一条命令，即可完成 Release 配置、编译，并生成 NSIS 安装程序和 SHA-256 校验文件：
 
 ```powershell
-cmake -DVCPKG_ROOT=C:/dev/vcpkg -DMACCY_VERSION="1.0.0" -P cmake/package-x64.cmake
+cmake -DVCPKG_ROOT=C:/dev/vcpkg -P cmake/package-x64.cmake
 ```
 
-`VCPKG_ROOT` 指向 vcpkg 根目录，`MACCY_VERSION` 默认为 `1.0.0`。首次运行会通过 `vcpkg.json` 安装依赖；产物和校验文件写入 `build/packages/`。脚本使用 x64 Visual Studio Release 配置，版本号会写入程序和安装包。
+`VCPKG_ROOT` 指向 vcpkg 根目录，默认版本从根目录的 `version.txt` 读取。需要临时覆盖时可传入 `-DMACCY_VERSION="X.Y.Z"`。首次运行会通过 `vcpkg.json` 安装依赖；产物和校验文件写入 `build/packages/`。脚本使用 x64 Visual Studio Release 配置，版本号会写入程序和安装包。
 
 ## 数据、隐私和删除
 

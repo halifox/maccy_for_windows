@@ -4,12 +4,6 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: '语义化版本号，例如 1.0.0'
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -30,6 +24,10 @@ jobs:
             throw "Release tag '$env:GITHUB_REF_NAME' must use the vX.Y.Z format."
           }
           $tagVersion = $Matches[1]
+          $versionFileValue = (Get-Content -LiteralPath 'version.txt' -Raw).Trim()
+          if ($versionFileValue -ne $tagVersion) {
+            throw "Tag version $tagVersion does not match version.txt ($versionFileValue)."
+          }
           "Release version: $tagVersion"
           "MACCY_RELEASE_VERSION=$tagVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
@@ -68,24 +66,54 @@ jobs:
       - name: Create checksums
         shell: pwsh
         run: |
-          $assets = @(Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'MaccyForWindows-*' -and $_.Extension -eq '.exe' })
-          if ($assets.Count -lt 1) {
-            throw 'Expected an NSIS installer was not produced.'
+          $installerName = "MaccyForWindows-$env:MACCY_RELEASE_VERSION-x64.exe"
+          $installer = Get-Item -LiteralPath $installerName -ErrorAction SilentlyContinue
+          if ($null -eq $installer) {
+            throw "Expected NSIS installer '$installerName' was not produced."
           }
-          $lines = foreach ($asset in $assets | Sort-Object Name) {
-            $hash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($asset.Name)"
-          }
+          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $lines = @("$hash  $($installer.Name)")
           [System.IO.File]::WriteAllLines((Join-Path (Get-Location) 'SHA256SUMS.txt'), $lines)
 
-      - name: Publish GitHub Release
+      - name: Upload assets to the existing draft Release and publish it
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" --repo "$env:GITHUB_REPOSITORY" --title "$env:GITHUB_REF_NAME" --generate-notes
-          $assets = @(
-            (Get-ChildItem -LiteralPath . -File | Where-Object { $_.Name -like 'MaccyForWindows-*.exe' }).FullName
-            (Join-Path (Get-Location) 'SHA256SUMS.txt')
-          )
+          $releaseEndpoint = "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME"
+          $releaseResponse = gh api $releaseEndpoint
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release Please did not create a Release for tag '$env:GITHUB_REF_NAME'."
+          }
+          $release = $releaseResponse | ConvertFrom-Json
+          if ($release.tag_name -ne $env:GITHUB_REF_NAME -or -not $release.draft) {
+            throw "Expected an existing draft Release for tag '$env:GITHUB_REF_NAME'."
+          }
+
+          $installerName = "MaccyForWindows-$env:MACCY_RELEASE_VERSION-x64.exe"
+          $installer = Get-Item -LiteralPath $installerName -ErrorAction SilentlyContinue
+          if ($null -eq $installer) {
+            throw "Expected installer '$installerName' is missing."
+          }
+          $assets = @($installer.FullName, (Join-Path (Get-Location) 'SHA256SUMS.txt'))
           gh release upload "$env:GITHUB_REF_NAME" $assets --repo "$env:GITHUB_REPOSITORY" --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Uploading the installer and SHA-256 file failed; the Release remains a draft.'
+          }
+
+          $publishedReleaseResponse = gh api "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not verify uploaded Release assets; the Release remains a draft.'
+          }
+          $publishedRelease = $publishedReleaseResponse | ConvertFrom-Json
+          $uploadedNames = @($publishedRelease.assets | ForEach-Object { $_.name })
+          foreach ($requiredName in @($installerName, 'SHA256SUMS.txt')) {
+            if ($uploadedNames -notcontains $requiredName) {
+              throw "Release asset '$requiredName' is missing; the Release remains a draft."
+            }
+          }
+
+          gh api "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" --method PATCH --field draft=false | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Publishing the Release failed; it remains a draft.'
+          }
