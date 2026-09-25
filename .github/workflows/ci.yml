@@ -63,8 +63,10 @@ jobs:
           - Release
         platform:
           - arch: x64
+            vs_platform: x64
             triplet: x64-windows-static-md
           - arch: x86
+            vs_platform: Win32
             triplet: x86-windows-static-md
 
     steps:
@@ -78,7 +80,7 @@ jobs:
             '-S', '.',
             '-B', "build/${{ matrix.configuration }}-vcpkg",
             '-G', 'Visual Studio 18 2026',
-            '-A', '${{ matrix.platform.arch }}',
+            '-A', '${{ matrix.platform.vs_platform }}',
             "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake",
             '-DVCPKG_TARGET_TRIPLET=${{ matrix.platform.triplet }}'
           )
