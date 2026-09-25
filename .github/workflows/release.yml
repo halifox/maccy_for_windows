@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and publish, for example v1.0.5
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,16 +18,20 @@ jobs:
   release:
     name: Build and publish Windows x64 release
     runs-on: windows-latest
+    env:
+      MACCY_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Validate release tag
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
-            throw "Release tag '$env:GITHUB_REF_NAME' must use the vX.Y.Z format."
+          if ($env:MACCY_RELEASE_TAG -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
+            throw "Release tag '$env:MACCY_RELEASE_TAG' must use the vX.Y.Z format."
           }
           $tagVersion = $Matches[1]
           $versionFileValue = (Get-Content -LiteralPath 'version.txt' -Raw).Trim()
@@ -78,16 +88,33 @@ jobs:
       - name: Upload assets to the existing draft Release and publish it
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
-          $releaseEndpoint = "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:GITHUB_REF_NAME"
-          $releaseResponse = gh api $releaseEndpoint
-          if ($LASTEXITCODE -ne 0) {
-            throw "Release Please did not create a Release for tag '$env:GITHUB_REF_NAME'."
+          function Get-ReleaseByTag([string]$tagName) {
+            $releaseListEndpoint = "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+            $releasePagesResponse = gh api --paginate --slurp $releaseListEndpoint
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not list Releases while looking for tag '$tagName'."
+            }
+
+            $releasePagesJson = [string]::Join([Environment]::NewLine, $releasePagesResponse)
+            $releasePages = ConvertFrom-Json -InputObject $releasePagesJson -NoEnumerate
+            foreach ($releasePage in $releasePages) {
+              foreach ($candidateRelease in $releasePage) {
+                if ($candidateRelease.tag_name -eq $tagName) {
+                  return $candidateRelease
+                }
+              }
+            }
+            return $null
           }
-          $release = $releaseResponse | ConvertFrom-Json
-          if ($release.tag_name -ne $env:GITHUB_REF_NAME -or -not $release.draft) {
-            throw "Expected an existing draft Release for tag '$env:GITHUB_REF_NAME'."
+
+          $release = Get-ReleaseByTag $env:MACCY_RELEASE_TAG
+          if ($null -eq $release) {
+            throw "Release Please did not create a Release for tag '$env:MACCY_RELEASE_TAG'."
+          }
+          if ($release.tag_name -ne $env:MACCY_RELEASE_TAG -or -not $release.draft) {
+            throw "Expected an existing draft Release for tag '$env:MACCY_RELEASE_TAG'."
           }
 
           $installerName = "MaccyForWindows-$env:MACCY_RELEASE_VERSION-x64.exe"
@@ -96,16 +123,15 @@ jobs:
             throw "Expected installer '$installerName' is missing."
           }
           $assets = @($installer.FullName, (Join-Path (Get-Location) 'SHA256SUMS.txt'))
-          gh release upload "$env:GITHUB_REF_NAME" $assets --repo "$env:GITHUB_REPOSITORY" --clobber
+          gh release upload "$env:MACCY_RELEASE_TAG" $assets --repo "$env:GITHUB_REPOSITORY" --clobber
           if ($LASTEXITCODE -ne 0) {
             throw 'Uploading the installer and SHA-256 file failed; the Release remains a draft.'
           }
 
-          $publishedReleaseResponse = gh api "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)"
-          if ($LASTEXITCODE -ne 0) {
+          $publishedRelease = Get-ReleaseByTag $env:MACCY_RELEASE_TAG
+          if ($null -eq $publishedRelease) {
             throw 'Could not verify uploaded Release assets; the Release remains a draft.'
           }
-          $publishedRelease = $publishedReleaseResponse | ConvertFrom-Json
           $uploadedNames = @($publishedRelease.assets | ForEach-Object { $_.name })
           foreach ($requiredName in @($installerName, 'SHA256SUMS.txt')) {
             if ($uploadedNames -notcontains $requiredName) {

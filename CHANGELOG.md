@@ -28,7 +28,7 @@
 ### Added
 
 - Added application controller to manage clipboard and preview operations, with improved event handling and reduced direct dependencies
-- Added experimental tray icon management with improved icon loading and updating
+- Added experimental tray icon management with improved icon loading and updating, now supports dynamic theme changes
 - Added visual indicator for search clear button in history view, with improved interaction and feedback
 
 ### Changed
@@ -50,3 +50,4 @@
 
 - Added secure handling of global memory buffers in clipboard operations
 - Added option to fail if MSVC runtime DLLs cannot be bundled
+
