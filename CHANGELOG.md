@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.5](https://github.com/halifox/maccy_for_windows/compare/v1.0.4...v1.0.5) (2026-09-25)
+
+
+### Bug Fixes
+
+* **release-test:** exercise patch release ([5c457d9](https://github.com/halifox/maccy_for_windows/commit/5c457d9dd2529826747e31c4e33d9944291b67b9))
+* **release-test:** exercise patch release ([eb391eb](https://github.com/halifox/maccy_for_windows/commit/eb391ebb4eb305e3aff56e5641ff0477af22530b))
+
 ## [1.0.4](https://github.com/halifox/maccy_for_windows/compare/v1.0.3...v1.0.4) (2026-09-25)
 
 
