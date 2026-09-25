@@ -62,16 +62,6 @@ jobs:
             core.setOutput('number', String(pullRequest.number));
             core.setOutput('head-sha', pullRequest.head.sha);
 
-      - name: Create GitHub App token
-        if: steps.release-pr.outputs.number != ''
-        id: app-token
-        uses: actions/create-github-app-token@v3
-        with:
-          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-
       - name: Enable squash auto-merge for the tested Release Please PR
         if: steps.release-pr.outputs.number != ''
         uses: actions/github-script@v8
@@ -79,7 +69,7 @@ jobs:
           RELEASE_PR_NUMBER: ${{ steps.release-pr.outputs.number }}
           RELEASE_PR_HEAD_SHA: ${{ steps.release-pr.outputs.head-sha }}
         with:
-          github-token: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           script: |
             const pullNumber = Number(process.env.RELEASE_PR_NUMBER);
             const { data: pullRequest } = await github.rest.pulls.get({

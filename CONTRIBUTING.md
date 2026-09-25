@@ -166,7 +166,7 @@ PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格
 
 Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR。版本 PR 仅在 `Windows CI` 的 Conventional Commits、Debug/Release x64 和 Debug/Release x86 检查全部成功后启用 squash 自动合并。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release；Tag 工作流构建、测试、生成 NSIS 安装器和 SHA-256 文件，校验资产上传完成后才发布 Release。文档、CI 或维护类提交不会单独创建版本 PR。
 
-维护者需在仓库中配置 GitHub App，并将 App Client ID 保存为 Actions 变量 `RELEASE_PLEASE_APP_CLIENT_ID`，将私钥保存为 Actions 密钥 `RELEASE_PLEASE_APP_PRIVATE_KEY`。App 安装到本仓库，并授予 Contents、Issues、Pull requests 写权限。私钥只保存在 GitHub Actions 密钥中，不要提交到仓库或公开分享。
+维护者需创建一个仅可访问本仓库的 Fine-grained personal access token，并将其保存为 Actions 密钥 `RELEASE_PLEASE_TOKEN`。授予 Contents、Issues、Pull requests 写权限。令牌以创建者身份操作；请设置适当的过期时间并在轮换时更新 Actions 密钥。不要提交或公开分享令牌。
 
 在 `master` 分支规则中保留现有保护，并将 `Conventional Commits`、`Debug x64`、`Release x64`、`Debug x86`、`Release x86` 设为必需检查；在仓库设置中启用 Auto-merge。GitHub 自动合并会遵守审批规则，因此若当前规则要求人工审批，版本 PR 会等待审批。
 
