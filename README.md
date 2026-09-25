@@ -127,4 +127,3 @@ Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声�
 ## 致谢
 
 感谢 [Alex Rodionov](https://github.com/p0deje) 和 Maccy 项目为 macOS 提供了优秀的剪贴板工具，也感谢其 MIT 许可证允许社区学习、修改和再利用相关软件与资源。
-
