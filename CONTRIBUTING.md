@@ -147,17 +147,40 @@ Pull Request 应包含：
 - 数据库、存储或迁移变更的说明；
 - 第三方内容和许可证变更说明。
 
+PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格式。CI 会检查两者；合并时请使用 squash，并保留已通过检查的 PR 标题作为 squash 提交标题。
+
 提交 Pull Request 不代表一定会被合并。维护者可能要求缩小范围、重写实现、补充测试，或因项目方向不符而关闭变更。
+
+## 自动发布和提交信息
+
+发布版本由 Release Please 管理。PR 合并到 `master` 后，只有 `feat`、`fix` 或带破坏性变更标记的提交会产生版本更新 PR：
+
+| 提交类型 | 版本变化 | 示例 |
+| --- | --- | --- |
+| `fix` | Patch | `fix(search): correct empty-result recovery` |
+| `feat` | Minor | `feat(search): add history filters` |
+| 任意类型的 `!` 或 `BREAKING CHANGE:` footer | Major | `feat!: replace the storage format` |
+| `docs`、`ci`、`chore`、`build`、`test`、`refactor`、`style`、`perf` | 不单独发版 | `docs(guide): clarify setup` |
+
+普通 PR 的标题和每个提交标题都需要遵循该格式。破坏性变更可在类型后使用 `!`，或在提交正文中添加 `BREAKING CHANGE: ...`。不要把 `BREAKING CHANGE:` 加到只包含文档、CI 或维护工作的提交中，除非该变更确实影响用户兼容性。
+
+Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR。版本 PR 仅在 `Windows CI` 的 Conventional Commits、Debug/Release x64 和 Debug/Release x86 检查全部成功后启用 squash 自动合并。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release；Tag 工作流构建、测试、生成 NSIS 安装器和 SHA-256 文件，校验资产上传完成后才发布 Release。文档、CI 或维护类提交不会单独创建版本 PR。
+
+维护者需在仓库中配置 GitHub App，并将 App Client ID 保存为 Actions 变量 `RELEASE_PLEASE_APP_CLIENT_ID`，将私钥保存为 Actions 密钥 `RELEASE_PLEASE_APP_PRIVATE_KEY`。App 安装到本仓库，并授予 Contents、Issues、Pull requests 写权限。私钥只保存在 GitHub Actions 密钥中，不要提交到仓库或公开分享。
+
+在 `master` 分支规则中保留现有保护，并将 `Conventional Commits`、`Debug x64`、`Release x64`、`Debug x86`、`Release x86` 设为必需检查；在仓库设置中启用 Auto-merge。GitHub 自动合并会遵守审批规则，因此若当前规则要求人工审批，版本 PR 会等待审批。
+
+如果要让版本 PR 无需人工审批，同时保留普通 PR 的审批和必需 CI，可将审批要求单独放入一个只包含审批规则的 branch ruleset，将自动化 App 仅加入该 ruleset 的 pull-request-only bypass；必需状态检查继续留在没有该 App bypass 的 branch protection 或另一个 ruleset 中。若当前使用 classic branch protection 的必需审批，需先把审批要求迁移到这个独立 ruleset。不要让 App bypass 包含 CI 检查的规则集；如果仓库设置无法把审批和检查分开，就保留现有保护并接受版本 PR 需要人工审批。
 
 ## 发布
 
-正式发布前请按照 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 执行。至少需要确认：
+版本 Tag、草稿 Release、构建、测试、安装器和 SHA-256 上传及 Release 发布由上述流程自动完成。仍需按 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) 完成发布后的人工安装和运行检查。至少需要确认：
 
 - Release x64 构建成功；
 - CTest 和手动 Smoke Test 已完成；
 - NSIS 安装包可以在干净环境安装并启动；
 - 包含项目许可证和所有第三方许可证；
-- 版本 tag、CMake 版本、应用 About 版本一致；
+- `version.txt`、版本 Tag、CMake 版本、安装包文件名和应用 About 版本一致；
 - Release 说明包含已知限制、数据影响和 SHA-256 校验和。
 
 ## 贡献许可

@@ -1,21 +1,21 @@
 # 发布检查清单
 
-本文档用于维护者创建 GitHub Release 前的检查。当前项目的正式发布目标是 Windows x64；未完成的项目不能用“构建成功”替代。
+本文档用于维护者核对自动发布结果和安装行为。正式发布目标是 Windows x64；自动化构建成功不能代替干净环境中的安装与运行验证。
 
 ## 发布前
 
 - [ ] 工作树干净，未包含数据库、真实剪贴板内容、调试符号或本地 IDE 配置。
 - [ ] 仓库名称、应用名称、更新页面和所有安全报告链接一致。
-- [ ] Git tag、`CMakeLists.txt` 中的项目版本和应用 About 版本一致。
+- [ ] `version.txt`、Git tag、CMake 项目版本和应用 About 版本一致。
 - [ ] 已阅读本次版本涉及的数据库、持久化和第三方许可证变化。
 - [ ] 已更新 README、SECURITY、PRIVACY 和 CHANGELOG/Release notes。
 - [ ] 已确认本次 Release 的已知限制和数据影响。
 
 ## 构建和测试
 
-- [ ] 在干净的 Visual Studio Developer PowerShell 中配置 Windows x64 Release。
-- [ ] `cmake --build` 成功完成，没有把 Debug 目录当作发行包。
-- [ ] `ctest --output-on-failure` 完成，并记录测试数量和结果。
+- [ ] GitHub Actions 的 x64/x86 Debug 和 Release CI 检查通过。
+- [ ] Release 工作流的 Windows x64 Release 构建成功，没有把 Debug 目录当作发行包。
+- [ ] Release 工作流的 `ctest --output-on-failure` 完成，并记录测试数量和结果。
 - [ ] 在干净用户目录启动程序，验证托盘、打开窗口、退出和开机启动。
 - [ ] 验证文本、图片、文件路径、长文本和快速连续复制。
 - [ ] 验证搜索、正则、模糊、固定、删除、清空和容量限制。
@@ -35,8 +35,9 @@
 
 ## GitHub Release
 
+- [ ] Release Please 已创建 `vX.Y.Z` Tag 和草稿 Release。
 - [ ] tag 使用 `vX.Y.Z`，并与构建配置中的版本完全一致。
 - [ ] Release notes 写明新功能、修复、已知问题、兼容性和数据影响。
-- [ ] 上传 NSIS 安装包、校验和和必要的许可证说明。
+- [ ] Release 工作流已上传 NSIS 安装包和 `SHA256SUMS.txt`，并在上传成功后发布 Release。
 - [ ] 从 Release 页面重新下载资产并再次核对校验和。
 - [ ] 发布后再验证 README 和应用内更新入口指向当前仓库。
