@@ -1,4 +1,14 @@
-# 变更记录
+# Changelog
+
+## [1.0.4](https://github.com/halifox/maccy_for_windows/compare/v1.0.3...v1.0.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* **release-test:** exercise patch release ([bc276e2](https://github.com/halifox/maccy_for_windows/commit/bc276e2c3ff713689b03e352f482f20566ebf427))
+* **release-test:** exercise patch release ([704a75f](https://github.com/halifox/maccy_for_windows/commit/704a75f3ac6003830a9905345f10dd10ef8ba8ee))
+
+## 变更记录
 
 ## Unreleased
 
@@ -32,4 +42,3 @@
 
 - Added secure handling of global memory buffers in clipboard operations
 - Added option to fail if MSVC runtime DLLs cannot be bundled
-
