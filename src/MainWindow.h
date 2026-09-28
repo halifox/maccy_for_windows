@@ -63,6 +63,7 @@ public:
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
+        MESSAGE_HANDLER(AppConstants::kOpenHotkeyMessage, OnOpenHotkeyMessage)
         MESSAGE_HANDLER(WM_KEYDOWN, OnKeyDown)
         MESSAGE_HANDLER(WM_CHAR, OnChar)
         MESSAGE_HANDLER(WM_SYSKEYDOWN, OnKeyDown)
@@ -243,6 +244,7 @@ private:
     LRESULT OnTrayExitCommand(WORD, WORD, HWND, BOOL& handled);
     LRESULT OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled);
+    LRESULT OnOpenHotkeyMessage(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnKeyUp(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnChar(UINT, WPARAM wParam, LPARAM, BOOL& handled);

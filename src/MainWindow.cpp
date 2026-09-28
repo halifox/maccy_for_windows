@@ -1941,6 +1941,10 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     return 0;
 }
 
+LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM, BOOL& handled) {
+    return OnHotKey(0, AppConstants::HotKey::kOpenPopup, 0, handled);
+}
+
 LRESULT MainWindow::OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     RequestFooterUpdateForKeyMessage(WM_KEYDOWN, wParam);
     handled = !m_keyboardHandler.IsComposing(m_hWnd) &&
@@ -2087,7 +2091,18 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_popupVisible = true;
     ShowWindow(SW_SHOW);
     ApplyPendingState();
-    SetForegroundWindow(m_hWnd);
+    if (!SetForegroundWindow(m_hWnd) || GetForegroundWindow() != m_hWnd) {
+        const HWND foreground = GetForegroundWindow();
+        const DWORD foregroundThread = foreground != nullptr
+            ? GetWindowThreadProcessId(foreground, nullptr)
+            : 0;
+        const DWORD currentThread = GetCurrentThreadId();
+        if (foregroundThread != 0 && foregroundThread != currentThread &&
+            AttachThreadInput(currentThread, foregroundThread, TRUE)) {
+            SetForegroundWindow(m_hWnd);
+            AttachThreadInput(currentThread, foregroundThread, FALSE);
+        }
+    }
     if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
         SetHistorySearchVisible(true);
         m_search.SetFocus();

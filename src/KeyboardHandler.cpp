@@ -6,6 +6,8 @@
 #include <imm.h>
 #include <windowsx.h>
 
+KeyboardHandler* KeyboardHandler::s_hookOwner = nullptr;
+
 KeyboardHandler::KeyboardHandler(AppSettings& settings)
     : m_settings(settings) {}
 
@@ -25,6 +27,17 @@ bool KeyboardHandler::Initialize(CWindow owner, CEdit search, CListBox historyLi
 }
 
 void KeyboardHandler::Shutdown() {
+    if (m_keyboardHook != nullptr) {
+        UnhookWindowsHookEx(m_keyboardHook);
+        m_keyboardHook = nullptr;
+    }
+    if (s_hookOwner == this) {
+        s_hookOwner = nullptr;
+    }
+    m_suppressingOpenKey = false;
+    m_pendingWinKey = 0;
+    m_winKeyPassedThrough = false;
+    m_suppressingWinKey = false;
     if (m_hotkeyRegistered && m_owner.m_hWnd != nullptr) {
         UnregisterHotKey(m_owner.m_hWnd, AppConstants::HotKey::kOpenPopup);
         m_hotkeyRegistered = false;
@@ -32,6 +45,19 @@ void KeyboardHandler::Shutdown() {
 }
 
 bool KeyboardHandler::RegisterGlobalHotKey(UINT hotkeyId) {
+    if ((m_settings.open_hotkey.modifiers & MOD_WIN) != 0) {
+        if (s_hookOwner != nullptr && s_hookOwner != this) {
+            return false;
+        }
+        s_hookOwner = this;
+        m_keyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc,
+                                           GetModuleHandleW(nullptr), 0);
+        m_hotkeyRegistered = m_keyboardHook != nullptr;
+        if (!m_hotkeyRegistered) {
+            s_hookOwner = nullptr;
+        }
+        return m_hotkeyRegistered;
+    }
     m_hotkeyRegistered = RegisterHotKey(
         m_owner.m_hWnd,
         hotkeyId,
@@ -42,10 +68,110 @@ bool KeyboardHandler::RegisterGlobalHotKey(UINT hotkeyId) {
 }
 
 void KeyboardHandler::UnregisterGlobalHotKey(UINT hotkeyId) {
+    if (m_keyboardHook != nullptr) {
+        UnhookWindowsHookEx(m_keyboardHook);
+        m_keyboardHook = nullptr;
+        if (s_hookOwner == this) {
+            s_hookOwner = nullptr;
+        }
+        m_suppressingOpenKey = false;
+        m_pendingWinKey = 0;
+        m_winKeyPassedThrough = false;
+        m_suppressingWinKey = false;
+    }
     if (m_hotkeyRegistered && m_owner.m_hWnd != nullptr) {
         UnregisterHotKey(m_owner.m_hWnd, hotkeyId);
         m_hotkeyRegistered = false;
     }
+}
+
+LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message, LPARAM data) {
+    if (code < 0 || s_hookOwner == nullptr) {
+        return CallNextHookEx(nullptr, code, message, data);
+    }
+
+    KeyboardHandler* const handler = s_hookOwner;
+    const auto* const key = reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
+    const bool keyDown = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
+    const bool keyUp = message == WM_KEYUP || message == WM_SYSKEYUP;
+    if ((key->flags & LLKHF_INJECTED) != 0) {
+        return CallNextHookEx(nullptr, code, message, data);
+    }
+
+    const bool isWinKey = key->vkCode == VK_LWIN || key->vkCode == VK_RWIN;
+    if (handler->m_suppressingOpenKey &&
+        key->vkCode == handler->m_settings.open_hotkey.virtual_key && (keyDown || keyUp)) {
+        if (keyUp) {
+            handler->m_suppressingOpenKey = false;
+        }
+        return 1;
+    }
+
+    if (isWinKey) {
+        if (keyDown) {
+            if (handler->m_suppressingWinKey || handler->m_pendingWinKey == key->vkCode) {
+                return 1;
+            }
+            if (handler->m_winKeyPassedThrough) {
+                return CallNextHookEx(nullptr, code, message, data);
+            }
+            handler->m_pendingWinKey = key->vkCode;
+            return 1;
+        }
+        if (keyUp) {
+            if (handler->m_suppressingWinKey) {
+                handler->m_suppressingWinKey = false;
+                handler->m_pendingWinKey = 0;
+                return 1;
+            }
+            if (handler->m_pendingWinKey == key->vkCode) {
+                // Delay the Windows key-down until we know this is not the configured chord.
+                INPUT replay{};
+                replay.type = INPUT_KEYBOARD;
+                replay.ki.wVk = static_cast<WORD>(key->vkCode);
+                SendInput(1, &replay, sizeof(replay));
+                handler->m_pendingWinKey = 0;
+                return CallNextHookEx(nullptr, code, message, data);
+            }
+            if (handler->m_winKeyPassedThrough) {
+                handler->m_winKeyPassedThrough = false;
+            }
+        }
+        return CallNextHookEx(nullptr, code, message, data);
+    }
+
+    if (handler->m_winKeyPassedThrough) {
+        return CallNextHookEx(nullptr, code, message, data);
+    }
+
+    if (keyDown && handler->m_pendingWinKey != 0 &&
+        key->vkCode == handler->m_settings.open_hotkey.virtual_key) {
+        const UINT configured = handler->m_settings.open_hotkey.modifiers &
+            (MOD_ALT | MOD_CONTROL | MOD_SHIFT | MOD_WIN);
+        UINT pressed = 0;
+        if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) pressed |= MOD_ALT;
+        if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) pressed |= MOD_CONTROL;
+        if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) pressed |= MOD_SHIFT;
+        pressed |= MOD_WIN;
+        if (pressed == configured) {
+            handler->m_suppressingOpenKey = true;
+            handler->m_suppressingWinKey = true;
+            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0, 0);
+            return 1;
+        }
+    }
+
+    if (keyDown && handler->m_pendingWinKey != 0) {
+        // Let ordinary Win+key shortcuts pass through after replaying the delayed Win-down.
+        INPUT replay{};
+        replay.type = INPUT_KEYBOARD;
+        replay.ki.wVk = static_cast<WORD>(handler->m_pendingWinKey);
+        SendInput(1, &replay, sizeof(replay));
+        handler->m_pendingWinKey = 0;
+        handler->m_winKeyPassedThrough = true;
+    }
+
+    return CallNextHookEx(nullptr, code, message, data);
 }
 
 bool KeyboardHandler::IsComposing(CWindow window) const {

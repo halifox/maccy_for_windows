@@ -750,6 +750,8 @@ void SettingsWindow::LoadGeneralControls() {
     page.LoadSettings(m_settings);
     page.ExchangeSettings(DDX_LOAD);
     SetHotKeyControl(m_gOpenHotKey, m_settings.open_hotkey);
+    CButton openHotkeyWin(page.Control(IDC_G_OPEN_HOTKEY_WIN).m_hWnd);
+    openHotkeyWin.SetCheck((m_settings.open_hotkey.modifiers & MOD_WIN) != 0 ? BST_CHECKED : BST_UNCHECKED);
     SetHotKeyControl(m_gPinHotKey, m_settings.pin_hotkey);
     SetHotKeyControl(m_gDeleteHotKey, m_settings.delete_hotkey);
     SetHotKeyControl(m_gPreviewHotKey, m_settings.preview_hotkey);
@@ -908,14 +910,19 @@ void SettingsWindow::SaveCurrentPage() {
     const AppSettings previous = m_settings;
     try {
         switch (m_currentPage) {
-        case kPageGeneral:
+        case kPageGeneral: {
             m_pages[kPageGeneral]->AttachSettings(m_settings);
             m_pages[kPageGeneral]->ExchangeSettings(DDX_SAVE);
             m_settings.open_hotkey = HotKeyFromControl(m_gOpenHotKey);
+            CButton openHotkeyWin(m_pages[kPageGeneral]->Control(IDC_G_OPEN_HOTKEY_WIN).m_hWnd);
+            if (openHotkeyWin.GetCheck() == BST_CHECKED) {
+                m_settings.open_hotkey.modifiers |= MOD_WIN;
+            }
             m_settings.pin_hotkey = HotKeyFromControl(m_gPinHotKey);
             m_settings.delete_hotkey = HotKeyFromControl(m_gDeleteHotKey);
             m_settings.preview_hotkey = HotKeyFromControl(m_gPreviewHotKey);
             break;
+        }
         case kPageAppearance: {
             m_pages[kPageAppearance]->AttachSettings(m_settings);
             m_pages[kPageAppearance]->ExchangeSettings(DDX_SAVE);
