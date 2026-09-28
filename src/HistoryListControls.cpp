@@ -1,5 +1,8 @@
 #include "HistoryListControls.h"
 
+#include "SearchHeaderLayout.h"
+#include "UiFont.h"
+
 #include <windowsx.h>
 
 #include <utility>
@@ -30,6 +33,26 @@ void HistoryListControls::Configure(
     m_requestFooterUpdate = std::move(request_footer_update);
     m_pasteItem = std::move(paste_item);
     m_selectionChanged = std::move(selection_changed);
+    RefreshItemHeights();
+}
+
+int HistoryListControls::ItemHeightPixels() const noexcept {
+    const HWND list = m_historyList.m_hWnd != nullptr ? m_historyList.m_hWnd : m_pinsList.m_hWnd;
+    const HWND parent = list != nullptr ? ::GetParent(list) : nullptr;
+    return SearchHeaderLayout::Scale(
+        AppConstants::UI::kHistoryItemHeight,
+        UiFont::DpiForWindow(parent)
+    );
+}
+
+void HistoryListControls::RefreshItemHeights() noexcept {
+    const int height = ItemHeightPixels();
+    if (m_historyList.m_hWnd != nullptr) {
+        m_historyList.SetItemHeight(0, static_cast<UINT>(height));
+    }
+    if (m_pinsList.m_hWnd != nullptr) {
+        m_pinsList.SetItemHeight(0, static_cast<UINT>(height));
+    }
 }
 
 void HistoryListControls::Shutdown() noexcept {
@@ -213,7 +236,7 @@ LRESULT HistoryListControls::OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL &ha
         return 0;
     }
     handled = TRUE;
-    measure->itemHeight = AppConstants::UI::kHistoryItemHeight;
+    measure->itemHeight = static_cast<UINT>(ItemHeightPixels());
     return 0;
 }
 

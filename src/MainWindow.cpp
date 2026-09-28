@@ -21,7 +21,6 @@ constexpr UINT kTrayIconId = 1;
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
-constexpr int kHistoryFooterHeight = 22;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
 constexpr int kResizeBorder = 8;
@@ -443,6 +442,11 @@ void MainWindow::LayoutHistoryControls() {
     GetClientRect(&client);
     const SearchHeaderLayout::Metrics headerMetrics =
         SearchHeaderLayout::ForDpi(UiFont::DpiForWindow(m_hWnd));
+    const int historyItemHeight = SearchHeaderLayout::Scale(
+        AppConstants::UI::kHistoryItemHeight,
+        UiFont::DpiForWindow(m_hWnd)
+    );
+    m_historyListControls.RefreshItemHeights();
     const int margin = headerMetrics.windowMargin;
     const int width = std::max(1L, client.right - 2 * margin);
     const bool header = m_search.IsWindowVisible() != FALSE;
@@ -466,7 +470,7 @@ void MainWindow::LayoutHistoryControls() {
 
     const int top = margin + (header ? headerMetrics.height + headerMetrics.contentGap : 0);
     const int footerHeight = m_settings.show_footer
-        ? kHistoryFooterGap + kHistoryFooterHeight * AppConstants::UI::kFooterButtonCount
+        ? kHistoryFooterGap + historyItemHeight * AppConstants::UI::kFooterButtonCount
         : 0;
     const int bottom = std::max(
         top + 1,
@@ -478,10 +482,10 @@ void MainWindow::LayoutHistoryControls() {
     const bool havePins = pinCount > 0;
     const bool haveHistory = historyCount > 0;
     const int gap = havePins && haveHistory ? kHistorySectionGap : 0;
-    const int requestedPinsHeight = pinCount * AppConstants::UI::kHistoryItemHeight;
+    const int requestedPinsHeight = pinCount * historyItemHeight;
     const int pinsHeight = havePins
         ? std::min(requestedPinsHeight, haveHistory
-            ? std::max(1, available - gap - AppConstants::UI::kHistoryItemHeight)
+            ? std::max(1, available - gap - historyItemHeight)
             : available)
         : 0;
     const int historyHeight = haveHistory ? std::max(1, available - pinsHeight - gap) : 1;
@@ -521,8 +525,8 @@ void MainWindow::LayoutHistoryControls() {
     auto buttons = FooterButtons();
     for (int i = 0; i < 4; ++i) {
         buttons[i].SetWindowPos(nullptr, margin,
-                                bottom + kHistoryFooterGap + i * kHistoryFooterHeight,
-                                width, kHistoryFooterHeight,
+                                bottom + kHistoryFooterGap + i * historyItemHeight,
+                                width, historyItemHeight,
                                 SWP_NOZORDER | SWP_NOACTIVATE);
         buttons[i].ShowWindow(m_settings.show_footer ? SW_SHOW : SW_HIDE);
     }

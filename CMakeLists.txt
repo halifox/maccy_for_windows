@@ -161,7 +161,10 @@ target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
     target_compile_options(maccy PRIVATE /utf-8)
-    target_link_options(maccy PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
+    target_link_options(maccy PRIVATE
+        "/MANIFEST:EMBED"
+        "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/src/maccy.manifest"
+    )
 endif()
 
 enable_testing()
