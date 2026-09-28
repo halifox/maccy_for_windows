@@ -135,3 +135,4 @@ jobs:
           name: maccy-${{ matrix.configuration }}-${{ matrix.platform.arch }}
           path: build/${{ matrix.configuration }}-vcpkg/install
           if-no-files-found: error
+          retention-days: 1
