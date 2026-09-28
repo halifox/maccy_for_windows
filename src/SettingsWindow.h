@@ -23,6 +23,27 @@
 #include "StorageWorker.h"
 #include "resource.h"
 
+class HotkeyCaptureEdit : public CWindowImpl<HotkeyCaptureEdit, CEdit> {
+public:
+    BEGIN_MSG_MAP(HotkeyCaptureEdit)
+        MESSAGE_HANDLER(AppConstants::kCaptureHotkeyMessage, OnCaptureHotkey)
+        MESSAGE_HANDLER(WM_SETFOCUS, OnSetFocus)
+        MESSAGE_HANDLER(WM_KILLFOCUS, OnKillFocus)
+    END_MSG_MAP()
+
+    void Attach(HWND window);
+    void SetHotKey(const HotKeyConfig &hotkey);
+    HotKeyConfig GetHotKey() const { return m_hotkey; }
+
+private:
+    LRESULT OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modifiers, BOOL &handled);
+    LRESULT OnSetFocus(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnKillFocus(UINT, WPARAM, LPARAM, BOOL &handled);
+    void UpdateText();
+
+    HotKeyConfig m_hotkey{};
+};
+
 class EditPinDialog : public CDialogImpl<EditPinDialog> {
 public:
     enum { IDD = IDD_EDIT_PIN };
@@ -323,9 +344,36 @@ public:
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_COMMAND, OnOwnerMessage)
         MESSAGE_HANDLER(WM_NOTIFY, OnOwnerMessage)
+        MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnEditColor)
+        MESSAGE_HANDLER(WM_CTLCOLORSTATIC, OnEditColor)
+        MESSAGE_HANDLER(WM_LBUTTONDOWN, OnBlankClick)
     END_MSG_MAP()
 
 private:
+    LRESULT OnBlankClick(UINT, WPARAM, LPARAM, BOOL &handled) {
+        const HWND tabs = ::GetParent(this->m_hWnd);
+        if (tabs != nullptr) {
+            ::SetFocus(tabs);
+        }
+        handled = TRUE;
+        return 0;
+    }
+
+    LRESULT OnEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
+        const HWND edit = reinterpret_cast<HWND>(lParam);
+        const int controlId = edit != nullptr ? GetDlgCtrlID(edit) : 0;
+        if (controlId == IDC_G_OPEN_HOTKEY || controlId == IDC_G_PIN_HOTKEY ||
+            controlId == IDC_G_DELETE_HOTKEY || controlId == IDC_G_PREVIEW_HOTKEY) {
+            const HDC dc = reinterpret_cast<HDC>(wParam);
+            SetBkColor(dc, RGB(255, 255, 255));
+            SetTextColor(dc, RGB(0, 0, 0));
+            handled = TRUE;
+            return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
+        }
+        handled = FALSE;
+        return 0;
+    }
+
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = TRUE;
         return TRUE;
@@ -500,10 +548,10 @@ private:
 
     CButton m_gCheckNow;
     CStatic m_gBehaviorHint;
-    CHotKeyCtrl m_gOpenHotKey;
-    CHotKeyCtrl m_gPinHotKey;
-    CHotKeyCtrl m_gDeleteHotKey;
-    CHotKeyCtrl m_gPreviewHotKey;
+    HotkeyCaptureEdit m_gOpenHotKey;
+    HotkeyCaptureEdit m_gPinHotKey;
+    HotkeyCaptureEdit m_gDeleteHotKey;
+    HotkeyCaptureEdit m_gPreviewHotKey;
     CButton m_gPasteByDefault;
     CButton m_gRemoveFormatting;
 

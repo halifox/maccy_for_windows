@@ -41,8 +41,8 @@ enum class SearchVisibility {
 };
 
 struct HotKeyConfig {
-    UINT modifiers = MOD_CONTROL | MOD_SHIFT;
-    UINT virtual_key = VK_SPACE;
+    UINT modifiers = MOD_WIN;
+    UINT virtual_key = 'V';
 };
 
 struct AppSettings {

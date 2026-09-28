@@ -127,6 +127,19 @@ private:
     std::array<CButton, AppConstants::UI::kFooterButtonCount> m_footerButtons{};
 
     bool m_hotkeyRegistered = false;
+    HHOOK m_keyboardHook = nullptr;
+    bool m_suppressingOpenKey = false;
+    UINT m_suppressingCaptureKey = 0;
+    HWND m_captureTargetWindow = nullptr;
+    UINT m_capturedKey = 0;
+    UINT m_capturedModifiers = 0;
+    bool m_capturedKeyReleased = false;
+    UINT m_pendingWinKey = 0;
+    bool m_winKeyPassedThrough = false;
+    bool m_suppressingWinKey = false;
+
+    static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM message, LPARAM data);
+    static KeyboardHandler* s_hookOwner;
     bool m_keyboardNavigating = false;
     bool m_imeComposing = false;
 
