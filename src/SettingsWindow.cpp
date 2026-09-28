@@ -426,25 +426,46 @@ constexpr std::array<IgnorePageDefinition, 3> kIgnorePageDefinitions = {
     IgnorePageDefinition{L"正则表达式"},
 };
 
-HotKeyConfig HotKeyFromControl(const CHotKeyCtrl &control) {
-    WORD virtual_key = 0;
-    WORD flags = 0;
-    control.GetHotKey(virtual_key, flags);
-    UINT modifiers = 0;
-    if ((flags & HOTKEYF_CONTROL) != 0) modifiers |= MOD_CONTROL;
-    if ((flags & HOTKEYF_ALT) != 0) modifiers |= MOD_ALT;
-    if ((flags & HOTKEYF_SHIFT) != 0) modifiers |= MOD_SHIFT;
-    return HotKeyConfig{modifiers, static_cast<BYTE>(virtual_key)};
 }
 
-void SetHotKeyControl(CHotKeyCtrl &control, const HotKeyConfig &hotkey) {
-    WORD flags = 0;
-    if ((hotkey.modifiers & MOD_CONTROL) != 0) flags |= HOTKEYF_CONTROL;
-    if ((hotkey.modifiers & MOD_ALT) != 0) flags |= HOTKEYF_ALT;
-    if ((hotkey.modifiers & MOD_SHIFT) != 0) flags |= HOTKEYF_SHIFT;
-    control.SetHotKey(hotkey.virtual_key, flags);
+void HotkeyCaptureEdit::Attach(HWND window) {
+    if (IsWindow()) {
+        UnsubclassWindow();
+    }
+    SubclassWindow(window);
 }
 
+void HotkeyCaptureEdit::SetHotKey(const HotKeyConfig &hotkey) {
+    m_hotkey = hotkey;
+    UpdateText();
+}
+
+void HotkeyCaptureEdit::UpdateText() {
+    const std::wstring text = HotKeyToText(m_hotkey);
+    SetWindowText(text.c_str());
+}
+
+LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modifiers, BOOL &handled) {
+    m_hotkey = HotKeyConfig{static_cast<UINT>(modifiers), static_cast<UINT>(virtual_key)};
+    UpdateText();
+    const HWND focusTarget = ::GetParent(::GetParent(m_hWnd));
+    if (focusTarget != nullptr) {
+        ::SetFocus(focusTarget);
+    }
+    handled = TRUE;
+    return 0;
+}
+
+LRESULT HotkeyCaptureEdit::OnSetFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    SetWindowText(L"按下快捷键");
+    handled = FALSE;
+    return 0;
+}
+
+LRESULT HotkeyCaptureEdit::OnKillFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    UpdateText();
+    handled = FALSE;
+    return 0;
 }
 
 SettingsWindow::SettingsWindow(
@@ -607,10 +628,10 @@ void SettingsWindow::BindControls() {
 
     m_gCheckNow = get(kPageGeneral, kGCheckNow);
     m_gBehaviorHint = get(kPageGeneral, IDC_G_BEHAVIOR_HINT);
-    m_gOpenHotKey = get(kPageGeneral, kGOpenHotKey);
-    m_gPinHotKey = get(kPageGeneral, kGPinHotKey);
-    m_gDeleteHotKey = get(kPageGeneral, kGDeleteHotKey);
-    m_gPreviewHotKey = get(kPageGeneral, kGPreviewHotKey);
+    m_gOpenHotKey.Attach(get(kPageGeneral, kGOpenHotKey).m_hWnd);
+    m_gPinHotKey.Attach(get(kPageGeneral, kGPinHotKey).m_hWnd);
+    m_gDeleteHotKey.Attach(get(kPageGeneral, kGDeleteHotKey).m_hWnd);
+    m_gPreviewHotKey.Attach(get(kPageGeneral, kGPreviewHotKey).m_hWnd);
     m_gPasteByDefault = get(kPageGeneral, kGPasteByDefault);
     m_gRemoveFormatting = get(kPageGeneral, kGRemoveFormatting);
 
@@ -749,12 +770,10 @@ void SettingsWindow::LoadGeneralControls() {
     auto &page = *m_pages[kPageGeneral];
     page.LoadSettings(m_settings);
     page.ExchangeSettings(DDX_LOAD);
-    SetHotKeyControl(m_gOpenHotKey, m_settings.open_hotkey);
-    CButton openHotkeyWin(page.Control(IDC_G_OPEN_HOTKEY_WIN).m_hWnd);
-    openHotkeyWin.SetCheck((m_settings.open_hotkey.modifiers & MOD_WIN) != 0 ? BST_CHECKED : BST_UNCHECKED);
-    SetHotKeyControl(m_gPinHotKey, m_settings.pin_hotkey);
-    SetHotKeyControl(m_gDeleteHotKey, m_settings.delete_hotkey);
-    SetHotKeyControl(m_gPreviewHotKey, m_settings.preview_hotkey);
+    m_gOpenHotKey.SetHotKey(m_settings.open_hotkey);
+    m_gPinHotKey.SetHotKey(m_settings.pin_hotkey);
+    m_gDeleteHotKey.SetHotKey(m_settings.delete_hotkey);
+    m_gPreviewHotKey.SetHotKey(m_settings.preview_hotkey);
 }
 
 void SettingsWindow::LoadAppearanceControls() {
@@ -913,14 +932,10 @@ void SettingsWindow::SaveCurrentPage() {
         case kPageGeneral: {
             m_pages[kPageGeneral]->AttachSettings(m_settings);
             m_pages[kPageGeneral]->ExchangeSettings(DDX_SAVE);
-            m_settings.open_hotkey = HotKeyFromControl(m_gOpenHotKey);
-            CButton openHotkeyWin(m_pages[kPageGeneral]->Control(IDC_G_OPEN_HOTKEY_WIN).m_hWnd);
-            if (openHotkeyWin.GetCheck() == BST_CHECKED) {
-                m_settings.open_hotkey.modifiers |= MOD_WIN;
-            }
-            m_settings.pin_hotkey = HotKeyFromControl(m_gPinHotKey);
-            m_settings.delete_hotkey = HotKeyFromControl(m_gDeleteHotKey);
-            m_settings.preview_hotkey = HotKeyFromControl(m_gPreviewHotKey);
+            m_settings.open_hotkey = m_gOpenHotKey.GetHotKey();
+            m_settings.pin_hotkey = m_gPinHotKey.GetHotKey();
+            m_settings.delete_hotkey = m_gDeleteHotKey.GetHotKey();
+            m_settings.preview_hotkey = m_gPreviewHotKey.GetHotKey();
             break;
         }
         case kPageAppearance: {

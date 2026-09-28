@@ -24,6 +24,7 @@ namespace AppConstants {
     constexpr UINT kUpdateCheckerResultMessage = WM_APP + 6;
     constexpr UINT kInstallerShutdownMessage = WM_APP + 8;
     constexpr UINT kOpenHotkeyMessage = WM_APP + 9;
+    constexpr UINT kCaptureHotkeyMessage = WM_APP + 10;
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
