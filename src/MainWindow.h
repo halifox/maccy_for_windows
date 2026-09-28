@@ -33,16 +33,18 @@
 class SettingsWindow;
 
 // Main application window - coordinates all components
-class MainWindow : public CDialogImpl<MainWindow> {
+class MainWindow : public CWindowImpl<MainWindow> {
 public:
-    enum { IDD = IDD_HISTORY };
+    DECLARE_WND_CLASS_EX(L"MaccyHistoryWindow", CS_DBLCLKS, COLOR_WINDOW)
 
     MainWindow(StorageWorker &storage, PreviewWorker &preview, AppSettings settings,
                StorageWorker::IgnoreLists ignored_lists, bool isolated = false);
     ~MainWindow();
 
+    HWND Create(HWND parent);
+
     BEGIN_MSG_MAP(MainWindow)
-        MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        MESSAGE_HANDLER(WM_CREATE, OnCreate)
         MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         MESSAGE_HANDLER(WM_MOVE, OnMove)
@@ -72,6 +74,7 @@ public:
         MESSAGE_HANDLER(WM_IME_STARTCOMPOSITION, OnImeStart)
         MESSAGE_HANDLER(WM_IME_ENDCOMPOSITION, OnImeEnd)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
+        MESSAGE_HANDLER(WM_NCDESTROY, OnNcDestroy)
         MESSAGE_HANDLER(AppConstants::kTrayIconMessage, OnTrayIcon)
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
@@ -148,6 +151,7 @@ private:
 
     // Control management
     bool BindControls();
+    bool InitializeHistoryControls();
     void ApplyHistoryFonts();
     void LayoutHistoryControls();
     void RedrawHistoryLists();
@@ -211,7 +215,7 @@ private:
     void HandleUpdateCheckResult(const UpdateCheckResult &result);
 
     // Message handlers
-    LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnCreate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnMove(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -257,6 +261,7 @@ private:
     LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
+    LRESULT OnNcDestroy(UINT, WPARAM, LPARAM, BOOL&);
 
     // Search and menu controls route input through WTL alternate message maps;
     // history lists use the dedicated HistoryListControls message map.

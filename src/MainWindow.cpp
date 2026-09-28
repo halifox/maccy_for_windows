@@ -73,6 +73,15 @@ bool HasPendingKeyboardInput(HWND window) {
     return ::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE;
 }
 
+HWND CreateHistoryChild(HWND parent, const wchar_t* class_name, const wchar_t* text,
+                        DWORD style, DWORD extended_style, int control_id) {
+    return ::CreateWindowExW(
+        extended_style, class_name, text, style,
+        0, 0, 1, 1, parent,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
+        _Module.GetModuleInstance(), nullptr);
+}
+
 // Resolve paste action based on modifier keys
 std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
                                          bool ctrl, bool alt, bool shift) {
@@ -131,6 +140,18 @@ MainWindow::MainWindow(
 
 MainWindow::~MainWindow() {
     m_applicationController.Shutdown();
+}
+
+HWND MainWindow::Create(HWND parent) {
+    const DWORD style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN |
+        WS_CLIPSIBLINGS;
+    const DWORD extended_style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST |
+        WS_EX_CONTROLPARENT;
+    RECT initial_rect{0, 0,
+        AppConstants::UI::kDefaultWindowWidth,
+        AppConstants::UI::kDefaultWindowHeight};
+    return CWindowImpl<MainWindow>::Create(
+        parent, initial_rect, nullptr, style, extended_style);
 }
 
 void MainWindow::DrawSearchCue(CDC dc) const {
@@ -326,28 +347,42 @@ void MainWindow::RedrawFooterButtons() {
 }
 
 bool MainWindow::BindControls() {
-    const HWND search = GetDlgItem(kSearchControlId);
-    const HWND history = GetDlgItem(kHistoryListControlId);
-    const HWND pins = GetDlgItem(IDC_HISTORY_PINS);
-    const HWND footerClear = GetDlgItem(IDC_HISTORY_CLEAR);
-    const HWND footerSettings = GetDlgItem(IDC_HISTORY_SETTINGS);
-    const HWND footerAbout = GetDlgItem(IDC_HISTORY_ABOUT);
-    const HWND footerExit = GetDlgItem(IDC_HISTORY_EXIT);
+    const DWORD child = WS_CHILD | WS_VISIBLE;
+    const HWND search = CreateHistoryChild(m_hWnd, L"EDIT", L"",
+        child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, kSearchControlId);
+    const HWND history = CreateHistoryChild(m_hWnd, L"LISTBOX", L"",
+        child | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
+        LBS_HASSTRINGS | LBS_OWNERDRAWFIXED, WS_EX_CLIENTEDGE, kHistoryListControlId);
+    const HWND pins = CreateHistoryChild(m_hWnd, L"LISTBOX", L"",
+        child | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
+        LBS_HASSTRINGS | LBS_OWNERDRAWFIXED, WS_EX_CLIENTEDGE, IDC_HISTORY_PINS);
+    const HWND footerClear = CreateHistoryChild(m_hWnd, L"BUTTON", L"清空历史",
+        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_CLEAR);
+    const HWND footerSettings = CreateHistoryChild(m_hWnd, L"BUTTON", L"设置…",
+        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_SETTINGS);
+    const HWND footerAbout = CreateHistoryChild(m_hWnd, L"BUTTON", L"关于…",
+        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_ABOUT);
+    const HWND footerExit = CreateHistoryChild(m_hWnd, L"BUTTON", L"退出",
+        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_EXIT);
 
-    if (search == nullptr || history == nullptr || pins == nullptr ||
-        footerClear == nullptr || footerSettings == nullptr || footerAbout == nullptr ||
-        footerExit == nullptr) {
-        m_initializationError = L"主窗口资源缺少必需控件。";
+    if (search == nullptr || history == nullptr || pins == nullptr || footerClear == nullptr ||
+        footerSettings == nullptr || footerAbout == nullptr || footerExit == nullptr) {
+        m_initializationError = L"无法创建历史窗口控件。";
+        for (HWND child : {search, history, pins, footerClear, footerSettings, footerAbout, footerExit}) {
+            if (child != nullptr) {
+                ::DestroyWindow(child);
+            }
+        }
         return false;
     }
-
     if (!m_search.SubclassWindow(search) ||
         !m_historyListControls.HistoryListWindow().SubclassWindow(history) ||
         !m_historyListControls.PinsListWindow().SubclassWindow(pins) ||
         !m_footerClear.SubclassWindow(footerClear) ||
         !m_footerSettings.SubclassWindow(footerSettings) ||
-        !m_footerAbout.SubclassWindow(footerAbout) || !m_footerExit.SubclassWindow(footerExit)) {
-        m_initializationError = L"无法关联主窗口控件的 WTL 消息处理器。";
+        !m_footerAbout.SubclassWindow(footerAbout) ||
+        !m_footerExit.SubclassWindow(footerExit)) {
+        m_initializationError = L"无法关联历史窗口控件的 WTL 消息处理器。";
         return false;
     }
 
@@ -1541,27 +1576,30 @@ void MainWindow::OnHideWindowCallback(void* context) {
 }
 
 // Message handlers
-LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
-    handled = TRUE;
+bool MainWindow::InitializeHistoryControls() {
     m_applicationController.AttachWindow(m_hWnd);
     if (!m_historyRenderer.Initialize(CWindow(m_hWnd))) {
         m_initializationError = L"无法初始化历史记录字体。";
-        handled = TRUE;
-        return FALSE;
+        return false;
     }
+    const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+    SetWindowPos(nullptr, 0, 0,
+        SearchHeaderLayout::Scale(AppConstants::UI::kDefaultWindowWidth, dpi),
+        SearchHeaderLayout::Scale(AppConstants::UI::kDefaultWindowHeight, dpi),
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     if (!BindControls()) {
         if (m_initializationError.empty()) {
-            m_initializationError = L"无法初始化主窗口控件。请检查程序资源是否完整。";
+            m_initializationError = L"无法初始化主窗口控件。";
         }
-        handled = TRUE;
-        return FALSE;
+        m_applicationController.Shutdown();
+        return false;
     }
 
     m_pasteController.SetOwner(m_hWnd);
     if (!m_applicationController.InitializeClipboard(m_hWnd, m_ignoredLists)) {
         m_initializationError = L"无法注册剪贴板监听。";
-        handled = TRUE;
-        return FALSE;
+        m_applicationController.Shutdown();
+        return false;
     }
 
     m_keyboardHandler.Initialize(
@@ -1594,7 +1632,15 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         StartUpdateCheck(UpdateCheckMode::Automatic);
     }
     m_initialized = true;
-    return TRUE;
+    return true;
+}
+
+LRESULT MainWindow::OnCreate(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    if (!InitializeHistoryControls()) {
+        return -1;
+    }
+    return 0;
 }
 
 LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
@@ -2062,6 +2108,13 @@ LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_historyRenderer.Shutdown();
     PostQuitMessage(0);
     return 0;
+}
+
+LRESULT MainWindow::OnNcDestroy(UINT message, WPARAM wParam, LPARAM lParam, BOOL& handled) {
+    const LRESULT result = DefWindowProc(message, wParam, lParam);
+    m_hWnd = nullptr;
+    handled = TRUE;
+    return result;
 }
 
 bool MainWindow::AddTrayIcon() {
