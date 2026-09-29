@@ -562,7 +562,6 @@ void SettingsWindow::DestroyForOwner() {
 
 void SettingsWindow::CreateTabs() {
     m_tabs = GetDlgItem(kTabs);
-    SetControlFont(m_tabs);
 
     for (const PageDefinition &definition : kPageDefinitions) {
         TCITEMW item{};
@@ -1128,7 +1127,6 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
-    SetControlFont(m_tabs);
     ConfigureIgnoreList();
     ConfigurePinsList();
     if (m_currentPage == kPageIgnore) {
