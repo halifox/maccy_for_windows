@@ -1304,31 +1304,34 @@ void MainWindow::SaveWindowGeometry(bool resized) {
         return;
     }
 
-    const UINT dpi = UiFont::DpiForWindow(m_hWnd);
-    const int width = std::clamp(
-        MulDiv(static_cast<int>(rect.right - rect.left), USER_DEFAULT_SCREEN_DPI, static_cast<int>(dpi)),
-        AppConstants::UI::kMinimumPopupWidth,
-        AppConstants::UI::kMaximumPopupWidth
-    );
-    const int height = std::clamp(
-        MulDiv(
-            resized ? static_cast<int>(rect.bottom - rect.top) : SearchHeaderLayout::Scale(
-                m_settings.logical_window_height,
-                dpi
-            ),
-            USER_DEFAULT_SCREEN_DPI,
-            static_cast<int>(dpi)
-        ),
-        AppConstants::UI::kMinimumPopupHeight,
-        AppConstants::UI::kMaximumPopupHeight
-    );
     const bool persist_popup_position = m_activePopupPosition != PopupPosition::StatusItem;
     if (persist_popup_position) {
         m_settings.popup_x = rect.left;
         m_settings.popup_y = rect.top;
     }
-    m_settings.logical_window_width = width;
-    m_settings.logical_window_height = height;
+
+    if (resized) {
+        const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+        m_settings.logical_window_width = std::clamp(
+            MulDiv(
+                static_cast<int>(rect.right - rect.left),
+                USER_DEFAULT_SCREEN_DPI,
+                static_cast<int>(dpi)
+            ),
+            AppConstants::UI::kMinimumPopupWidth,
+            AppConstants::UI::kMaximumPopupWidth
+        );
+        m_settings.logical_window_height = std::clamp(
+            MulDiv(
+                static_cast<int>(rect.bottom - rect.top),
+                USER_DEFAULT_SCREEN_DPI,
+                static_cast<int>(dpi)
+            ),
+            AppConstants::UI::kMinimumPopupHeight,
+            AppConstants::UI::kMaximumPopupHeight
+        );
+    }
+
     PersistSettings();
 }
 
