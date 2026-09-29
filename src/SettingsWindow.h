@@ -16,6 +16,7 @@
 #include <atlapp.h>
 #include <atlctrls.h>
 #include <atlddx.h>
+#include <atlgdi.h>
 #include <atlwin.h>
 
 #include "Settings.h"
@@ -385,6 +386,7 @@ public:
     BEGIN_MSG_MAP(SettingsWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
+        MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_DESTROY, OnDestroy)
 
@@ -451,6 +453,7 @@ private:
 
     void SetPage(int page);
     void SetIgnorePage(int page);
+    void LayoutPages();
 
     void LoadControlsFromSettings();
     void LoadGeneralControls();
@@ -470,6 +473,7 @@ private:
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnCheckUpdatesCommand(WORD, WORD, HWND, BOOL &handled);
     LRESULT OnNotificationsCommand(WORD, WORD, HWND, BOOL &handled);

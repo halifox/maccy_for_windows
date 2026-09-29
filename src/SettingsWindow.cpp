@@ -612,6 +612,44 @@ bool SettingsWindow::CreatePageWindows() {
     return true;
 }
 
+void SettingsWindow::LayoutPages() {
+    if (m_tabs.m_hWnd == nullptr) {
+        return;
+    }
+
+    RECT tab_rect{};
+    m_tabs.GetClientRect(&tab_rect);
+    TabCtrl_AdjustRect(m_tabs.m_hWnd, FALSE, &tab_rect);
+    const int width = static_cast<int>(std::max<LONG>(1, tab_rect.right - tab_rect.left));
+    const int height = static_cast<int>(std::max<LONG>(1, tab_rect.bottom - tab_rect.top));
+
+    for (const auto &page : m_pages) {
+        if (page != nullptr && page->Handle() != nullptr) {
+            ::SetWindowPos(page->Handle(), nullptr, tab_rect.left, tab_rect.top,
+                           width, height,
+                           SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
+    // The ignore page contains a second tab control. Its resource pages must
+    // follow that tab control's client area as well; otherwise a DPI change
+    // leaves the old logical-size child windows clipped.
+    if (m_ignoreTabs.m_hWnd != nullptr) {
+        RECT ignore_rect{};
+        m_ignoreTabs.GetClientRect(&ignore_rect);
+        TabCtrl_AdjustRect(m_ignoreTabs.m_hWnd, FALSE, &ignore_rect);
+        const int ignore_width = static_cast<int>(std::max<LONG>(1, ignore_rect.right - ignore_rect.left));
+        const int ignore_height = static_cast<int>(std::max<LONG>(1, ignore_rect.bottom - ignore_rect.top));
+        for (const auto &page : m_ignorePages) {
+            if (page != nullptr && page->Handle() != nullptr) {
+                ::SetWindowPos(page->Handle(), nullptr, ignore_rect.left, ignore_rect.top,
+                               ignore_width, ignore_height,
+                               SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+    }
+}
+
 void SettingsWindow::BindControls() {
     const auto get = [this](int page, int id) {
         return m_pages[static_cast<size_t>(page)]->Control(id);
@@ -682,6 +720,7 @@ void SettingsWindow::BindControls() {
 
     ConfigureIgnoreList();
     ConfigurePinsList();
+    LayoutPages();
 }
 
 void SettingsWindow::ConfigureIgnoreList() {
@@ -1117,6 +1156,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = FALSE;
         return FALSE;
     }
+    LayoutPages();
     BindControls();
     LoadControlsFromSettings();
     SetUpdateCheckBusy(m_updateCheckBusy);
@@ -1125,13 +1165,28 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     return TRUE;
 }
 
-LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
+LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
     handled = TRUE;
+    const auto *suggested = reinterpret_cast<const RECT *>(lParam);
+    if (suggested != nullptr) {
+        SetWindowPos(nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left,
+                     suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    LayoutPages();
     ConfigureIgnoreList();
     ConfigurePinsList();
     if (m_currentPage == kPageIgnore) {
         m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Refresh();
     }
+    return 0;
+}
+
+LRESULT SettingsWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    LayoutPages();
     return 0;
 }
 
