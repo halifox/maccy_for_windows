@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.1](https://github.com/halifox/maccy_for_windows/compare/v1.2.0...v1.2.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **settings:** keep main tab font consistent with page text ([3c13b37](https://github.com/halifox/maccy_for_windows/commit/3c13b37a106c6907047e42145c3bccdc67e83f90))
+* **settings:** repair DPI-aware layout for settings pages ([3473bf4](https://github.com/halifox/maccy_for_windows/commit/3473bf4db2956935ae8a45b68adfced56d7d05ae))
+* **settings:** widen text controls for scaled displays ([59653b6](https://github.com/halifox/maccy_for_windows/commit/59653b6c2c17687d7a0833a14312be78d120ab8c))
+* **ui:** align history and footer heights for dpi ([59ff7c8](https://github.com/halifox/maccy_for_windows/commit/59ff7c8b06eefc4d34f3dec836271cf934e395d3))
+* **ui:** make window layouts DPI-aware ([f486fe7](https://github.com/halifox/maccy_for_windows/commit/f486fe7504b699292fb1baddc016cffb9c2ab023))
+* **window:** make history popup DPI-aware ([710da38](https://github.com/halifox/maccy_for_windows/commit/710da382176a99bf1121689c5ad7a83dc6781700))
+* **window:** preserve logical popup size across DPI changes ([bdd6aeb](https://github.com/halifox/maccy_for_windows/commit/bdd6aeb2ea7c812c5ab9628eb16d2a669ab7b8a5))
+* **window:** rely on dialog template for preview DPI layout ([35b9fe8](https://github.com/halifox/maccy_for_windows/commit/35b9fe8e6d81c89b2c6b618b8c93bb484537150c))
+
 ## [1.2.0](https://github.com/halifox/maccy_for_windows/compare/v1.1.0...v1.2.0) (2026-09-28)
 
 
