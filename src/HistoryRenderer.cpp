@@ -584,12 +584,23 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     rect.left += kHistoryItemLeftPadding;
     rect.right -= kHistoryItemRightPadding;
     if (draw->CtlID == IDC_HISTORY_PREVIEW) {
+        const int width = draw->rcItem.right - draw->rcItem.left;
+        const int height = draw->rcItem.bottom - draw->rcItem.top;
+        const UINT dpi = UiFont::DpiForWindow(draw->hwndItem);
+        const int iconWidth = std::min(width - MulDiv(6, static_cast<int>(dpi), 96),
+                                       MulDiv(18, static_cast<int>(dpi), 96));
+        const int iconHeight = std::min(height - MulDiv(6, static_cast<int>(dpi), 96),
+                                        MulDiv(14, static_cast<int>(dpi), 96));
+        const int left = draw->rcItem.left + (width - iconWidth) / 2;
+        const int top = draw->rcItem.top + (height - iconHeight) / 2;
         CPen pen;
-        if (pen.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT))) {
+        if (pen.CreatePen(PS_SOLID, 1, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT))) {
             ScopedGdiObjectSelection pen_selection(draw->hDC, pen);
             ScopedGdiObjectSelection brush_selection(draw->hDC, GetStockObject(NULL_BRUSH));
-            Rectangle(draw->hDC, 5, 5, 22, 19);
-            MoveToEx(draw->hDC, 15, 5, nullptr); LineTo(draw->hDC, 15, 19);
+            Rectangle(draw->hDC, left, top, left + iconWidth, top + iconHeight);
+            const int divider = left + iconWidth / 2;
+            MoveToEx(draw->hDC, divider, top, nullptr);
+            LineTo(draw->hDC, divider, top + iconHeight);
         }
         return;
     }
