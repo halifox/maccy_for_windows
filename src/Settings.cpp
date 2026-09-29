@@ -143,17 +143,17 @@ AppSettings AppSettings::Load(const Database &database) {
         0,
         1
     ));
-    settings.window_width = ReadInt(
+    settings.logical_window_width = ReadInt(
         database,
-        L"appearance.windowWidth",
-        settings.window_width,
+        L"appearance.logicalWindowWidth",
+        settings.logical_window_width,
         AppConstants::UI::kMinimumPopupWidth,
         AppConstants::UI::kMaximumPopupWidth
     );
-    settings.window_height = ReadInt(
+    settings.logical_window_height = ReadInt(
         database,
-        L"appearance.windowHeight",
-        settings.window_height,
+        L"appearance.logicalWindowHeight",
+        settings.logical_window_height,
         AppConstants::UI::kMinimumPopupHeight,
         AppConstants::UI::kMaximumPopupHeight
     );
@@ -267,8 +267,8 @@ void AppSettings::Save(const Database &database) const {
         WriteInt(database, L"appearance.popupPosition", static_cast<int>(popup_position));
         WriteInt(database, L"appearance.popupScreen", popup_screen);
         WriteInt(database, L"appearance.pinTo", static_cast<int>(pin_to));
-        WriteInt(database, L"appearance.windowWidth", window_width);
-        WriteInt(database, L"appearance.windowHeight", window_height);
+        WriteInt(database, L"appearance.logicalWindowWidth", logical_window_width);
+        WriteInt(database, L"appearance.logicalWindowHeight", logical_window_height);
         WriteInt(database, L"appearance.imageMaxHeight", image_max_height);
         WriteBool(database, L"appearance.openPreviewAutomatically", open_preview_automatically);
         WriteInt(database, L"appearance.previewDelay", preview_delay);

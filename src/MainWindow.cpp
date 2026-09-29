@@ -585,7 +585,7 @@ void MainWindow::HandlePopupActivation(HWND activating_window) {
 
 int MainWindow::PopupWidth(UINT dpi) const {
     const int baseWidth = std::clamp(
-        m_settings.window_width,
+        m_settings.logical_window_width,
         AppConstants::UI::kMinimumPopupWidth,
         AppConstants::UI::kMaximumPopupWidth
     );
@@ -598,7 +598,7 @@ int MainWindow::PopupWidth(UINT dpi) const {
 
 int MainWindow::PopupHeight(UINT dpi) const {
     const int baseHeight = std::clamp(
-        m_settings.window_height,
+        m_settings.logical_window_height,
         AppConstants::UI::kMinimumPopupHeight,
         AppConstants::UI::kMaximumPopupHeight
     );
@@ -1313,7 +1313,7 @@ void MainWindow::SaveWindowGeometry(bool resized) {
     const int height = std::clamp(
         MulDiv(
             resized ? static_cast<int>(rect.bottom - rect.top) : SearchHeaderLayout::Scale(
-                m_settings.window_height,
+                m_settings.logical_window_height,
                 dpi
             ),
             USER_DEFAULT_SCREEN_DPI,
@@ -1327,8 +1327,8 @@ void MainWindow::SaveWindowGeometry(bool resized) {
         m_settings.popup_x = rect.left;
         m_settings.popup_y = rect.top;
     }
-    m_settings.window_width = width;
-    m_settings.window_height = height;
+    m_settings.logical_window_width = width;
+    m_settings.logical_window_height = height;
     PersistSettings();
 }
 
@@ -1453,8 +1453,8 @@ std::uint32_t MainWindow::ApplySettings(
         m_tooltips.UpdateTipText(&info);
     }
     if (m_popupVisible &&
-        (previous.window_width != m_settings.window_width ||
-         previous.window_height != m_settings.window_height)) {
+        (previous.logical_window_width != m_settings.logical_window_width ||
+         previous.logical_window_height != m_settings.logical_window_height)) {
         RECT rect{};
         if (GetWindowRect(&rect)) {
             const UINT dpi = UiFont::DpiForWindow(m_hWnd);
@@ -1480,8 +1480,8 @@ std::uint32_t MainWindow::ApplySettings(
         previous.show_title != m_settings.show_title ||
         previous.show_footer != m_settings.show_footer ||
         previous.pin_to != m_settings.pin_to ||
-        previous.window_width != m_settings.window_width ||
-        previous.window_height != m_settings.window_height ||
+        previous.logical_window_width != m_settings.logical_window_width ||
+        previous.logical_window_height != m_settings.logical_window_height ||
         previous.show_application_icons != m_settings.show_application_icons ||
         previous.show_hex_color_swatch != m_settings.show_hex_color_swatch ||
         previous.highlight_match != m_settings.highlight_match;

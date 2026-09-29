@@ -65,8 +65,8 @@ struct AppSettings {
     PopupPosition popup_position = PopupPosition::Cursor;
     int popup_screen = 0; // 0 = active screen, otherwise monitor index + 1
     PinPosition pin_to = PinPosition::Top;
-    int window_width = AppConstants::UI::kDefaultWindowWidth;
-    int window_height = AppConstants::UI::kDefaultWindowHeight;
+    int logical_window_width = AppConstants::UI::kDefaultWindowWidth;
+    int logical_window_height = AppConstants::UI::kDefaultWindowHeight;
     int image_max_height = AppConstants::UI::kDefaultImageMaxHeight;
     bool open_preview_automatically = true;
     int preview_delay = 1500;
