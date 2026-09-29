@@ -110,28 +110,38 @@ private:
     CStatic m_descriptionLabel;
 };
 
-class IgnorePageBase {
+class IgnorePage {
 public:
-    virtual ~IgnorePageBase() = default;
+    IgnorePage(IgnoreListKind list, int dialog_page, const wchar_t *description,
+               const wchar_t *add_hint, const wchar_t *edit_hint, bool file_picker)
+        : m_listKind(list),
+          m_dialogPage(dialog_page),
+          m_descriptionText(description),
+          m_addHint(add_hint),
+          m_editHint(edit_hint),
+          m_filePicker(file_picker) {}
 
-    virtual void Initialize(CWindow page_window, StorageWorker &storage,
-                            std::vector<std::wstring> values) = 0;
-    virtual void Show() = 0;
-    virtual void Hide() = 0;
-    virtual void Refresh() = 0;
-    virtual bool AddValue() = 0;
-    virtual bool EditValue() = 0;
-    virtual bool RemoveValue() = 0;
-    virtual bool ResetToDefaults() = 0;
-    virtual bool SaveList() = 0;
+    void Initialize(CWindow page_window, StorageWorker &storage,
+                    std::vector<std::wstring> values);
+    void Show();
+    void Hide();
+    void Refresh();
+    bool AddValue();
+    bool EditValue();
+    bool RemoveValue();
+    bool ResetToDefaults();
+    bool SaveList();
 
-    CWindow GetPageWindow() const { return m_pageWindow; }
     CListViewCtrl ListWindow() const { return m_list; }
     const std::vector<std::wstring> &Values() const noexcept { return m_values; }
     void SetValues(std::vector<std::wstring> values);
 
-protected:
-    bool PersistValues(IgnoreListKind list);
+private:
+    bool PersistValues();
+    bool ChooseFile(std::wstring &value, bool editing) const;
+    bool IsDuplicate(const std::wstring &value, int selected) const;
+    bool EditTextValue(std::wstring &value, bool editing) const;
+    void SelectValue(int index);
 
     CWindow m_pageWindow;
     CListViewCtrl m_list;
@@ -139,57 +149,12 @@ protected:
     StorageWorker *m_storage = nullptr;
     std::vector<std::wstring> m_values;
     std::vector<std::wstring> m_persistedValues;
-};
-
-class IgnoreApplicationsPage : public IgnorePageBase {
-public:
-    void Initialize(CWindow page_window, StorageWorker &storage,
-                    std::vector<std::wstring> values) override;
-    void Show() override;
-    void Hide() override;
-    void Refresh() override;
-    bool AddValue() override;
-    bool EditValue() override;
-    bool RemoveValue() override;
-    bool ResetToDefaults() override;
-    bool SaveList() override;
-
-private:
-    void UpdateDescription();
-};
-
-class IgnoreFormatsPage : public IgnorePageBase {
-public:
-    void Initialize(CWindow page_window, StorageWorker &storage,
-                    std::vector<std::wstring> values) override;
-    void Show() override;
-    void Hide() override;
-    void Refresh() override;
-    bool AddValue() override;
-    bool EditValue() override;
-    bool RemoveValue() override;
-    bool ResetToDefaults() override;
-    bool SaveList() override;
-
-private:
-    void UpdateDescription();
-};
-
-class IgnoreRegexpsPage : public IgnorePageBase {
-public:
-    void Initialize(CWindow page_window, StorageWorker &storage,
-                    std::vector<std::wstring> values) override;
-    void Show() override;
-    void Hide() override;
-    void Refresh() override;
-    bool AddValue() override;
-    bool EditValue() override;
-    bool RemoveValue() override;
-    bool ResetToDefaults() override;
-    bool SaveList() override;
-
-private:
-    void UpdateDescription();
+    IgnoreListKind m_listKind;
+    int m_dialogPage;
+    const wchar_t *m_descriptionText;
+    const wchar_t *m_addHint;
+    const wchar_t *m_editHint;
+    bool m_filePicker;
 };
 
 class SettingsResourcePageBase {
@@ -405,7 +370,7 @@ public:
     using SettingsChangedCallback = std::function<void(const AppSettings &, std::uint32_t)>;
     using UpdateCheckCallback = std::function<bool()>;
     SettingsWindow(StorageWorker &storage, HWND owner, AppSettings settings,
-                   std::array<std::vector<std::wstring>, 3> ignored_lists,
+                   StorageWorker::IgnoreLists ignored_lists,
                    SettingsChangedCallback on_changed,
                    UpdateCheckCallback on_update_check);
 
@@ -544,7 +509,7 @@ private:
     UniqueIcon m_windowIcon;
 
     AppSettings m_settings{};
-    std::array<std::vector<std::wstring>, 3> m_ignoredLists;
+    StorageWorker::IgnoreLists m_ignoredLists;
 
     CButton m_gCheckNow;
     CStatic m_gBehaviorHint;
@@ -571,7 +536,32 @@ private:
     CStatic m_sCurrentSize;
 
     CTabCtrl m_ignoreTabs;
-    std::array<std::unique_ptr<IgnorePageBase>, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePageObjects;
+    std::array<IgnorePage, AppConstants::SettingsUI::kIgnorePageCount> m_ignorePageObjects{
+        IgnorePage{
+            IgnoreListKind::Applications,
+            0,
+            L"忽略来自特定应用的内容。\r\n请注意此选项并非总是有效，最好使用忽略剪贴板类型设置。",
+            nullptr,
+            nullptr,
+            true
+        },
+        IgnorePage{
+            IgnoreListKind::Formats,
+            1,
+            L"忽略特定剪贴板内容类型。\r\n默认提供了一些已知的适用于特定应用的类型。您可以删除预置类型，或根据需要添加自定义类型。",
+            L"输入要忽略的 pasteboard 类型（例如：com.example.custom）。",
+            L"编辑要忽略的 pasteboard 类型（例如：com.example.custom）。",
+            false
+        },
+        IgnorePage{
+            IgnoreListKind::Regexps,
+            2,
+            L"可以根据定义的正则表达式忽略某些副本。",
+            L"输入正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
+            L"编辑正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
+            false
+        }
+    };
     CImageListManaged m_ignoreImageList;
     int m_ignorePage = 0;
 

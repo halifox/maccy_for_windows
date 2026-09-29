@@ -61,6 +61,27 @@ std::wstring NormalizePath(std::wstring value) {
     return value;
 }
 
+bool MatchesApplication(std::wstring_view actual, std::wstring_view configured) {
+    const std::wstring actual_path = NormalizePath(std::wstring(actual));
+    const std::wstring configured_path = NormalizePath(std::wstring(configured));
+    if (actual_path.empty() || configured_path.empty()) {
+        return false;
+    }
+    if (actual_path == configured_path) {
+        return true;
+    }
+
+    // A bare executable name matches only the source path's final component.
+    // This keeps an ignore rule for one application from matching a similarly
+    // named executable in an unrelated directory.
+    if (configured_path.find_first_of(L"\\/") != std::wstring::npos) {
+        return false;
+    }
+    const size_t separator = actual_path.find_last_of(L"\\/");
+    const size_t filename_start = separator == std::wstring::npos ? 0 : separator + 1;
+    return actual_path.substr(filename_start) == configured_path;
+}
+
 std::wstring MakeTitle(std::wstring value, bool show_special_symbols) {
     value.resize(std::min<size_t>(value.size(), 1000));
     if (!show_special_symbols) {

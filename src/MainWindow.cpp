@@ -12,9 +12,6 @@
 #include <algorithm>
 #include <array>
 
-// External global module instance
-extern CAppModule _Module;
-
 namespace {
 
 constexpr UINT kTrayIconId = 1;
@@ -71,15 +68,6 @@ bool HasPendingKeyboardInput(HWND window) {
     }
     MSG message{};
     return ::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE;
-}
-
-HWND CreateHistoryChild(HWND parent, const wchar_t* class_name, const wchar_t* text,
-                        DWORD style, DWORD extended_style, int control_id) {
-    return ::CreateWindowExW(
-        extended_style, class_name, text, style,
-        0, 0, 1, 1, parent,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(control_id)),
-        _Module.GetModuleInstance(), nullptr);
 }
 
 // Resolve paste action based on modifier keys
@@ -140,18 +128,6 @@ MainWindow::MainWindow(
 
 MainWindow::~MainWindow() {
     m_applicationController.Shutdown();
-}
-
-HWND MainWindow::Create(HWND parent) {
-    const DWORD style = WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN |
-        WS_CLIPSIBLINGS;
-    const DWORD extended_style = WS_EX_TOOLWINDOW | WS_EX_TOPMOST |
-        WS_EX_CONTROLPARENT;
-    RECT initial_rect{0, 0,
-        AppConstants::UI::kDefaultWindowWidth,
-        AppConstants::UI::kDefaultWindowHeight};
-    return CWindowImpl<MainWindow>::Create(
-        parent, initial_rect, nullptr, style, extended_style);
 }
 
 void MainWindow::DrawSearchCue(CDC dc) const {
@@ -347,60 +323,30 @@ void MainWindow::RedrawFooterButtons() {
 }
 
 bool MainWindow::BindControls() {
-    const DWORD child = WS_CHILD | WS_VISIBLE;
-    const HWND search = CreateHistoryChild(m_hWnd, L"EDIT", L"",
-        child | WS_TABSTOP | ES_AUTOHSCROLL, WS_EX_CLIENTEDGE, kSearchControlId);
-    const HWND history = CreateHistoryChild(m_hWnd, L"LISTBOX", L"",
-        child | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
-        LBS_HASSTRINGS | LBS_OWNERDRAWFIXED, WS_EX_CLIENTEDGE, kHistoryListControlId);
-    const HWND pins = CreateHistoryChild(m_hWnd, L"LISTBOX", L"",
-        child | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT |
-        LBS_HASSTRINGS | LBS_OWNERDRAWFIXED, WS_EX_CLIENTEDGE, IDC_HISTORY_PINS);
-    const HWND footerClear = CreateHistoryChild(m_hWnd, L"BUTTON", L"清空历史",
-        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_CLEAR);
-    const HWND footerSettings = CreateHistoryChild(m_hWnd, L"BUTTON", L"设置…",
-        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_SETTINGS);
-    const HWND footerAbout = CreateHistoryChild(m_hWnd, L"BUTTON", L"关于…",
-        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_ABOUT);
-    const HWND footerExit = CreateHistoryChild(m_hWnd, L"BUTTON", L"退出",
-        child | WS_TABSTOP | BS_OWNERDRAW, 0, IDC_HISTORY_EXIT);
+    const HWND search = GetDlgItem(kSearchControlId);
+    const HWND history = GetDlgItem(kHistoryListControlId);
+    const HWND pins = GetDlgItem(IDC_HISTORY_PINS);
+    const HWND previewToggle = GetDlgItem(IDC_HISTORY_PREVIEW);
+    const HWND footerClear = GetDlgItem(IDC_HISTORY_CLEAR);
+    const HWND footerSettings = GetDlgItem(IDC_HISTORY_SETTINGS);
+    const HWND footerAbout = GetDlgItem(IDC_HISTORY_ABOUT);
+    const HWND footerExit = GetDlgItem(IDC_HISTORY_EXIT);
 
-    if (search == nullptr || history == nullptr || pins == nullptr || footerClear == nullptr ||
-        footerSettings == nullptr || footerAbout == nullptr || footerExit == nullptr) {
-        m_initializationError = L"无法创建历史窗口控件。";
-        for (HWND child : {search, history, pins, footerClear, footerSettings, footerAbout, footerExit}) {
-            if (child != nullptr) {
-                ::DestroyWindow(child);
-            }
-        }
+    if (search == nullptr || history == nullptr || pins == nullptr || previewToggle == nullptr ||
+        footerClear == nullptr || footerSettings == nullptr || footerAbout == nullptr ||
+        footerExit == nullptr) {
+        m_initializationError = L"主窗口资源缺少必需控件。";
         return false;
     }
     if (!m_search.SubclassWindow(search) ||
         !m_historyListControls.HistoryListWindow().SubclassWindow(history) ||
         !m_historyListControls.PinsListWindow().SubclassWindow(pins) ||
+        !m_previewToggle.SubclassWindow(previewToggle) ||
         !m_footerClear.SubclassWindow(footerClear) ||
         !m_footerSettings.SubclassWindow(footerSettings) ||
         !m_footerAbout.SubclassWindow(footerAbout) ||
         !m_footerExit.SubclassWindow(footerExit)) {
-        m_initializationError = L"无法关联历史窗口控件的 WTL 消息处理器。";
-        return false;
-    }
-
-    // The preview toggle is created here so SearchHeaderLayout owns its runtime
-    // geometry instead of relying on a placeholder RC position.
-    const DWORD buttonStyle = WS_CHILD | WS_TABSTOP | BS_OWNERDRAW;
-    RECT initialPreviewRect{0, 0, 1, 1};
-    if (m_previewToggle.Create(
-            this,
-            kMenuButtonMessageMap,
-            m_hWnd,
-            initialPreviewRect,
-            L"预览",
-            buttonStyle,
-            0,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_PREVIEW))
-        ) == nullptr) {
-        m_initializationError = L"无法创建预览按钮。";
+        m_initializationError = L"无法关联主窗口控件的 WTL 消息处理器。";
         return false;
     }
 
@@ -1635,12 +1581,12 @@ bool MainWindow::InitializeHistoryControls() {
     return true;
 }
 
-LRESULT MainWindow::OnCreate(UINT, WPARAM, LPARAM, BOOL& handled) {
+LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     if (!InitializeHistoryControls()) {
-        return -1;
+        return FALSE;
     }
-    return 0;
+    return TRUE;
 }
 
 LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
@@ -2108,13 +2054,6 @@ LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_historyRenderer.Shutdown();
     PostQuitMessage(0);
     return 0;
-}
-
-LRESULT MainWindow::OnNcDestroy(UINT message, WPARAM wParam, LPARAM lParam, BOOL& handled) {
-    const LRESULT result = DefWindowProc(message, wParam, lParam);
-    m_hWnd = nullptr;
-    handled = TRUE;
-    return result;
 }
 
 bool MainWindow::AddTrayIcon() {

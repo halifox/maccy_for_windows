@@ -210,7 +210,7 @@ bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) co
             m_ignoredApps.begin(),
             m_ignoredApps.end(),
             [&application](const std::wstring& configured) {
-                return MatchesApplication(application, configured);
+                return ClipboardRules::MatchesApplication(application, configured);
             }
         );
     }
@@ -218,7 +218,7 @@ bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) co
         m_ignoredApps.begin(),
         m_ignoredApps.end(),
         [&application](const std::wstring& configured) {
-            return MatchesApplication(application, configured);
+            return ClipboardRules::MatchesApplication(application, configured);
         }
     );
 }
@@ -265,20 +265,6 @@ std::wstring ClipboardMonitor::GetSourceApplication() {
     const BOOL ok = QueryFullProcessImageNameW(process, 0, path.data(), &length);
     CloseHandle(process);
     return ok ? std::wstring(path.data(), length) : std::wstring{};
-}
-
-bool ClipboardMonitor::MatchesApplication(std::wstring_view actual, std::wstring_view configured) {
-    const std::wstring actual_path = ClipboardRules::NormalizePath(std::wstring(actual));
-    const std::wstring configured_path = ClipboardRules::NormalizePath(std::wstring(configured));
-    if (actual_path.empty() || configured_path.empty()) {
-        return false;
-    }
-    if (actual_path == configured_path) {
-        return true;
-    }
-    const size_t separator = configured_path.find_last_of(L"\\/");
-    return separator == std::wstring::npos &&
-        actual_path.substr(actual_path.find_last_of(L"\\/") + 1) == configured_path;
 }
 
 std::wstring ClipboardMonitor::ExtractClipboardText() {
