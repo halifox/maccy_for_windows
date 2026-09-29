@@ -35,10 +35,12 @@ jobs:
             });
             const messages = [
               ['PR title', pullRequest.title],
-              ...commits.map(commit => [
-                `commit ${commit.sha.slice(0, 7)}`,
-                commit.commit.message.split(/\r?\n/, 1)[0]
-              ])
+              ...commits
+                .filter(commit => commit.parents.length === 1)
+                .map(commit => [
+                  `commit ${commit.sha.slice(0, 7)}`,
+                  commit.commit.message.split(/\r?\n/, 1)[0]
+                ])
             ];
 
             const errors = [];

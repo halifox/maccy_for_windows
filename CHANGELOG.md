@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.0](https://github.com/halifox/maccy_for_windows/compare/v1.1.0...v1.2.0) (2026-09-28)
+
+
+### Features
+
+* **hotkey:** add low-level shortcut capture ([20d7f4e](https://github.com/halifox/maccy_for_windows/commit/20d7f4ef02558c55a3781cb6e5219af6e908fce1))
+* **hotkey:** add low-level shortcut capture ([de2dae3](https://github.com/halifox/maccy_for_windows/commit/de2dae30c84543629fcaf3f6592d8e5900e22e0b))
+* **hotkey:** intercept Win+V to open popup ([af65801](https://github.com/halifox/maccy_for_windows/commit/af658018be4ab4b71a4d108167be5d96f3f06192))
+
 ## [1.1.0](https://github.com/halifox/maccy_for_windows/compare/v1.0.5...v1.1.0) (2026-09-25)
 
 
