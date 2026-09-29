@@ -601,6 +601,8 @@ bool SettingsWindow::CreatePageWindows() {
         }
     }
 
+    ConfigureIgnoreList();
+
     for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
         m_ignorePageObjects[page].Initialize(
             m_ignorePages[page]->Window(),
@@ -718,7 +720,6 @@ void SettingsWindow::BindControls() {
     AddComboItem(sortBy, L"首次复制时间");
     AddComboItem(sortBy, L"复制次数");
 
-    ConfigureIgnoreList();
     ConfigurePinsList();
     LayoutPages();
 }
