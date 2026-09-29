@@ -19,6 +19,7 @@ public:
 
     BEGIN_MSG_MAP(PreviewWindow)
         MESSAGE_HANDLER(WM_INITDIALOG, OnInitDialog)
+        MESSAGE_HANDLER(WM_SIZE, OnSize)
         MESSAGE_HANDLER(WM_DPICHANGED, OnDpiChanged)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
@@ -41,9 +42,11 @@ public:
 private:
     void ClearBitmap();
     bool UpdateFont(UINT dpi);
+    void LayoutControls();
     void UpdateStatus(const ClipboardItem &item);
 
     LRESULT OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled);
+    LRESULT OnSize(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL &handled);

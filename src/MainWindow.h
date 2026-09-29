@@ -158,8 +158,8 @@ private:
     // Window positioning
     void PositionPopup(PopupPosition popup_position);
     HMONITOR SelectedMonitor() const;
-    int PopupWidth() const;
-    int PopupHeight() const;
+    int PopupWidth(UINT dpi) const;
+    int PopupHeight(UINT dpi) const;
 
     // History management
     void RefreshHistory(std::wstring_view query);

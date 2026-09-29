@@ -153,6 +153,7 @@ target_link_libraries(maccy PRIVATE
         comdlg32
         comctl32
         dwmapi
+        shcore
         windowscodecs
         ole32
 )

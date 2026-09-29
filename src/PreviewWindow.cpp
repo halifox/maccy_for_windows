@@ -16,6 +16,11 @@ namespace {
 constexpr UINT kFallbackPreviewWidth = 194;
 constexpr UINT kFallbackPreviewHeight = 98;
 
+int ScaleDialogUnit(int value, UINT dpi) {
+    return std::max(1, MulDiv(value, static_cast<int>(dpi == 0 ? USER_DEFAULT_SCREEN_DPI : dpi),
+                               USER_DEFAULT_SCREEN_DPI));
+}
+
 void ApplySystemRoundedCorners(HWND window) {
     const DWM_WINDOW_CORNER_PREFERENCE preference = DWMWCP_ROUND;
     ::DwmSetWindowAttribute(
@@ -141,6 +146,7 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_pinButton = GetDlgItem(IDC_PREVIEW_PIN);
     m_deleteButton = GetDlgItem(IDC_PREVIEW_DELETE);
     UpdateFont(UiFont::DpiForWindow(m_hWnd));
+    LayoutControls();
     m_text.SetLimitText(ClipboardRules::Limits::kMaximumPreviewTextCharacters);
     m_image.ShowWindow(SW_HIDE);
     m_text.ShowWindow(SW_HIDE);
@@ -160,9 +166,61 @@ bool PreviewWindow::UpdateFont(UINT dpi) {
     return true;
 }
 
-LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+void PreviewWindow::LayoutControls() {
+    if (m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+        return;
+    }
+
+    const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+    RECT client{};
+    if (!GetClientRect(&client)) {
+        return;
+    }
+
+    const int margin = ScaleDialogUnit(6, dpi);
+    const int top = ScaleDialogUnit(22, dpi);
+    const int buttonTop = ScaleDialogUnit(4, dpi);
+    const int buttonHeight = ScaleDialogUnit(14, dpi);
+    const int buttonWidth = ScaleDialogUnit(25, dpi);
+    const int buttonGap = ScaleDialogUnit(4, dpi);
+    const int statusHeight = ScaleDialogUnit(32, dpi);
+    const int contentWidth = std::max(1, static_cast<int>(client.right - client.left) - 2 * margin);
+    const int contentBottom = std::max(top + 1, static_cast<int>(client.bottom) - margin - statusHeight);
+    const int contentHeight = std::max(1, contentBottom - top);
+
+    const auto place = [](CWindow &control, int x, int y, int width, int height) {
+        if (control.m_hWnd != nullptr) {
+            control.SetWindowPos(nullptr, x, y, std::max(1, width), std::max(1, height),
+                                 SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    };
+
+    const int deleteLeft = static_cast<int>(client.right) - margin - buttonWidth;
+    const int pinLeft = deleteLeft - buttonGap - buttonWidth;
+    place(m_pinButton, pinLeft, buttonTop, buttonWidth, buttonHeight);
+    place(m_deleteButton, deleteLeft, buttonTop, buttonWidth, buttonHeight);
+    place(m_image, margin, top, contentWidth, contentHeight);
+    place(m_text, margin, top, contentWidth, contentHeight);
+    place(m_status, margin, contentBottom, contentWidth, statusHeight);
+}
+
+LRESULT PreviewWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    LayoutControls();
+    return 0;
+}
+
+LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
+    handled = TRUE;
+    const auto *suggested = reinterpret_cast<const RECT *>(lParam);
+    if (suggested != nullptr) {
+        SetWindowPos(nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left,
+                     suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     UpdateFont(HIWORD(wParam));
+    LayoutControls();
     return 0;
 }
 
