@@ -140,7 +140,8 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_status = GetDlgItem(IDC_PREVIEW_STATUS);
     m_pinButton = GetDlgItem(IDC_PREVIEW_PIN);
     m_deleteButton = GetDlgItem(IDC_PREVIEW_DELETE);
-    UpdateFont(UiFont::DpiForWindow(m_hWnd));
+    const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+    UpdateFont(dpi);
     m_text.SetLimitText(ClipboardRules::Limits::kMaximumPreviewTextCharacters);
     m_image.ShowWindow(SW_HIDE);
     m_text.ShowWindow(SW_HIDE);
@@ -149,7 +150,9 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 bool PreviewWindow::UpdateFont(UINT dpi) {
     HFONT font = UiFont::CreateSegoeUi(dpi, UiFont::kBodyPointSize);
-    if (font == nullptr) return false;
+    if (font == nullptr) {
+        return false;
+    }
     m_image.SetFont(font, TRUE);
     m_text.SetFont(font, TRUE);
     m_status.SetFont(font, TRUE);
@@ -163,6 +166,8 @@ bool PreviewWindow::UpdateFont(UINT dpi) {
 LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
     handled = TRUE;
     UpdateFont(HIWORD(wParam));
+    InvalidateRect(nullptr, TRUE);
+    UpdateWindow();
     return 0;
 }
 

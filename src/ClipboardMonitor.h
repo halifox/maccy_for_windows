@@ -19,7 +19,10 @@
 // Clipboard monitoring and capture component
 class ClipboardMonitor {
 public:
-    using IgnoreLists = std::array<std::vector<std::wstring>, 3>;
+    using IgnoreLists = std::array<
+        std::vector<std::wstring>,
+        AppConstants::SettingsUI::kIgnorePageCount
+    >;
     using SaveCallback = std::function<void(ClipboardSnapshot)>;
 
     ClipboardMonitor(AppSettings& settings, IgnoreLists ignored_lists);
@@ -59,7 +62,6 @@ private:
 
     // Application identification
     static std::wstring GetSourceApplication();
-    static bool MatchesApplication(std::wstring_view actual, std::wstring_view configured);
 
     AppSettings& m_settings;
     SaveCallback m_saveCallback;

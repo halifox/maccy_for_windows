@@ -32,6 +32,8 @@ public:
     CContainedWindowT<CListBox> &PinsListWindow() noexcept { return m_pinsList; }
     const CContainedWindowT<CListBox> &HistoryListWindow() const noexcept { return m_historyList; }
     const CContainedWindowT<CListBox> &PinsListWindow() const noexcept { return m_pinsList; }
+    int ItemHeightPixels() const noexcept;
+    void RefreshItemHeights() noexcept;
 
     void Configure(KeyboardHandler &keyboard_handler,
                    HistoryRenderer &renderer,

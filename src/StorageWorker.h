@@ -27,7 +27,10 @@
 // SQLite directly; synchronous calls still execute on this worker thread.
 class StorageWorker {
 public:
-    using IgnoreLists = std::array<std::vector<std::wstring>, 3>;
+    using IgnoreLists = std::array<
+        std::vector<std::wstring>,
+        AppConstants::SettingsUI::kIgnorePageCount
+    >;
     using SearchCallback = std::function<void(
         std::uint64_t generation,
         std::vector<ClipboardItem> items,

@@ -153,6 +153,7 @@ target_link_libraries(maccy PRIVATE
         comdlg32
         comctl32
         dwmapi
+        shcore
         windowscodecs
         ole32
 )
@@ -161,7 +162,10 @@ target_compile_definitions(maccy PRIVATE UNICODE _UNICODE)
 
 if(MSVC)
     target_compile_options(maccy PRIVATE /utf-8)
-    target_link_options(maccy PRIVATE "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'")
+    target_link_options(maccy PRIVATE
+        "/MANIFEST:EMBED"
+        "/MANIFESTINPUT:${CMAKE_CURRENT_SOURCE_DIR}/src/maccy.manifest"
+    )
 endif()
 
 enable_testing()
@@ -183,6 +187,26 @@ if(MSVC)
     target_compile_options(maccy_update_checker_tests PRIVATE /utf-8)
 endif()
 add_test(NAME maccy_update_checker_tests COMMAND maccy_update_checker_tests)
+
+add_executable(maccy_core_rules_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/CoreRulesTests.cpp"
+        "${MACCY_SOURCE_DIR}/ClipboardRules.cpp"
+        "${MACCY_SOURCE_DIR}/PinKeys.cpp"
+)
+target_include_directories(maccy_core_rules_tests PRIVATE
+        "${MACCY_GENERATED_DIR}"
+        "${MACCY_SOURCE_DIR}"
+)
+target_compile_definitions(maccy_core_rules_tests PRIVATE UNICODE _UNICODE)
+target_link_libraries(maccy_core_rules_tests PRIVATE
+        unofficial::sqlite3::sqlite3
+        user32
+        shell32
+)
+if(MSVC)
+    target_compile_options(maccy_core_rules_tests PRIVATE /utf-8)
+endif()
+add_test(NAME maccy_core_rules_tests COMMAND maccy_core_rules_tests)
 
 include(GNUInstallDirs)
 

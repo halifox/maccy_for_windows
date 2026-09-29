@@ -7,13 +7,11 @@
 #include "UiFont.h"
 
 #include <shellapi.h>
+#include <shellscalingapi.h>
 #include <atltypes.h>
 
 #include <algorithm>
 #include <array>
-
-// External global module instance
-extern CAppModule _Module;
 
 namespace {
 
@@ -21,12 +19,22 @@ constexpr UINT kTrayIconId = 1;
 constexpr int kSearchControlId = IDC_HISTORY_SEARCH;
 constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 
-constexpr int kHistoryFooterHeight = 22;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
 constexpr int kResizeBorder = 8;
 
 constexpr wchar_t kHistorySearchCue[] = L"搜索剪贴板内容…";
+
+UINT DpiForMonitor(HMONITOR monitor) {
+    if (monitor != nullptr) {
+        UINT dpi_x = USER_DEFAULT_SCREEN_DPI;
+        UINT dpi_y = USER_DEFAULT_SCREEN_DPI;
+        if (SUCCEEDED(::GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpi_x, &dpi_y)) && dpi_x > 0) {
+            return dpi_x;
+        }
+    }
+    return USER_DEFAULT_SCREEN_DPI;
+}
 
 std::wstring DisplayVersion(std::wstring_view version) {
     if (!version.empty() && (version.front() == L'v' || version.front() == L'V')) {
@@ -330,43 +338,27 @@ bool MainWindow::BindControls() {
     const HWND search = GetDlgItem(kSearchControlId);
     const HWND history = GetDlgItem(kHistoryListControlId);
     const HWND pins = GetDlgItem(IDC_HISTORY_PINS);
+    const HWND previewToggle = GetDlgItem(IDC_HISTORY_PREVIEW);
     const HWND footerClear = GetDlgItem(IDC_HISTORY_CLEAR);
     const HWND footerSettings = GetDlgItem(IDC_HISTORY_SETTINGS);
     const HWND footerAbout = GetDlgItem(IDC_HISTORY_ABOUT);
     const HWND footerExit = GetDlgItem(IDC_HISTORY_EXIT);
 
-    if (search == nullptr || history == nullptr || pins == nullptr ||
+    if (search == nullptr || history == nullptr || pins == nullptr || previewToggle == nullptr ||
         footerClear == nullptr || footerSettings == nullptr || footerAbout == nullptr ||
         footerExit == nullptr) {
         m_initializationError = L"主窗口资源缺少必需控件。";
         return false;
     }
-
     if (!m_search.SubclassWindow(search) ||
         !m_historyListControls.HistoryListWindow().SubclassWindow(history) ||
         !m_historyListControls.PinsListWindow().SubclassWindow(pins) ||
+        !m_previewToggle.SubclassWindow(previewToggle) ||
         !m_footerClear.SubclassWindow(footerClear) ||
         !m_footerSettings.SubclassWindow(footerSettings) ||
-        !m_footerAbout.SubclassWindow(footerAbout) || !m_footerExit.SubclassWindow(footerExit)) {
+        !m_footerAbout.SubclassWindow(footerAbout) ||
+        !m_footerExit.SubclassWindow(footerExit)) {
         m_initializationError = L"无法关联主窗口控件的 WTL 消息处理器。";
-        return false;
-    }
-
-    // The preview toggle is created here so SearchHeaderLayout owns its runtime
-    // geometry instead of relying on a placeholder RC position.
-    const DWORD buttonStyle = WS_CHILD | WS_TABSTOP | BS_OWNERDRAW;
-    RECT initialPreviewRect{0, 0, 1, 1};
-    if (m_previewToggle.Create(
-            this,
-            kMenuButtonMessageMap,
-            m_hWnd,
-            initialPreviewRect,
-            L"预览",
-            buttonStyle,
-            0,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_HISTORY_PREVIEW))
-        ) == nullptr) {
-        m_initializationError = L"无法创建预览按钮。";
         return false;
     }
 
@@ -443,6 +435,11 @@ void MainWindow::LayoutHistoryControls() {
     GetClientRect(&client);
     const SearchHeaderLayout::Metrics headerMetrics =
         SearchHeaderLayout::ForDpi(UiFont::DpiForWindow(m_hWnd));
+    const int historyItemHeight = SearchHeaderLayout::Scale(
+        AppConstants::UI::kHistoryItemHeight,
+        UiFont::DpiForWindow(m_hWnd)
+    );
+    m_historyListControls.RefreshItemHeights();
     const int margin = headerMetrics.windowMargin;
     const int width = std::max(1L, client.right - 2 * margin);
     const bool header = m_search.IsWindowVisible() != FALSE;
@@ -466,7 +463,7 @@ void MainWindow::LayoutHistoryControls() {
 
     const int top = margin + (header ? headerMetrics.height + headerMetrics.contentGap : 0);
     const int footerHeight = m_settings.show_footer
-        ? kHistoryFooterGap + kHistoryFooterHeight * AppConstants::UI::kFooterButtonCount
+        ? kHistoryFooterGap + historyItemHeight * AppConstants::UI::kFooterButtonCount
         : 0;
     const int bottom = std::max(
         top + 1,
@@ -478,10 +475,10 @@ void MainWindow::LayoutHistoryControls() {
     const bool havePins = pinCount > 0;
     const bool haveHistory = historyCount > 0;
     const int gap = havePins && haveHistory ? kHistorySectionGap : 0;
-    const int requestedPinsHeight = pinCount * AppConstants::UI::kHistoryItemHeight;
+    const int requestedPinsHeight = pinCount * historyItemHeight;
     const int pinsHeight = havePins
         ? std::min(requestedPinsHeight, haveHistory
-            ? std::max(1, available - gap - AppConstants::UI::kHistoryItemHeight)
+            ? std::max(1, available - gap - historyItemHeight)
             : available)
         : 0;
     const int historyHeight = haveHistory ? std::max(1, available - pinsHeight - gap) : 1;
@@ -521,8 +518,8 @@ void MainWindow::LayoutHistoryControls() {
     auto buttons = FooterButtons();
     for (int i = 0; i < 4; ++i) {
         buttons[i].SetWindowPos(nullptr, margin,
-                                bottom + kHistoryFooterGap + i * kHistoryFooterHeight,
-                                width, kHistoryFooterHeight,
+                                bottom + kHistoryFooterGap + i * historyItemHeight,
+                                width, historyItemHeight,
                                 SWP_NOZORDER | SWP_NOACTIVATE);
         buttons[i].ShowWindow(m_settings.show_footer ? SW_SHOW : SW_HIDE);
     }
@@ -586,19 +583,29 @@ void MainWindow::HandlePopupActivation(HWND activating_window) {
     }
 }
 
-int MainWindow::PopupWidth() const {
-    return std::clamp(
-        m_settings.window_width,
+int MainWindow::PopupWidth(UINT dpi) const {
+    const int baseWidth = std::clamp(
+        m_settings.logical_window_width,
         AppConstants::UI::kMinimumPopupWidth,
         AppConstants::UI::kMaximumPopupWidth
     );
+    return std::clamp(
+        SearchHeaderLayout::Scale(baseWidth, dpi),
+        SearchHeaderLayout::Scale(AppConstants::UI::kMinimumPopupWidth, dpi),
+        SearchHeaderLayout::Scale(AppConstants::UI::kMaximumPopupWidth, dpi)
+    );
 }
 
-int MainWindow::PopupHeight() const {
-    return std::clamp(
-        m_settings.window_height,
+int MainWindow::PopupHeight(UINT dpi) const {
+    const int baseHeight = std::clamp(
+        m_settings.logical_window_height,
         AppConstants::UI::kMinimumPopupHeight,
         AppConstants::UI::kMaximumPopupHeight
+    );
+    return std::clamp(
+        SearchHeaderLayout::Scale(baseHeight, dpi),
+        SearchHeaderLayout::Scale(AppConstants::UI::kMinimumPopupHeight, dpi),
+        SearchHeaderLayout::Scale(AppConstants::UI::kMaximumPopupHeight, dpi)
     );
 }
 
@@ -640,44 +647,73 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
     const bool has_target = m_pasteController.GetTargetWindow() != nullptr
         && ::IsWindow(m_pasteController.GetTargetWindow())
         && ::GetWindowRect(m_pasteController.GetTargetWindow(), &target) == TRUE;
-    const HMONITOR monitor = SelectedMonitor();
+    const HMONITOR selected_monitor = SelectedMonitor();
+    HMONITOR monitor = selected_monitor;
+    RECT tray_rect{};
+    switch (popup_position) {
+    case PopupPosition::WindowCenter:
+        if (has_target) {
+            monitor = MonitorFromRect(&target, MONITOR_DEFAULTTONEAREST);
+        }
+        break;
+    case PopupPosition::LastPosition:
+        if (m_settings.popup_x != 0 || m_settings.popup_y != 0) {
+            const POINT saved_point{m_settings.popup_x, m_settings.popup_y};
+            monitor = MonitorFromPoint(saved_point, MONITOR_DEFAULTTONEAREST);
+        }
+        break;
+    case PopupPosition::StatusItem:
+        if (m_trayIcon.GetRect(tray_rect)) {
+            const POINT tray_point{
+                (tray_rect.left + tray_rect.right) / 2,
+                (tray_rect.top + tray_rect.bottom) / 2
+            };
+            monitor = MonitorFromPoint(tray_point, MONITOR_DEFAULTTONEAREST);
+        }
+        break;
+    case PopupPosition::ScreenCenter:
+    case PopupPosition::Cursor:
+    default:
+        break;
+    }
     MONITORINFO monitor_info{sizeof(monitor_info)};
     if (monitor == nullptr || !GetMonitorInfoW(monitor, &monitor_info)) {
         return;
     }
+    const UINT dpi = DpiForMonitor(monitor);
+    const int width = PopupWidth(dpi);
+    const int height = PopupHeight(dpi);
     const RECT& work_area = monitor_info.rcWork;
     int x = cursor.x;
-    int y = cursor.y - PopupHeight();
+    int y = cursor.y - height;
 
     switch (popup_position) {
-    case PopupPosition::WindowCenter: {
+    case PopupPosition::WindowCenter:
         if (has_target) {
-            x = target.left + ((target.right - target.left) - PopupWidth()) / 2;
-            y = target.top + ((target.bottom - target.top) - PopupHeight()) / 2;
+            x = target.left + ((target.right - target.left) - width) / 2;
+            y = target.top + ((target.bottom - target.top) - height) / 2;
         } else {
-            x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
-            y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
+            x = work_area.left + ((work_area.right - work_area.left) - width) / 2;
+            y = work_area.top + ((work_area.bottom - work_area.top) - height) / 2;
         }
         break;
-    }
     case PopupPosition::ScreenCenter:
-        x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
-        y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
+        x = work_area.left + ((work_area.right - work_area.left) - width) / 2;
+        y = work_area.top + ((work_area.bottom - work_area.top) - height) / 2;
         break;
     case PopupPosition::LastPosition:
         if (m_settings.popup_x != 0 || m_settings.popup_y != 0) {
             x = m_settings.popup_x;
             y = m_settings.popup_y;
         } else {
-            x = work_area.left + ((work_area.right - work_area.left) - PopupWidth()) / 2;
-            y = work_area.top + ((work_area.bottom - work_area.top) - PopupHeight()) / 2;
+            x = work_area.left + ((work_area.right - work_area.left) - width) / 2;
+            y = work_area.top + ((work_area.bottom - work_area.top) - height) / 2;
         }
         break;
     case PopupPosition::StatusItem: {
-        RECT tray_rect{};
-        if (m_trayIcon.GetRect(tray_rect)) {
-            x = tray_rect.left + ((tray_rect.right - tray_rect.left) - PopupWidth()) / 2;
-            y = tray_rect.top - PopupHeight() - 6;
+        if (tray_rect.left != tray_rect.right || tray_rect.top != tray_rect.bottom) {
+            x = tray_rect.left + ((tray_rect.right - tray_rect.left) - width) / 2;
+            y = tray_rect.top - height - 6;
         }
         break;
     }
@@ -686,20 +722,16 @@ void MainWindow::PositionPopup(PopupPosition popup_position) {
         // Anchor each axis to the cursor like a Windows context menu. The
         // popup's top-left corner is the preferred anchor; flip only the
         // axis whose preferred side has no room in the work area.
-        x = cursor.x <= work_area.right - PopupWidth()
-            ? cursor.x
-            : cursor.x - PopupWidth();
-        y = cursor.y <= work_area.bottom - PopupHeight()
-            ? cursor.y
-            : cursor.y - PopupHeight();
+        x = cursor.x <= work_area.right - width ? cursor.x : cursor.x - width;
+        y = cursor.y <= work_area.bottom - height ? cursor.y : cursor.y - height;
         break;
     }
 
-    const LONG max_x = std::max<LONG>(work_area.left, work_area.right - PopupWidth());
-    const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - PopupHeight());
+    const LONG max_x = std::max<LONG>(work_area.left, work_area.right - width);
+    const LONG max_y = std::max<LONG>(work_area.top, work_area.bottom - height);
     x = std::clamp(x, static_cast<int>(work_area.left), static_cast<int>(max_x));
     y = std::clamp(y, static_cast<int>(work_area.top), static_cast<int>(max_y));
-    SetWindowPos(HWND_TOPMOST, x, y, PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
+    SetWindowPos(HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
 }
 
 void MainWindow::RefreshHistory(std::wstring_view query) {
@@ -1272,23 +1304,34 @@ void MainWindow::SaveWindowGeometry(bool resized) {
         return;
     }
 
-    const int width = std::clamp(
-        static_cast<int>(rect.right - rect.left),
-        AppConstants::UI::kMinimumPopupWidth,
-        AppConstants::UI::kMaximumPopupWidth
-    );
-    const int height = std::clamp(
-        resized ? static_cast<int>(rect.bottom - rect.top) : m_settings.window_height,
-        AppConstants::UI::kMinimumPopupHeight,
-        AppConstants::UI::kMaximumPopupHeight
-    );
     const bool persist_popup_position = m_activePopupPosition != PopupPosition::StatusItem;
     if (persist_popup_position) {
         m_settings.popup_x = rect.left;
         m_settings.popup_y = rect.top;
     }
-    m_settings.window_width = width;
-    m_settings.window_height = height;
+
+    if (resized) {
+        const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+        m_settings.logical_window_width = std::clamp(
+            MulDiv(
+                static_cast<int>(rect.right - rect.left),
+                USER_DEFAULT_SCREEN_DPI,
+                static_cast<int>(dpi)
+            ),
+            AppConstants::UI::kMinimumPopupWidth,
+            AppConstants::UI::kMaximumPopupWidth
+        );
+        m_settings.logical_window_height = std::clamp(
+            MulDiv(
+                static_cast<int>(rect.bottom - rect.top),
+                USER_DEFAULT_SCREEN_DPI,
+                static_cast<int>(dpi)
+            ),
+            AppConstants::UI::kMinimumPopupHeight,
+            AppConstants::UI::kMaximumPopupHeight
+        );
+    }
+
     PersistSettings();
 }
 
@@ -1413,12 +1456,13 @@ std::uint32_t MainWindow::ApplySettings(
         m_tooltips.UpdateTipText(&info);
     }
     if (m_popupVisible &&
-        (previous.window_width != m_settings.window_width ||
-         previous.window_height != m_settings.window_height)) {
+        (previous.logical_window_width != m_settings.logical_window_width ||
+         previous.logical_window_height != m_settings.logical_window_height)) {
         RECT rect{};
         if (GetWindowRect(&rect)) {
+            const UINT dpi = UiFont::DpiForWindow(m_hWnd);
             SetWindowPos(HWND_TOPMOST, rect.left, rect.top,
-                         PopupWidth(), PopupHeight(), SWP_NOACTIVATE);
+                         PopupWidth(dpi), PopupHeight(dpi), SWP_NOACTIVATE);
         }
     }
     if (!m_isolated && (!SameHotKey(previous.open_hotkey, m_settings.open_hotkey) ||
@@ -1439,8 +1483,8 @@ std::uint32_t MainWindow::ApplySettings(
         previous.show_title != m_settings.show_title ||
         previous.show_footer != m_settings.show_footer ||
         previous.pin_to != m_settings.pin_to ||
-        previous.window_width != m_settings.window_width ||
-        previous.window_height != m_settings.window_height ||
+        previous.logical_window_width != m_settings.logical_window_width ||
+        previous.logical_window_height != m_settings.logical_window_height ||
         previous.show_application_icons != m_settings.show_application_icons ||
         previous.show_hex_color_swatch != m_settings.show_hex_color_swatch ||
         previous.highlight_match != m_settings.highlight_match;
@@ -1537,27 +1581,32 @@ void MainWindow::OnHideWindowCallback(void* context) {
 }
 
 // Message handlers
-LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
-    handled = TRUE;
+bool MainWindow::InitializeHistoryControls() {
     m_applicationController.AttachWindow(m_hWnd);
     if (!m_historyRenderer.Initialize(CWindow(m_hWnd))) {
         m_initializationError = L"无法初始化历史记录字体。";
-        handled = TRUE;
-        return FALSE;
+        return false;
     }
+    const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+    const int width = PopupWidth(dpi);
+    const int height = PopupHeight(dpi);
+    SetWindowPos(nullptr, 0, 0,
+        width,
+        height,
+        SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     if (!BindControls()) {
         if (m_initializationError.empty()) {
-            m_initializationError = L"无法初始化主窗口控件。请检查程序资源是否完整。";
+            m_initializationError = L"无法初始化主窗口控件。";
         }
-        handled = TRUE;
-        return FALSE;
+        m_applicationController.Shutdown();
+        return false;
     }
 
     m_pasteController.SetOwner(m_hWnd);
     if (!m_applicationController.InitializeClipboard(m_hWnd, m_ignoredLists)) {
         m_initializationError = L"无法注册剪贴板监听。";
-        handled = TRUE;
-        return FALSE;
+        m_applicationController.Shutdown();
+        return false;
     }
 
     m_keyboardHandler.Initialize(
@@ -1590,6 +1639,14 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
         StartUpdateCheck(UpdateCheckMode::Automatic);
     }
     m_initialized = true;
+    return true;
+}
+
+LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    if (!InitializeHistoryControls()) {
+        return FALSE;
+    }
     return TRUE;
 }
 
@@ -1647,10 +1704,15 @@ LRESULT MainWindow::OnGetMinMaxInfo(UINT, WPARAM, LPARAM lParam, BOOL& handled) 
         handled = FALSE;
         return 0;
     }
-    info->ptMinTrackSize.x = AppConstants::UI::kMinimumPopupWidth;
-    info->ptMinTrackSize.y = AppConstants::UI::kMinimumPopupHeight;
-    info->ptMaxTrackSize.x = AppConstants::UI::kMaximumPopupWidth;
-    info->ptMaxTrackSize.y = AppConstants::UI::kMaximumPopupHeight;
+    const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+    info->ptMinTrackSize.x = SearchHeaderLayout::Scale(
+        AppConstants::UI::kMinimumPopupWidth, dpi);
+    info->ptMinTrackSize.y = SearchHeaderLayout::Scale(
+        AppConstants::UI::kMinimumPopupHeight, dpi);
+    info->ptMaxTrackSize.x = SearchHeaderLayout::Scale(
+        AppConstants::UI::kMaximumPopupWidth, dpi);
+    info->ptMaxTrackSize.y = SearchHeaderLayout::Scale(
+        AppConstants::UI::kMaximumPopupHeight, dpi);
     handled = TRUE;
     return 0;
 }

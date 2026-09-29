@@ -407,7 +407,7 @@ struct PageDefinition {
     const wchar_t *title;
 };
 
-constexpr std::array<PageDefinition, 6> kPageDefinitions = {
+constexpr std::array<PageDefinition, AppConstants::SettingsUI::kPageCount> kPageDefinitions = {
     PageDefinition{L"通用"},
     PageDefinition{L"存储"},
     PageDefinition{L"外观"},
@@ -420,7 +420,8 @@ struct IgnorePageDefinition {
     const wchar_t *title;
 };
 
-constexpr std::array<IgnorePageDefinition, 3> kIgnorePageDefinitions = {
+constexpr std::array<IgnorePageDefinition, AppConstants::SettingsUI::kIgnorePageCount>
+    kIgnorePageDefinitions = {
     IgnorePageDefinition{L"忽略应用"},
     IgnorePageDefinition{L"忽略剪贴板类型"},
     IgnorePageDefinition{L"正则表达式"},
@@ -472,7 +473,7 @@ SettingsWindow::SettingsWindow(
     StorageWorker &storage,
     HWND owner,
     AppSettings settings,
-    std::array<std::vector<std::wstring>, 3> ignored_lists,
+    StorageWorker::IgnoreLists ignored_lists,
     SettingsChangedCallback on_changed,
     UpdateCheckCallback on_update_check
 )
@@ -494,9 +495,7 @@ void SettingsWindow::SetStateSnapshot(
     m_settings = settings;
     m_ignoredLists = std::move(ignored_lists);
     for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
-        if (m_ignorePageObjects[page] != nullptr) {
-            m_ignorePageObjects[page]->SetValues(m_ignoredLists[page]);
-        }
+        m_ignorePageObjects[page].SetValues(m_ignoredLists[page]);
     }
     if (m_hWnd != nullptr && IsWindow()) {
         LoadControlsFromSettings();
@@ -563,7 +562,6 @@ void SettingsWindow::DestroyForOwner() {
 
 void SettingsWindow::CreateTabs() {
     m_tabs = GetDlgItem(kTabs);
-    SetControlFont(m_tabs);
 
     for (const PageDefinition &definition : kPageDefinitions) {
         TCITEMW item{};
@@ -603,22 +601,53 @@ bool SettingsWindow::CreatePageWindows() {
         }
     }
 
-    // 初始化独立的忽略页面对象
-    m_ignorePageObjects[0] = std::make_unique<IgnoreApplicationsPage>();
-    m_ignorePageObjects[1] = std::make_unique<IgnoreFormatsPage>();
-    m_ignorePageObjects[2] = std::make_unique<IgnoreRegexpsPage>();
-
     for (size_t page = 0; page < m_ignorePageObjects.size(); ++page) {
-        if (m_ignorePageObjects[page] != nullptr) {
-            m_ignorePageObjects[page]->Initialize(
-                m_ignorePages[page]->Window(),
-                m_storage,
-                m_ignoredLists[page]
-            );
-        }
+        m_ignorePageObjects[page].Initialize(
+            m_ignorePages[page]->Window(),
+            m_storage,
+            m_ignoredLists[page]
+        );
     }
 
     return true;
+}
+
+void SettingsWindow::LayoutPages() {
+    if (m_tabs.m_hWnd == nullptr) {
+        return;
+    }
+
+    RECT tab_rect{};
+    m_tabs.GetClientRect(&tab_rect);
+    TabCtrl_AdjustRect(m_tabs.m_hWnd, FALSE, &tab_rect);
+    const int width = static_cast<int>(std::max<LONG>(1, tab_rect.right - tab_rect.left));
+    const int height = static_cast<int>(std::max<LONG>(1, tab_rect.bottom - tab_rect.top));
+
+    for (const auto &page : m_pages) {
+        if (page != nullptr && page->Handle() != nullptr) {
+            ::SetWindowPos(page->Handle(), nullptr, tab_rect.left, tab_rect.top,
+                           width, height,
+                           SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+
+    // The ignore page contains a second tab control. Its resource pages must
+    // follow that tab control's client area as well; otherwise a DPI change
+    // leaves the old logical-size child windows clipped.
+    if (m_ignoreTabs.m_hWnd != nullptr) {
+        RECT ignore_rect{};
+        m_ignoreTabs.GetClientRect(&ignore_rect);
+        TabCtrl_AdjustRect(m_ignoreTabs.m_hWnd, FALSE, &ignore_rect);
+        const int ignore_width = static_cast<int>(std::max<LONG>(1, ignore_rect.right - ignore_rect.left));
+        const int ignore_height = static_cast<int>(std::max<LONG>(1, ignore_rect.bottom - ignore_rect.top));
+        for (const auto &page : m_ignorePages) {
+            if (page != nullptr && page->Handle() != nullptr) {
+                ::SetWindowPos(page->Handle(), nullptr, ignore_rect.left, ignore_rect.top,
+                               ignore_width, ignore_height,
+                               SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+    }
 }
 
 void SettingsWindow::BindControls() {
@@ -691,6 +720,7 @@ void SettingsWindow::BindControls() {
 
     ConfigureIgnoreList();
     ConfigurePinsList();
+    LayoutPages();
 }
 
 void SettingsWindow::ConfigureIgnoreList() {
@@ -755,15 +785,11 @@ void SettingsWindow::SetIgnorePage(int page) {
 
     // 隐藏所有子页面
     for (size_t i = 0; i < m_ignorePageObjects.size(); ++i) {
-        if (m_ignorePageObjects[i] != nullptr) {
-            m_ignorePageObjects[i]->Hide();
-        }
+        m_ignorePageObjects[i].Hide();
     }
 
     // 显示当前子页面
-    if (m_ignorePageObjects[m_ignorePage] != nullptr) {
-        m_ignorePageObjects[m_ignorePage]->Show();
-    }
+    m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Show();
 }
 
 void SettingsWindow::LoadGeneralControls() {
@@ -836,10 +862,8 @@ void SettingsWindow::LoadControlsFromSettings() {
     LoadAdvancedControls();
 
     // The whitelist belongs to the applications page.
-    if (m_ignorePageObjects[0] != nullptr) {
-        m_ignorePages[0]->LoadSettings(m_settings);
-        m_ignorePages[0]->ExchangeSettings(DDX_LOAD);
-    }
+    m_ignorePages[0]->LoadSettings(m_settings);
+    m_ignorePages[0]->ExchangeSettings(DDX_LOAD);
 
     m_loading = false;
 }
@@ -966,10 +990,8 @@ void SettingsWindow::SaveCurrentPage() {
             );
             break;
         case kPageIgnore:
-            if (m_ignorePageObjects[0] != nullptr) {
-                m_ignorePages[0]->AttachSettings(m_settings);
-                m_ignorePages[0]->ExchangeSettings(DDX_SAVE);
-            }
+            m_ignorePages[0]->AttachSettings(m_settings);
+            m_ignorePages[0]->ExchangeSettings(DDX_SAVE);
             break;
         case kPageAdvanced:
             m_pages[kPageAdvanced]->AttachSettings(m_settings);
@@ -999,10 +1021,9 @@ void SettingsWindow::SaveCurrentPage() {
 
 void SettingsWindow::NotifyOwner(std::uint32_t updateMask) {
     if ((updateMask & AppConstants::UiUpdate::kIgnoreRules) != 0 &&
-        m_ignorePage >= 0 && m_ignorePage < static_cast<int>(m_ignorePageObjects.size()) &&
-        m_ignorePageObjects[static_cast<size_t>(m_ignorePage)] != nullptr) {
+        m_ignorePage >= 0 && m_ignorePage < static_cast<int>(m_ignorePageObjects.size())) {
         m_ignoredLists[static_cast<size_t>(m_ignorePage)] =
-            m_ignorePageObjects[static_cast<size_t>(m_ignorePage)]->Values();
+            m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Values();
     }
     if (m_onChanged) {
         m_onChanged(m_settings, updateMask);
@@ -1135,6 +1156,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = FALSE;
         return FALSE;
     }
+    LayoutPages();
     BindControls();
     LoadControlsFromSettings();
     SetUpdateCheckBusy(m_updateCheckBusy);
@@ -1143,14 +1165,28 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     return TRUE;
 }
 
-LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM, LPARAM, BOOL &handled) {
+LRESULT SettingsWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
     handled = TRUE;
-    SetControlFont(m_tabs);
+    const auto *suggested = reinterpret_cast<const RECT *>(lParam);
+    if (suggested != nullptr) {
+        SetWindowPos(nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left,
+                     suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    LayoutPages();
     ConfigureIgnoreList();
     ConfigurePinsList();
-    if (m_currentPage == kPageIgnore && m_ignorePageObjects[m_ignorePage] != nullptr) {
-        m_ignorePageObjects[m_ignorePage]->Refresh();
+    if (m_currentPage == kPageIgnore) {
+        m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].Refresh();
     }
+    return 0;
+}
+
+LRESULT SettingsWindow::OnSize(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    LayoutPages();
     return 0;
 }
 
@@ -1191,11 +1227,11 @@ LRESULT SettingsWindow::OnResetPositionCommand(WORD, WORD, HWND, BOOL &handled) 
 
 LRESULT SettingsWindow::OnIgnorePageCommand(WORD, WORD id, HWND, BOOL &handled) {
     handled = TRUE;
-    if (m_loading || m_ignorePageObjects[m_ignorePage] == nullptr) {
+    if (m_loading) {
         return 0;
     }
 
-    IgnorePageBase &page = *m_ignorePageObjects[m_ignorePage];
+    IgnorePage &page = m_ignorePageObjects[static_cast<size_t>(m_ignorePage)];
     bool changed = false;
     switch (id) {
     case kIAdd:
@@ -1251,29 +1287,30 @@ LRESULT SettingsWindow::OnIgnoreTabsSelectionChanged(int, LPNMHDR, BOOL &handled
 }
 
 LRESULT SettingsWindow::OnIgnoreListDoubleClick(int, LPNMHDR header, BOOL &handled) {
-    if (m_currentPage != kPageIgnore || m_ignorePageObjects[m_ignorePage] == nullptr ||
+    if (m_currentPage != kPageIgnore ||
         header == nullptr || header->hwndFrom !=
-            m_ignorePageObjects[m_ignorePage]->ListWindow().m_hWnd) {
+            m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].ListWindow().m_hWnd) {
         handled = FALSE;
         return 0;
     }
     handled = TRUE;
-    if (m_ignorePageObjects[m_ignorePage]->EditValue()) {
+    if (m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].EditValue()) {
         NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
     }
     return 0;
 }
 
 LRESULT SettingsWindow::OnIgnoreListKeyDown(int, LPNMHDR header, BOOL &handled) {
-    if (m_currentPage != kPageIgnore || m_ignorePageObjects[m_ignorePage] == nullptr ||
+    if (m_currentPage != kPageIgnore ||
         header == nullptr || header->hwndFrom !=
-            m_ignorePageObjects[m_ignorePage]->ListWindow().m_hWnd) {
+            m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].ListWindow().m_hWnd) {
         handled = FALSE;
         return 0;
     }
     handled = TRUE;
     const auto *key = reinterpret_cast<const NMLVKEYDOWN *>(header);
-    if (key->wVKey == VK_DELETE && m_ignorePageObjects[m_ignorePage]->RemoveValue()) {
+    if (key->wVKey == VK_DELETE &&
+        m_ignorePageObjects[static_cast<size_t>(m_ignorePage)].RemoveValue()) {
         NotifyOwner(AppConstants::UiUpdate::kIgnoreRules);
     }
     return 0;
@@ -1323,18 +1360,18 @@ void SetIgnoreListViewColumnWidth(CListViewCtrl list, int width) {
 
 }
 
-void IgnorePageBase::SetValues(std::vector<std::wstring> values) {
+void IgnorePage::SetValues(std::vector<std::wstring> values) {
     m_values = std::move(values);
     m_persistedValues = m_values;
     Refresh();
 }
 
-bool IgnorePageBase::PersistValues(IgnoreListKind list) {
+bool IgnorePage::PersistValues() {
     if (m_storage == nullptr) {
         return false;
     }
     try {
-        m_storage->ReplaceList(list, m_values);
+        m_storage->ReplaceList(m_listKind, m_values);
         m_persistedValues = m_values;
         return true;
     } catch (const std::exception &error) {
@@ -1350,41 +1387,35 @@ bool IgnorePageBase::PersistValues(IgnoreListKind list) {
     }
 }
 
-void IgnoreApplicationsPage::Initialize(
+void IgnorePage::Initialize(
     CWindow page_window,
     StorageWorker &storage,
     std::vector<std::wstring> values
 ) {
     m_pageWindow = page_window;
     m_storage = &storage;
-    SetValues(std::move(values));
     m_list = page_window.GetDlgItem(IDC_I_LIST);
     m_description = page_window.GetDlgItem(IDC_I_DESCRIPTION);
-
-    if (m_list.m_hWnd != nullptr) {
-        LVCOLUMNW column{};
-        column.mask = LVCF_WIDTH;
-        column.cx = 400;
-        m_list.InsertColumn(0, &column);
+    SetValues(std::move(values));
+    if (m_description.m_hWnd != nullptr) {
+        m_description.SetWindowText(m_descriptionText);
     }
-
-    UpdateDescription();
 }
 
-void IgnoreApplicationsPage::Show() {
+void IgnorePage::Show() {
     if (m_pageWindow.m_hWnd != nullptr) {
         m_pageWindow.ShowWindow(SW_SHOW);
         Refresh();
     }
 }
 
-void IgnoreApplicationsPage::Hide() {
+void IgnorePage::Hide() {
     if (m_pageWindow.m_hWnd != nullptr) {
         m_pageWindow.ShowWindow(SW_HIDE);
     }
 }
 
-void IgnoreApplicationsPage::Refresh() {
+void IgnorePage::Refresh() {
     if (m_list.m_hWnd == nullptr) {
         return;
     }
@@ -1403,8 +1434,12 @@ void IgnoreApplicationsPage::Refresh() {
     SetIgnoreListViewColumnWidth(m_list, list_rect.right - list_rect.left);
 }
 
-bool IgnoreApplicationsPage::AddValue() {
+bool IgnorePage::ChooseFile(std::wstring &value, bool editing) const {
     std::array<wchar_t, MAX_PATH> path{};
+    if (editing && wcscpy_s(path.data(), path.size(), value.c_str()) != 0) {
+        return false;
+    }
+
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = m_pageWindow.m_hWnd;
@@ -1417,200 +1452,92 @@ bool IgnoreApplicationsPage::AddValue() {
         return false;
     }
 
-    std::wstring value = path.data();
-    if (value.empty() || std::find(m_values.begin(), m_values.end(), value) != m_values.end()) {
-        return false;
-    }
-
-    m_values.push_back(std::move(value));
-    const bool saved = SaveList();
-    Refresh();
-    return saved;
+    value = path.data();
+    return !value.empty();
 }
 
-bool IgnoreApplicationsPage::EditValue() {
-    const int selected = SelectedListViewItem(m_list);
-    if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
+bool IgnorePage::EditTextValue(std::wstring &value, bool editing) const {
+    const wchar_t *hint = editing ? m_editHint : m_addHint;
+    EditIgnoreDialog dialog(
+        editing ? value : L"",
+        hint != nullptr ? hint : L"",
+        m_dialogPage
+    );
+    if (dialog.DoModal(m_pageWindow) != IDOK) {
         return false;
     }
 
-    std::array<wchar_t, MAX_PATH> path{};
-    wcscpy_s(path.data(), path.size(), m_values[selected].c_str());
+    value = dialog.GetValue();
+    return !value.empty();
+}
 
-    OPENFILENAMEW dialog{};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = m_pageWindow.m_hWnd;
-    dialog.lpstrFilter = L"Windows application (*.exe)\0*.exe\0All files (*.*)\0*.*\0\0";
-    dialog.lpstrFile = path.data();
-    dialog.nMaxFile = static_cast<DWORD>(path.size());
-    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-
-    if (!GetOpenFileNameW(&dialog)) {
-        return false;
-    }
-
-    std::wstring value = path.data();
-    if (value.empty()) {
-        return false;
-    }
-
+bool IgnorePage::IsDuplicate(const std::wstring &value, int selected) const {
     for (size_t index = 0; index < m_values.size(); ++index) {
-        if (static_cast<int>(index) != selected && m_values[index] == value) {
-            MessageBoxW(m_pageWindow.m_hWnd, L"该应用程序已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return false;
+        if (static_cast<int>(index) == selected || m_values[index] != value) {
+            continue;
         }
+        if (selected >= 0) {
+            MessageBoxW(
+                m_pageWindow.m_hWnd,
+                m_filePicker ? L"该应用程序已存在。" : L"该值已存在。",
+                L"错误",
+                MB_OK | MB_ICONWARNING
+            );
+        }
+        return true;
     }
-
-    m_values[selected] = value;
-    const bool saved = SaveList();
-    Refresh();
-    return saved;
-}
-
-bool IgnoreApplicationsPage::RemoveValue() {
-    const int selected = SelectedListViewItem(m_list);
-    if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return false;
-    }
-
-    m_values.erase(m_values.begin() + selected);
-    const bool saved = SaveList();
-    Refresh();
-    return saved;
-}
-
-bool IgnoreApplicationsPage::ResetToDefaults() {
     return false;
 }
 
-bool IgnoreApplicationsPage::SaveList() {
-    return PersistValues(IgnoreListKind::Applications);
-}
-
-void IgnoreApplicationsPage::UpdateDescription() {
-    if (m_description.m_hWnd != nullptr) {
-        m_description.SetWindowText(
-            L"忽略来自特定应用的内容。\r\n请注意此选项并非总是有效，最好使用忽略剪贴板类型设置。"
+void IgnorePage::SelectValue(int index) {
+    if (m_list.m_hWnd != nullptr && index >= 0) {
+        m_list.SetItemState(
+            index,
+            LVIS_SELECTED | LVIS_FOCUSED,
+            LVIS_SELECTED | LVIS_FOCUSED
         );
     }
 }
 
-void IgnoreFormatsPage::Initialize(
-    CWindow page_window,
-    StorageWorker &storage,
-    std::vector<std::wstring> values
-) {
-    m_pageWindow = page_window;
-    m_storage = &storage;
-    SetValues(std::move(values));
-    m_list = page_window.GetDlgItem(IDC_I_LIST);
-    m_description = page_window.GetDlgItem(IDC_I_DESCRIPTION);
-
-    if (m_list.m_hWnd != nullptr) {
-        LVCOLUMNW column{};
-        column.mask = LVCF_WIDTH;
-        column.cx = 400;
-        m_list.InsertColumn(0, &column);
-    }
-
-    UpdateDescription();
-}
-
-void IgnoreFormatsPage::Show() {
-    if (m_pageWindow.m_hWnd != nullptr) {
-        m_pageWindow.ShowWindow(SW_SHOW);
-        Refresh();
-    }
-}
-
-void IgnoreFormatsPage::Hide() {
-    if (m_pageWindow.m_hWnd != nullptr) {
-        m_pageWindow.ShowWindow(SW_HIDE);
-    }
-}
-
-void IgnoreFormatsPage::Refresh() {
-    if (m_list.m_hWnd == nullptr) {
-        return;
-    }
-
-    m_list.DeleteAllItems();
-    for (size_t index = 0; index < m_values.size(); ++index) {
-        LVITEMW row{};
-        row.mask = LVIF_TEXT;
-        row.iItem = static_cast<int>(index);
-        row.pszText = const_cast<wchar_t *>(m_values[index].c_str());
-        m_list.InsertItem(&row);
-    }
-
-    RECT list_rect{};
-    m_list.GetClientRect(&list_rect);
-    SetIgnoreListViewColumnWidth(m_list, list_rect.right - list_rect.left);
-}
-
-bool IgnoreFormatsPage::AddValue() {
-    EditIgnoreDialog dialog(
-        L"",
-        L"输入要忽略的 pasteboard 类型（例如：com.example.custom）。",
-        1
-    );
-
-    if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return false;
-    }
-
-    std::wstring value = dialog.GetValue();
-    if (value.empty() || std::find(m_values.begin(), m_values.end(), value) != m_values.end()) {
+bool IgnorePage::AddValue() {
+    std::wstring value;
+    const bool accepted = m_filePicker
+        ? ChooseFile(value, false)
+        : EditTextValue(value, false);
+    if (!accepted || IsDuplicate(value, -1)) {
         return false;
     }
 
     m_values.push_back(std::move(value));
     const bool saved = SaveList();
     Refresh();
-
-    const int inserted = static_cast<int>(m_values.size() - 1);
-    if (m_list.m_hWnd != nullptr && inserted >= 0) {
-        m_list.SetItemState(inserted, LVIS_SELECTED | LVIS_FOCUSED,
-                            LVIS_SELECTED | LVIS_FOCUSED);
+    if (saved) {
+        SelectValue(static_cast<int>(m_values.size() - 1));
     }
     return saved;
 }
 
-bool IgnoreFormatsPage::EditValue() {
+bool IgnorePage::EditValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
         return false;
     }
 
-    EditIgnoreDialog dialog(
-        m_values[selected],
-        L"编辑要忽略的 pasteboard 类型（例如：com.example.custom）。",
-        1
-    );
-
-    if (dialog.DoModal(m_pageWindow) != IDOK) {
+    std::wstring value = m_values[static_cast<size_t>(selected)];
+    const bool edited = m_filePicker
+        ? ChooseFile(value, true)
+        : EditTextValue(value, true);
+    if (!edited || IsDuplicate(value, selected)) {
         return false;
     }
 
-    std::wstring value = dialog.GetValue();
-    if (value.empty()) {
-        return false;
-    }
-
-    for (size_t index = 0; index < m_values.size(); ++index) {
-        if (static_cast<int>(index) != selected && m_values[index] == value) {
-            MessageBoxW(m_pageWindow.m_hWnd, L"该值已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return false;
-        }
-    }
-
-    m_values[selected] = value;
+    m_values[static_cast<size_t>(selected)] = std::move(value);
     const bool saved = SaveList();
     Refresh();
     return saved;
 }
 
-bool IgnoreFormatsPage::RemoveValue() {
+bool IgnorePage::RemoveValue() {
     const int selected = SelectedListViewItem(m_list);
     if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
         return false;
@@ -1622,164 +1549,17 @@ bool IgnoreFormatsPage::RemoveValue() {
     return saved;
 }
 
-bool IgnoreFormatsPage::ResetToDefaults() {
+bool IgnorePage::ResetToDefaults() {
+    if (m_listKind != IgnoreListKind::Formats) {
+        return false;
+    }
+
     m_values = ClipboardRules::DefaultIgnoredFormats();
-    if (!SaveList()) {
-        return false;
-    }
-    Refresh();
-    return true;
-}
-
-bool IgnoreFormatsPage::SaveList() {
-    return PersistValues(IgnoreListKind::Formats);
-}
-
-void IgnoreFormatsPage::UpdateDescription() {
-    if (m_description.m_hWnd != nullptr) {
-        m_description.SetWindowText(
-            L"忽略特定剪贴板内容类型。\r\n默认提供了一些已知的适用于特定应用的类型。您可以删除预置类型，或根据需要添加自定义类型。"
-        );
-    }
-}
-
-void IgnoreRegexpsPage::Initialize(
-    CWindow page_window,
-    StorageWorker &storage,
-    std::vector<std::wstring> values
-) {
-    m_pageWindow = page_window;
-    m_storage = &storage;
-    SetValues(std::move(values));
-    m_list = page_window.GetDlgItem(IDC_I_LIST);
-    m_description = page_window.GetDlgItem(IDC_I_DESCRIPTION);
-
-    if (m_list.m_hWnd != nullptr) {
-        LVCOLUMNW column{};
-        column.mask = LVCF_WIDTH;
-        column.cx = 400;
-        m_list.InsertColumn(0, &column);
-    }
-
-    UpdateDescription();
-}
-
-void IgnoreRegexpsPage::Show() {
-    if (m_pageWindow.m_hWnd != nullptr) {
-        m_pageWindow.ShowWindow(SW_SHOW);
-        Refresh();
-    }
-}
-
-void IgnoreRegexpsPage::Hide() {
-    if (m_pageWindow.m_hWnd != nullptr) {
-        m_pageWindow.ShowWindow(SW_HIDE);
-    }
-}
-
-void IgnoreRegexpsPage::Refresh() {
-    if (m_list.m_hWnd == nullptr) {
-        return;
-    }
-
-    m_list.DeleteAllItems();
-    for (size_t index = 0; index < m_values.size(); ++index) {
-        LVITEMW row{};
-        row.mask = LVIF_TEXT;
-        row.iItem = static_cast<int>(index);
-        row.pszText = const_cast<wchar_t *>(m_values[index].c_str());
-        m_list.InsertItem(&row);
-    }
-
-    RECT list_rect{};
-    m_list.GetClientRect(&list_rect);
-    SetIgnoreListViewColumnWidth(m_list, list_rect.right - list_rect.left);
-}
-
-bool IgnoreRegexpsPage::AddValue() {
-    EditIgnoreDialog dialog(
-        L"",
-        L"输入正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
-        2
-    );
-
-    if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return false;
-    }
-
-    std::wstring value = dialog.GetValue();
-    if (value.empty() || std::find(m_values.begin(), m_values.end(), value) != m_values.end()) {
-        return false;
-    }
-
-    m_values.push_back(std::move(value));
-    const bool saved = SaveList();
-    Refresh();
-
-    const int inserted = static_cast<int>(m_values.size() - 1);
-    if (m_list.m_hWnd != nullptr && inserted >= 0) {
-        m_list.SetItemState(inserted, LVIS_SELECTED | LVIS_FOCUSED,
-                            LVIS_SELECTED | LVIS_FOCUSED);
-    }
-    return saved;
-}
-
-bool IgnoreRegexpsPage::EditValue() {
-    const int selected = SelectedListViewItem(m_list);
-    if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return false;
-    }
-
-    EditIgnoreDialog dialog(
-        m_values[selected],
-        L"编辑正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
-        2
-    );
-
-    if (dialog.DoModal(m_pageWindow) != IDOK) {
-        return false;
-    }
-
-    std::wstring value = dialog.GetValue();
-    if (value.empty()) {
-        return false;
-    }
-
-    for (size_t index = 0; index < m_values.size(); ++index) {
-        if (static_cast<int>(index) != selected && m_values[index] == value) {
-            MessageBoxW(m_pageWindow.m_hWnd, L"该值已存在。", L"错误", MB_OK | MB_ICONWARNING);
-            return false;
-        }
-    }
-
-    m_values[selected] = value;
     const bool saved = SaveList();
     Refresh();
     return saved;
 }
 
-bool IgnoreRegexpsPage::RemoveValue() {
-    const int selected = SelectedListViewItem(m_list);
-    if (selected < 0 || selected >= static_cast<int>(m_values.size())) {
-        return false;
-    }
-
-    m_values.erase(m_values.begin() + selected);
-    const bool saved = SaveList();
-    Refresh();
-    return saved;
-}
-
-bool IgnoreRegexpsPage::ResetToDefaults() {
-    return false;
-}
-
-bool IgnoreRegexpsPage::SaveList() {
-    return PersistValues(IgnoreListKind::Regexps);
-}
-
-void IgnoreRegexpsPage::UpdateDescription() {
-    if (m_description.m_hWnd != nullptr) {
-        m_description.SetWindowText(L"可以根据定义的正则表达式忽略某些副本。");
-    }
+bool IgnorePage::SaveList() {
+    return PersistValues();
 }

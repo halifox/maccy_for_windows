@@ -26,6 +26,7 @@ std::wstring Lower(std::wstring_view value);
 std::wstring TrimWhitespace(std::wstring value);
 bool EqualInsensitive(std::wstring_view lhs, std::wstring_view rhs);
 std::wstring NormalizePath(std::wstring value);
+bool MatchesApplication(std::wstring_view actual, std::wstring_view configured);
 
 std::wstring MakeTitle(std::wstring value, bool show_special_symbols);
 std::wstring StoredPreview(std::wstring value);

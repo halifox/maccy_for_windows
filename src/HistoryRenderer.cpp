@@ -17,12 +17,12 @@
 namespace {
 
 constexpr int kHistoryItemInset = 2;
-constexpr int kHistoryItemRadius = 4;
 constexpr int kHistoryItemLeftPadding = 10;
 constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
+constexpr int kHistoryItemRadius = 4;
 
 std::wstring ReadWindowText(CWindow window) {
     if (window.m_hWnd == nullptr) {
@@ -568,7 +568,11 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
             draw->hDC,
             GetSysColorBrush(selected ? COLOR_HIGHLIGHT : COLOR_BTNFACE)
         );
-        RoundRect(draw->hDC, 0, 0, draw->rcItem.right, draw->rcItem.bottom, 8, 8);
+        RECT selected_rect = draw->rcItem;
+        selected_rect.left += kHistoryItemInset;
+        selected_rect.right -= kHistoryItemInset;
+        RoundRect(draw->hDC, selected_rect.left, selected_rect.top,
+            selected_rect.right, selected_rect.bottom, kHistoryItemRadius, kHistoryItemRadius);
     }
     ScopedGdiObjectSelection normal_font_selection(
         draw->hDC,
@@ -576,7 +580,9 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
     );
     SetBkMode(draw->hDC, TRANSPARENT);
     SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
-    RECT rect = draw->rcItem; rect.left += index < 0 ? 2 : 10; rect.right -= index < 0 ? 2 : 10;
+    RECT rect = draw->rcItem;
+    rect.left += kHistoryItemLeftPadding;
+    rect.right -= kHistoryItemRightPadding;
     if (draw->CtlID == IDC_HISTORY_PREVIEW) {
         CPen pen;
         if (pen.CreatePen(PS_SOLID, 1, GetSysColor(COLOR_GRAYTEXT))) {
@@ -588,11 +594,16 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         return;
     }
     const auto title = ReadWindowText(CWindow(draw->hwndItem));
-    DrawTextW(draw->hDC, title.c_str(), -1, &rect, DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | (index < 0 ? DT_CENTER : DT_LEFT));
+    DrawTextW(draw->hDC, title.c_str(), -1, &rect,
+        DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
     if (index >= 0) {
         const wchar_t* keys[] = {(GetKeyState(VK_SHIFT) & 0x8000) ? L"Ctrl+Alt+Shift+Backspace" : L"Ctrl+Alt+Backspace", L"Ctrl+,", L"", L"Ctrl+Q"};
+        RECT key_rect = draw->rcItem;
+        key_rect.left = std::max<LONG>(rect.left, key_rect.right - kHistoryShortcutWidth - kHistoryItemRightPadding);
+        key_rect.right -= kHistoryItemRightPadding;
         SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
-        DrawTextW(draw->hDC, keys[index], -1, &rect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+        DrawTextW(draw->hDC, keys[index], -1, &key_rect,
+            DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
 }
 

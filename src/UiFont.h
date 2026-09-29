@@ -13,10 +13,9 @@ constexpr int kSmallPointSize = 7;
 
 inline UINT DpiForWindow(HWND window) {
     if (window != nullptr) {
-        CClientDC dc(window);
-        const int dpi = dc.GetDeviceCaps(LOGPIXELSY);
+        const UINT dpi = ::GetDpiForWindow(window);
         if (dpi > 0) {
-            return static_cast<UINT>(dpi);
+            return dpi;
         }
     }
     return USER_DEFAULT_SCREEN_DPI;
