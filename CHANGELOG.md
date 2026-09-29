@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.2](https://github.com/halifox/maccy_for_windows/compare/v1.2.1...v1.2.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **settings:** initialize ignore lists before populating ([2e9527b](https://github.com/halifox/maccy_for_windows/commit/2e9527b983fcbdbdcb96bf7093189cdabcf96f9c))
+* **settings:** show clipboard ignore entries on first visit ([1f18fa8](https://github.com/halifox/maccy_for_windows/commit/1f18fa87149c63a4caf8d146f487ee1de54d469f))
+* **ui:** center and scale preview button icon ([cd82c7b](https://github.com/halifox/maccy_for_windows/commit/cd82c7b8c5c76095f59998a6eeb890ce7c519965))
+* **ui:** center preview button icon ([305d011](https://github.com/halifox/maccy_for_windows/commit/305d011fcdf29d040b0856b3db3343d153136614))
+
 ## [1.2.1](https://github.com/halifox/maccy_for_windows/compare/v1.2.0...v1.2.1) (2026-09-29)
 
 
