@@ -22,18 +22,20 @@ std::wstring FullText(const ClipboardItem &item) {
         if (!ClipboardRules::IsUnicodeTextFormat(data)) {
             continue;
         }
-        std::wstring text = ClipboardRules::DecodeUnicodeText(data.bytes);
-        text.resize(std::min(text.size(), ClipboardRules::Limits::kMaximumPreviewTextCharacters));
-        return text;
+        return ClipboardRules::DecodeUnicodeText(
+            data.bytes,
+            ClipboardRules::Limits::kMaximumPreviewTextCharacters
+        );
     }
 
     for (const ClipboardFormatData &data : item.data) {
         if (!ClipboardRules::IsAnsiTextFormat(data)) {
             continue;
         }
-        std::wstring text = ClipboardRules::DecodeAnsiText(data.bytes);
-        text.resize(std::min(text.size(), ClipboardRules::Limits::kMaximumPreviewTextCharacters));
-        return text;
+        return ClipboardRules::DecodeAnsiText(
+            data.bytes,
+            ClipboardRules::Limits::kMaximumPreviewTextCharacters
+        );
     }
 
     return item.preview;

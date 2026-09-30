@@ -42,9 +42,18 @@ bool IsImageFormat(UINT format, std::wstring_view name);
 bool IsEncodedImageName(std::wstring_view name);
 bool IsDib(const ClipboardFormatData &data);
 
-std::wstring DecodeUnicodeText(const std::vector<unsigned char> &bytes);
-std::wstring DecodeAnsiText(const std::vector<unsigned char> &bytes);
-std::wstring DecodeByteText(const std::vector<unsigned char> &bytes);
+std::wstring DecodeUnicodeText(
+    const std::vector<unsigned char> &bytes,
+    size_t maximum_characters = std::wstring::npos
+);
+std::wstring DecodeAnsiText(
+    const std::vector<unsigned char> &bytes,
+    size_t maximum_characters = std::wstring::npos
+);
+std::wstring DecodeByteText(
+    const std::vector<unsigned char> &bytes,
+    size_t maximum_characters = std::wstring::npos
+);
 std::wstring StripHtml(std::wstring value);
 std::wstring StripRtf(std::wstring_view value);
 std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes);
