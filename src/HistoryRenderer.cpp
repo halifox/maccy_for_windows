@@ -637,15 +637,30 @@ void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,
         return;
     }
     const auto title = ReadWindowText(CWindow(draw->hwndItem));
+    RECT key_rect{};
+    const wchar_t* key = nullptr;
+    if (index >= 0) {
+        const wchar_t* keys[] = {
+            (GetKeyState(VK_SHIFT) & 0x8000) ? L"Ctrl+Alt+Shift+Backspace" : L"Ctrl+Alt+Backspace",
+            L"Ctrl+,",
+            L"",
+            L"Ctrl+Q"
+        };
+        key = keys[index];
+        if (*key != L'\0') {
+            SIZE key_size{};
+            GetTextExtentPoint32W(draw->hDC, key, static_cast<int>(wcslen(key)), &key_size);
+            key_rect = draw->rcItem;
+            key_rect.right -= kHistoryItemRightPadding;
+            key_rect.left = std::max<LONG>(rect.left, key_rect.right - key_size.cx);
+            rect.right = std::max<LONG>(rect.left, key_rect.left - kHistoryItemSlotGap);
+        }
+    }
     DrawTextW(draw->hDC, title.c_str(), -1, &rect,
         DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_LEFT);
-    if (index >= 0) {
-        const wchar_t* keys[] = {(GetKeyState(VK_SHIFT) & 0x8000) ? L"Ctrl+Alt+Shift+Backspace" : L"Ctrl+Alt+Backspace", L"Ctrl+,", L"", L"Ctrl+Q"};
-        RECT key_rect = draw->rcItem;
-        key_rect.left = std::max<LONG>(rect.left, key_rect.right - kHistoryShortcutWidth - kHistoryItemRightPadding);
-        key_rect.right -= kHistoryItemRightPadding;
+    if (key != nullptr && *key != L'\0') {
         SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
-        DrawTextW(draw->hDC, keys[index], -1, &key_rect,
+        DrawTextW(draw->hDC, key, -1, &key_rect,
             DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     }
 }
