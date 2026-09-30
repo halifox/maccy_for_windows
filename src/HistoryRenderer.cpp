@@ -166,14 +166,14 @@ void HistoryRenderer::ClearImageThumbnails() noexcept {
 }
 
 std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
-    if (!item.title.empty()) {
+    if (!item.title.empty() && item.title != L"[图片]") {
         return item.title;
     }
-    if (!item.preview.empty()) {
+    if (!item.preview.empty() && item.preview != L"[图片]") {
         return ClipboardRules::PreviewText(item.preview);
     }
     if (item.has_image) {
-        return L"[图片]";
+        return {};
     }
     if (item.has_files) {
         return L"[文件]";
