@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.0](https://github.com/halifox/maccy_for_windows/compare/v1.2.2...v1.3.0) (2026-09-30)
+
+
+### Features
+
+* add asynchronous history image thumbnails ([6204583](https://github.com/halifox/maccy_for_windows/commit/6204583abe00e41c33609f2dd58df4f6c9c7071b))
+* add history image thumbnail rendering\n\nCo-Authored-By: Claude Opus 5.5 &lt;noreply@anthropic.com&gt; ([847e587](https://github.com/halifox/maccy_for_windows/commit/847e587983f6a3c4694a41f652c5960c8e88a244))
+* decode history thumbnails asynchronously ([42d3d02](https://github.com/halifox/maccy_for_windows/commit/42d3d02a042383e9db48e16467e69668b782d980))
+* load history image thumbnails asynchronously\n\nCo-Authored-By: Claude Opus 5.5 &lt;noreply@anthropic.com&gt; ([a0139f9](https://github.com/halifox/maccy_for_windows/commit/a0139f9ec76b1cb02e726d795298cf5e3dd79cb1))
+
+
+### Bug Fixes
+
+* hide image placeholder text ([7944f0d](https://github.com/halifox/maccy_for_windows/commit/7944f0d13bef705d79ba17b5c579f83baaaf048d))
+* prevent menu shortcut clipping ([41d326a](https://github.com/halifox/maccy_for_windows/commit/41d326a7d38f1df470fef848950e366e9a206443))
+* prevent menu shortcut clipping ([ace0ec5](https://github.com/halifox/maccy_for_windows/commit/ace0ec5e5a1f1ead8a72cd6259a554d123be1620))
+* **preview:** avoid full decoding of large text ([f383275](https://github.com/halifox/maccy_for_windows/commit/f38327559fa7e9ea7933c2d7b78551113a963bea))
+* **preview:** bound large text decoding ([57ecf79](https://github.com/halifox/maccy_for_windows/commit/57ecf798a59d86ace1d2da3a3440f0c2798a43ef))
+
 ## [1.2.2](https://github.com/halifox/maccy_for_windows/compare/v1.2.1...v1.2.2) (2026-09-29)
 
 
