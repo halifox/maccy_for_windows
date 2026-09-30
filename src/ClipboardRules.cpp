@@ -207,11 +207,14 @@ bool IsDib(const ClipboardFormatData &data) {
     return data.format == CF_DIBV5 || data.format == CF_DIB;
 }
 
-std::wstring DecodeUnicodeText(const std::vector<unsigned char> &bytes) {
-    if (bytes.size() < sizeof(wchar_t)) {
+std::wstring DecodeUnicodeText(
+    const std::vector<unsigned char> &bytes,
+    size_t maximum_characters
+) {
+    if (bytes.size() < sizeof(wchar_t) || maximum_characters == 0) {
         return {};
     }
-    const size_t count = bytes.size() / sizeof(wchar_t);
+    const size_t count = std::min(bytes.size() / sizeof(wchar_t), maximum_characters);
     std::wstring result(count, L'\0');
     std::memcpy(result.data(), bytes.data(), count * sizeof(wchar_t));
     const size_t nul = result.find(L'\0');
@@ -221,35 +224,71 @@ std::wstring DecodeUnicodeText(const std::vector<unsigned char> &bytes) {
     return result;
 }
 
-std::wstring DecodeAnsiText(const std::vector<unsigned char> &bytes) {
-    if (bytes.empty()) {
+std::wstring DecodeAnsiText(
+    const std::vector<unsigned char> &bytes,
+    size_t maximum_characters
+) {
+    if (bytes.empty() || maximum_characters == 0) {
         return {};
     }
     const size_t nul = std::find(bytes.begin(), bytes.end(), 0) - bytes.begin();
     if (nul == 0 || nul > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return {};
     }
-    const int source_length = static_cast<int>(nul);
     const auto *source = reinterpret_cast<const char *>(bytes.data());
+    const int source_length = static_cast<int>(nul);
     const int length = MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, source, source_length, nullptr, 0);
     if (length <= 0) {
         return {};
     }
-    std::wstring result(static_cast<size_t>(length), L'\0');
-    MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, source, source_length, result.data(), length);
+    if (static_cast<size_t>(length) <= maximum_characters) {
+        std::wstring result(static_cast<size_t>(length), L'\0');
+        MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, source, source_length, result.data(), length);
+        return result;
+    }
+
+    // Find a source prefix that converts to no more than the requested number
+    // of characters; this avoids splitting a multibyte character at the limit.
+    size_t low = 0;
+    size_t high = nul;
+    int prefix_length = 0;
+    while (low < high) {
+        const size_t middle = low + (high - low + 1) / 2;
+        const int converted = MultiByteToWideChar(
+            CP_ACP,
+            MB_PRECOMPOSED,
+            source,
+            static_cast<int>(middle),
+            nullptr,
+            0
+        );
+        if (converted >= 0 && static_cast<size_t>(converted) <= maximum_characters) {
+            low = middle;
+            prefix_length = converted;
+        } else {
+            high = middle - 1;
+        }
+    }
+    std::wstring result(static_cast<size_t>(prefix_length), L'\0');
+    if (prefix_length > 0) {
+        MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, source, static_cast<int>(low), result.data(), prefix_length);
+    }
     return result;
 }
 
-std::wstring DecodeByteText(const std::vector<unsigned char> &bytes) {
-    if (bytes.empty()) {
+std::wstring DecodeByteText(
+    const std::vector<unsigned char> &bytes,
+    size_t maximum_characters
+) {
+    if (bytes.empty() || maximum_characters == 0) {
         return {};
     }
     const size_t nul = std::find(bytes.begin(), bytes.end(), 0) - bytes.begin();
     if (nul == 0 || nul > static_cast<size_t>(std::numeric_limits<int>::max())) {
         return {};
     }
-    const int source_length = static_cast<int>(nul);
     const auto *source = reinterpret_cast<const char *>(bytes.data());
+    const int source_length = static_cast<int>(nul);
     UINT code_page = CP_UTF8;
     DWORD flags = MB_ERR_INVALID_CHARS;
     int length = MultiByteToWideChar(code_page, flags, source, source_length, nullptr, 0);
@@ -261,8 +300,40 @@ std::wstring DecodeByteText(const std::vector<unsigned char> &bytes) {
     if (length <= 0) {
         return {};
     }
-    std::wstring result(static_cast<size_t>(length), L'\0');
-    MultiByteToWideChar(code_page, flags, source, source_length, result.data(), length);
+    const int output_length = static_cast<int>(std::min<size_t>(
+        static_cast<size_t>(length),
+        maximum_characters
+    ));
+    std::wstring result(static_cast<size_t>(output_length), L'\0');
+    if (output_length == length) {
+        MultiByteToWideChar(code_page, flags, source, source_length, result.data(), output_length);
+        return result;
+    }
+
+    size_t low = 0;
+    size_t high = nul;
+    int prefix_length = 0;
+    while (low < high) {
+        const size_t middle = low + (high - low + 1) / 2;
+        const int converted = MultiByteToWideChar(
+            code_page,
+            flags,
+            source,
+            static_cast<int>(middle),
+            nullptr,
+            0
+        );
+        if (converted > 0 && static_cast<size_t>(converted) <= maximum_characters) {
+            low = middle;
+            prefix_length = converted;
+        } else {
+            high = middle - 1;
+        }
+    }
+    result.resize(static_cast<size_t>(prefix_length));
+    if (prefix_length > 0) {
+        MultiByteToWideChar(code_page, flags, source, static_cast<int>(low), result.data(), prefix_length);
+    }
     return result;
 }
 
