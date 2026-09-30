@@ -798,6 +798,39 @@ void MainWindow::ApplyDeferredHistoryResult() {
     ApplyHistoryItems(std::move(result.query), std::move(result.items));
 }
 
+void MainWindow::LoadImageThumbnails() {
+    m_imageThumbnails.clear();
+    m_historyRenderer.SetImageThumbnails({});
+    for (const ClipboardItem &item : m_items) {
+        if (!item.has_image) {
+            continue;
+        }
+        const sqlite3_int64 id = item.id;
+        const std::uint64_t request = ++m_thumbnailRequests[id];
+        m_storage.GetItemAsync(id, PayloadMode::Preview,
+            [this, id, request](std::optional<ClipboardItem> loaded, std::string) {
+                const auto it = m_thumbnailRequests.find(id);
+                if (it == m_thumbnailRequests.end() || it->second != request ||
+                    m_hWnd == nullptr || !IsWindow()) {
+                    return;
+                }
+                if (!loaded.has_value()) {
+                    return;
+                }
+                std::stop_source stop;
+                auto bitmap = DecodePreviewBitmap(*loaded, 320, static_cast<UINT>(std::max(1, m_settings.image_max_height)), stop.get_token());
+                if (!bitmap.has_value()) {
+                    return;
+                }
+                m_imageThumbnails.insert_or_assign(id, std::move(*bitmap));
+                m_historyRenderer.SetImageThumbnails(std::unordered_map<sqlite3_int64, PreviewBitmap>(m_imageThumbnails.begin(), m_imageThumbnails.end()));
+                for (CListBox *list : {&m_historyListControls.HistoryListWindow(), &m_historyListControls.PinsListWindow()}) {
+                    if (list->m_hWnd != nullptr) list->Invalidate(FALSE);
+                }
+            });
+    }
+}
+
 void MainWindow::ApplyHistoryItems(
     std::wstring query,
     std::vector<ClipboardItem> items
@@ -813,6 +846,7 @@ void MainWindow::ApplyHistoryItems(
         const std::wstring ownedQuery = query;
         m_items = std::move(items);
         m_historyRenderer.PrepareHistory(m_items);
+        LoadImageThumbnails();
 
         KillTimer(AppConstants::Timer::kPreview);
         m_previewCandidateId = 0;

@@ -166,6 +166,7 @@ private:
     // History management
     void RefreshHistory(std::wstring_view query);
     void ApplyHistoryItems(std::wstring query, std::vector<ClipboardItem> items);
+    void LoadImageThumbnails();
     void ApplyDeferredHistoryResult();
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
@@ -326,6 +327,8 @@ private:
         std::vector<ClipboardItem> items;
     };
     std::optional<DeferredHistoryResult> m_deferredHistoryResult;
+    std::unordered_map<sqlite3_int64, std::uint64_t> m_thumbnailRequests;
+    std::unordered_map<sqlite3_int64, PreviewBitmap> m_imageThumbnails;
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};
