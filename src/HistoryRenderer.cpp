@@ -152,9 +152,17 @@ void HistoryRenderer::SetImageThumbnails(std::unordered_map<sqlite3_int64, Previ
     m_imageThumbnails = std::move(thumbnails);
 }
 
+void HistoryRenderer::SetImageThumbnail(sqlite3_int64 id, PreviewBitmap thumbnail) {
+    m_imageThumbnails.insert_or_assign(id, std::move(thumbnail));
+}
+
 const PreviewBitmap* HistoryRenderer::ImageThumbnail(sqlite3_int64 id) const noexcept {
     const auto it = m_imageThumbnails.find(id);
     return it == m_imageThumbnails.end() ? nullptr : &it->second;
+}
+
+void HistoryRenderer::ClearImageThumbnails() noexcept {
+    m_imageThumbnails.clear();
 }
 
 std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
@@ -534,7 +542,12 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             CDC memory;
             if (memory.CreateCompatibleDC(draw->hDC)) {
                 ScopedGdiObjectSelection bitmap(memory.m_hDC, thumbnail->second.handle);
-                StretchBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, width, height, SRCCOPY);
+                if (bitmap.IsSelected()) {
+                    ScopedDcState thumbnail_dc_state(draw->hDC);
+                    ::SetStretchBltMode(draw->hDC, HALFTONE);
+                    ::SetBrushOrgEx(draw->hDC, 0, 0, nullptr);
+                    ::StretchBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, width, height, SRCCOPY);
+                }
             }
         } else {
             const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);

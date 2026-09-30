@@ -3,6 +3,7 @@
 #include "ClipboardMonitor.h"
 #include "PreviewWorker.h"
 #include "StorageWorker.h"
+#include "ThumbnailWorker.h"
 #include "UpdateChecker.h"
 
 #include <cstdint>
@@ -15,7 +16,7 @@ public:
     using PopupVisibleCallback = std::function<bool()>;
 
     ApplicationController(StorageWorker &storage, PreviewWorker &preview,
-                          AppSettings &settings);
+                          ThumbnailWorker &thumbnails, AppSettings &settings);
     ~ApplicationController();
 
     ApplicationController(const ApplicationController &) = delete;
@@ -38,6 +39,7 @@ public:
     std::vector<UpdateCheckResult> TakeUpdateResults();
 
     void DrainPreviewCallbacks();
+    void DrainThumbnailCallbacks();
     void DrainStorageCallbacks();
 
 private:
@@ -45,6 +47,7 @@ private:
 
     StorageWorker &m_storage;
     PreviewWorker &m_previewWorker;
+    ThumbnailWorker &m_thumbnailWorker;
     AppSettings &m_settings;
     ClipboardMonitor m_clipboard;
     UpdateChecker m_updateChecker;

@@ -37,7 +37,9 @@ public:
     void Shutdown();
     void PrepareHistory(const std::vector<ClipboardItem> &items);
     void SetImageThumbnails(std::unordered_map<sqlite3_int64, PreviewBitmap> thumbnails);
+    void SetImageThumbnail(sqlite3_int64 id, PreviewBitmap thumbnail);
     const PreviewBitmap* ImageThumbnail(sqlite3_int64 id) const noexcept;
+    void ClearImageThumbnails() noexcept;
     // Drawing operations
     void DrawHistoryItem(DRAWITEMSTRUCT* draw,
                          const std::vector<ClipboardItem>& items,

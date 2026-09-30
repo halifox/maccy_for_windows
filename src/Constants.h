@@ -22,6 +22,7 @@ namespace AppConstants {
     constexpr UINT kPreviewWorkerCommandMessage = WM_APP + 4;
     constexpr UINT kStorageWorkerResultMessage = WM_APP + 5;
     constexpr UINT kUpdateCheckerResultMessage = WM_APP + 6;
+    constexpr UINT kThumbnailWorkerResultMessage = WM_APP + 11;
     constexpr UINT kInstallerShutdownMessage = WM_APP + 8;
     constexpr UINT kOpenHotkeyMessage = WM_APP + 9;
     constexpr UINT kCaptureHotkeyMessage = WM_APP + 10;

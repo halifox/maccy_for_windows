@@ -17,6 +17,7 @@
 #include "Constants.h"
 #include "PreviewWorker.h"
 #include "StorageWorker.h"
+#include "ThumbnailWorker.h"
 
 CAppModule _Module;
 
@@ -300,7 +301,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         }
         StorageWorker::IgnoreLists ignored_lists = storage.LoadIgnoreLists();
         PreviewWorker preview(storage.Path());
-        MainWindow window(storage, preview, std::move(settings), std::move(ignored_lists));
+        ThumbnailWorker thumbnails;
+        MainWindow window(storage, preview, thumbnails, std::move(settings), std::move(ignored_lists));
         if (!window.Create(nullptr)) {
             const DWORD error = GetLastError();
             storage.Stop();

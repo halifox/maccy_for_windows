@@ -5,6 +5,7 @@
 
 #include <windowsx.h>
 
+#include <algorithm>
 #include <utility>
 
 HistoryListControls::HistoryListControls()
@@ -40,27 +41,93 @@ void HistoryListControls::Configure(
 
 int HistoryListControls::ItemHeightPixels() const noexcept {
     const HWND list = m_historyList.m_hWnd != nullptr ? m_historyList.m_hWnd : m_pinsList.m_hWnd;
-    const HWND parent = list != nullptr ? ::GetParent(list) : nullptr;
-    return std::max(
-        SearchHeaderLayout::Scale(
-            AppConstants::UI::kHistoryItemHeight,
-            UiFont::DpiForWindow(parent)
-        ),
-        SearchHeaderLayout::Scale(m_imageMaxHeight + 8, UiFont::DpiForWindow(parent))
-    );
+    const UINT dpi = UiFont::DpiForWindow(list);
+    return SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi);
+}
+
+int HistoryListControls::RowHeightPixels(const CListBox &list, int row) const noexcept {
+    const UINT dpi = UiFont::DpiForWindow(list.m_hWnd);
+    const int base_height = SearchHeaderLayout::Scale(AppConstants::UI::kHistoryItemHeight, dpi);
+    if (row < 0 || m_items == nullptr) {
+        return base_height;
+    }
+
+    LRESULT data = list.GetItemData(row);
+    if (data == LB_ERR) {
+        const auto pending = m_pendingMeasureItems.find(list.m_hWnd);
+        if (pending == m_pendingMeasureItems.end() ||
+            static_cast<size_t>(row) >= pending->second.size()) {
+            return base_height;
+        }
+        data = pending->second[static_cast<size_t>(row)];
+    }
+    if (static_cast<size_t>(data) >= m_items->size() ||
+        !(*m_items)[static_cast<size_t>(data)].has_image) {
+        return base_height;
+    }
+
+    const int max_height = SearchHeaderLayout::Scale(m_imageMaxHeight, dpi);
+    const int padding = SearchHeaderLayout::Scale(8, dpi);
+    return std::max(base_height, max_height + padding);
 }
 
 void HistoryListControls::RefreshItemHeights() noexcept {
-    const int height = ItemHeightPixels();
-    if (m_historyList.m_hWnd != nullptr) {
-        m_historyList.SetItemHeight(0, static_cast<UINT>(height));
+    UpdateAllItemHeights();
+}
+
+int HistoryListControls::TotalHeightPixels(const CListBox &list) const noexcept {
+    int height = 0;
+    for (int row = 0; row < list.GetCount(); ++row) {
+        height += RowHeightPixels(list, row);
     }
-    if (m_pinsList.m_hWnd != nullptr) {
-        m_pinsList.SetItemHeight(0, static_cast<UINT>(height));
+    return height;
+}
+
+void HistoryListControls::UpdateItemHeight(sqlite3_int64 item_id) noexcept {
+    if (m_items == nullptr || item_id == 0) {
+        return;
+    }
+    const auto item = std::find_if(m_items->begin(), m_items->end(), [item_id](const ClipboardItem &value) {
+        return value.id == item_id;
+    });
+    if (item == m_items->end()) {
+        return;
+    }
+    const int item_index = static_cast<int>(item - m_items->begin());
+    for (CListBox *list : {&m_historyList, &m_pinsList}) {
+        for (int row = 0; row < list->GetCount(); ++row) {
+            if (list->GetItemData(row) == static_cast<DWORD_PTR>(item_index)) {
+                list->SetItemHeight(row, static_cast<UINT>(RowHeightPixels(*list, row)));
+                list->Invalidate(FALSE);
+                break;
+            }
+        }
     }
 }
 
+void HistoryListControls::UpdateAllItemHeights() noexcept {
+    for (CListBox *list : {&m_historyList, &m_pinsList}) {
+        for (int row = 0; row < list->GetCount(); ++row) {
+            list->SetItemHeight(row, static_cast<UINT>(RowHeightPixels(*list, row)));
+        }
+    }
+}
+
+void HistoryListControls::SetPendingMeasureItems(HWND list, std::vector<int> item_indices) {
+    if (item_indices.empty()) {
+        m_pendingMeasureItems.erase(list);
+        return;
+    }
+    m_pendingMeasureItems.insert_or_assign(list, std::move(item_indices));
+}
+
+void HistoryListControls::SetImageMaxHeight(int image_max_height) noexcept {
+    m_imageMaxHeight = std::clamp(image_max_height, 1, 200);
+    UpdateAllItemHeights();
+}
+
 void HistoryListControls::Shutdown() noexcept {
+    m_pendingMeasureItems.clear();
     m_keyboardHandler = nullptr;
     m_renderer = nullptr;
     m_search.Detach();
@@ -241,7 +308,8 @@ LRESULT HistoryListControls::OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL &ha
         return 0;
     }
     handled = TRUE;
-    measure->itemHeight = static_cast<UINT>(ItemHeightPixels());
+    CListBox &list = measure->CtlID == IDC_HISTORY_PINS ? m_pinsList : m_historyList;
+    measure->itemHeight = static_cast<UINT>(RowHeightPixels(list, static_cast<int>(measure->itemID)));
     return 0;
 }
 
