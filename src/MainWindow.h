@@ -17,12 +17,14 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 
 #include "HistoryRenderer.h"
 #include "HistoryListControls.h"
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
+#include "PreviewDecoder.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
 #include "ClipboardData.h"

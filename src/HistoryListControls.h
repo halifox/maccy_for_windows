@@ -44,7 +44,8 @@ public:
                    bool &popup_visible,
                    FooterUpdateCallback request_footer_update,
                    PasteCallback paste_item,
-                   SelectionCallback selection_changed);
+                   SelectionCallback selection_changed,
+                   int image_max_height);
     void Shutdown() noexcept;
 
     BEGIN_MSG_MAP(HistoryListControls)
@@ -92,4 +93,5 @@ private:
     FooterUpdateCallback m_requestFooterUpdate;
     PasteCallback m_pasteItem;
     SelectionCallback m_selectionChanged;
+    int m_imageMaxHeight = 0;
 };

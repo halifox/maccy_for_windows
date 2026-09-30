@@ -128,6 +128,7 @@ void HistoryRenderer::Shutdown() {
 
     m_iconCache.clear();
     m_iconLru.clear();
+    m_imageThumbnails.clear();
     m_unpinnedShortcutNumbers.clear();
     m_highlightQuery.clear();
     m_highlightRegex.reset();
@@ -145,6 +146,15 @@ void HistoryRenderer::PrepareHistory(const std::vector<ClipboardItem> &items) {
             }
         }
     }
+}
+
+void HistoryRenderer::SetImageThumbnails(std::unordered_map<sqlite3_int64, PreviewBitmap> thumbnails) {
+    m_imageThumbnails = std::move(thumbnails);
+}
+
+const PreviewBitmap* HistoryRenderer::ImageThumbnail(sqlite3_int64 id) const noexcept {
+    const auto it = m_imageThumbnails.find(id);
+    return it == m_imageThumbnails.end() ? nullptr : &it->second;
 }
 
 std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
@@ -181,7 +191,16 @@ HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
         layout.icon = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
         x += kHistoryItemSlot + kHistoryItemSlotGap;
     }
-    if (item.has_image || item.has_files) {
+    if (item.has_image) {
+        if (const auto *thumbnail = ImageThumbnail(item.id); thumbnail != nullptr) {
+            layout.attachment = {x, row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2),
+                                 x + thumbnail->width, row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2) + thumbnail->height};
+            x += thumbnail->width + kHistoryItemSlotGap;
+        } else {
+            layout.attachment = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
+            x += kHistoryItemSlot + kHistoryItemSlotGap;
+        }
+    } else if (item.has_files) {
         layout.attachment = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
         x += kHistoryItemSlot + kHistoryItemSlotGap;
     }
@@ -506,25 +525,25 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
         }
     }
     if (!IsRectEmpty(&layout.attachment)) {
-        // Keep this marker cheap, but make its meaning visible instead of
-        // using an opaque color block. Full payloads remain in SQLite and
-        // are still loaded only by the preview/copy path.
-        const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
-        CPen marker_pen;
-        if (marker_pen.CreatePen(PS_SOLID, 1, marker)) {
-            {
+        const auto thumbnail = m_imageThumbnails.find(item.id);
+        if (item.has_image && thumbnail != m_imageThumbnails.end() && thumbnail->second.handle != nullptr) {
+            const int width = thumbnail->second.width;
+            const int height = thumbnail->second.height;
+            const int x = layout.attachment.left;
+            const int y = draw->rcItem.top + std::max(0, (row_height - height) / 2);
+            CDC memory;
+            if (memory.CreateCompatibleDC(draw->hDC)) {
+                ScopedGdiObjectSelection bitmap(memory.m_hDC, thumbnail->second.handle);
+                StretchBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, width, height, SRCCOPY);
+            }
+        } else {
+            const COLORREF marker = item.has_image ? RGB(90, 105, 120) : RGB(170, 125, 35);
+            CPen marker_pen;
+            if (marker_pen.CreatePen(PS_SOLID, 1, marker)) {
                 ScopedGdiObjectSelection pen_selection(draw->hDC, marker_pen);
                 ScopedGdiObjectSelection brush_selection(draw->hDC, GetStockObject(NULL_BRUSH));
                 Rectangle(draw->hDC, layout.attachment.left + 1, layout.attachment.top + 2,
                     layout.attachment.right - 1, layout.attachment.bottom - 2);
-                if (item.has_image) {
-                    MoveToEx(draw->hDC, layout.attachment.left + 3, layout.attachment.bottom - 4, nullptr);
-                    LineTo(draw->hDC, layout.attachment.left + 7, layout.attachment.top + 7);
-                    LineTo(draw->hDC, layout.attachment.left + 10, layout.attachment.bottom - 6);
-                } else {
-                    MoveToEx(draw->hDC, layout.attachment.left + 4, layout.attachment.top + 5, nullptr);
-                    LineTo(draw->hDC, layout.attachment.right - 4, layout.attachment.top + 5);
-                }
             }
         }
     }

@@ -407,7 +407,8 @@ bool MainWindow::BindControls() {
             } else {
                 SchedulePreviewForItem(item_id);
             }
-        }
+        },
+        m_settings.image_max_height
     );
 
     // The empty-state cue is painted by the search edit's WTL alternate map so it shares the edit's

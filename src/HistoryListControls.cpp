@@ -21,7 +21,8 @@ void HistoryListControls::Configure(
     bool &popup_visible,
     FooterUpdateCallback request_footer_update,
     PasteCallback paste_item,
-    SelectionCallback selection_changed
+    SelectionCallback selection_changed,
+    int image_max_height
 ) {
     m_keyboardHandler = &keyboard_handler;
     m_renderer = &renderer;
@@ -33,15 +34,19 @@ void HistoryListControls::Configure(
     m_requestFooterUpdate = std::move(request_footer_update);
     m_pasteItem = std::move(paste_item);
     m_selectionChanged = std::move(selection_changed);
+    m_imageMaxHeight = image_max_height;
     RefreshItemHeights();
 }
 
 int HistoryListControls::ItemHeightPixels() const noexcept {
     const HWND list = m_historyList.m_hWnd != nullptr ? m_historyList.m_hWnd : m_pinsList.m_hWnd;
     const HWND parent = list != nullptr ? ::GetParent(list) : nullptr;
-    return SearchHeaderLayout::Scale(
-        AppConstants::UI::kHistoryItemHeight,
-        UiFont::DpiForWindow(parent)
+    return std::max(
+        SearchHeaderLayout::Scale(
+            AppConstants::UI::kHistoryItemHeight,
+            UiFont::DpiForWindow(parent)
+        ),
+        SearchHeaderLayout::Scale(m_imageMaxHeight + 8, UiFont::DpiForWindow(parent))
     );
 }
 
