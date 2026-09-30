@@ -9,10 +9,12 @@
 ApplicationController::ApplicationController(
     StorageWorker &storage,
     PreviewWorker &preview,
+    ThumbnailWorker &thumbnails,
     AppSettings &settings
 )
     : m_storage(storage),
       m_previewWorker(preview),
+      m_thumbnailWorker(thumbnails),
       m_settings(settings),
       m_clipboard(settings, {}) {
     m_clipboard.SetSaveCallback(
@@ -37,6 +39,7 @@ void ApplicationController::SetUiCallbacks(
 void ApplicationController::AttachWindow(HWND window) noexcept {
     m_updateChecker.SetWindow(window);
     m_storage.SetUiWindow(window);
+    m_thumbnailWorker.Start(window);
 }
 
 bool ApplicationController::InitializeClipboard(
@@ -62,6 +65,8 @@ void ApplicationController::Shutdown() noexcept {
 
     StopUpdateChecks();
     m_previewWorker.SetUiWindow(nullptr);
+    m_thumbnailWorker.SetUiWindow(nullptr);
+    m_thumbnailWorker.Stop();
     m_clipboard.Shutdown();
     m_clipboard.SetSaveCallback({});
     m_storage.SetUiWindow(nullptr);
@@ -141,6 +146,10 @@ std::vector<UpdateCheckResult> ApplicationController::TakeUpdateResults() {
 
 void ApplicationController::DrainPreviewCallbacks() {
     m_previewWorker.DrainUiCallbacks();
+}
+
+void ApplicationController::DrainThumbnailCallbacks() {
+    m_thumbnailWorker.DrainUiCallbacks();
 }
 
 void ApplicationController::DrainStorageCallbacks() {

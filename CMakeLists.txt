@@ -89,6 +89,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/KeyboardHandler.cpp"
         "${MACCY_SOURCE_DIR}/Database.cpp"
         "${MACCY_SOURCE_DIR}/StorageWorker.cpp"
+        "${MACCY_SOURCE_DIR}/ThumbnailWorker.cpp"
         "${MACCY_SOURCE_DIR}/PinKeys.cpp"
         "${MACCY_SOURCE_DIR}/Settings.cpp"
         "${MACCY_SOURCE_DIR}/SettingsWindow.cpp"

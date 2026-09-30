@@ -113,16 +113,18 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
 MainWindow::MainWindow(
     StorageWorker &storage,
     PreviewWorker &preview,
+    ThumbnailWorker &thumbnails,
     AppSettings settings,
     StorageWorker::IgnoreLists ignored_lists,
     bool isolated
 )
     : m_storage(storage),
+      m_thumbnailWorker(thumbnails),
       m_settings(std::move(settings)),
       m_suppressClearAlert(storage.LoadSuppressClearAlert()),
       m_ignoredLists(std::move(ignored_lists)),
       m_previewWorker(preview),
-      m_applicationController(storage, preview, m_settings),
+      m_applicationController(storage, preview, thumbnails, m_settings),
       m_historyRenderer(m_settings),
       m_keyboardHandler(m_settings),
       m_search(this, kSearchControlMessageMap),
@@ -407,7 +409,8 @@ bool MainWindow::BindControls() {
             } else {
                 SchedulePreviewForItem(item_id);
             }
-        }
+        },
+        m_settings.image_max_height
     );
 
     // The empty-state cue is painted by the search edit's WTL alternate map so it shares the edit's
@@ -475,7 +478,10 @@ void MainWindow::LayoutHistoryControls() {
     const bool havePins = pinCount > 0;
     const bool haveHistory = historyCount > 0;
     const int gap = havePins && haveHistory ? kHistorySectionGap : 0;
-    const int requestedPinsHeight = pinCount * historyItemHeight;
+    const int pinContentHeight = m_historyListControls.TotalHeightPixels(
+        m_historyListControls.PinsListWindow()
+    );
+    const int requestedPinsHeight = std::max(historyItemHeight, pinContentHeight);
     const int pinsHeight = havePins
         ? std::min(requestedPinsHeight, haveHistory
             ? std::max(1, available - gap - historyItemHeight)
@@ -797,6 +803,63 @@ void MainWindow::ApplyDeferredHistoryResult() {
     ApplyHistoryItems(std::move(result.query), std::move(result.items));
 }
 
+void MainWindow::LoadImageThumbnails() {
+    const std::uint64_t generation = ++m_thumbnailGeneration;
+    m_thumbnailRequests.clear();
+    m_historyRenderer.ClearImageThumbnails();
+    for (const ClipboardItem &item : m_items) {
+        if (!item.has_image) {
+            continue;
+        }
+        const sqlite3_int64 id = item.id;
+        const std::uint64_t request = ++m_thumbnailRequests[id];
+        m_storage.GetItemAsync(id, PayloadMode::Preview,
+            [this, id, request, generation](std::optional<ClipboardItem> loaded, std::string) {
+                const auto current = [this, id, request, generation]() {
+                    const auto it = m_thumbnailRequests.find(id);
+                    return generation == m_thumbnailGeneration &&
+                        it != m_thumbnailRequests.end() && it->second == request &&
+                        m_hWnd != nullptr && IsWindow();
+                };
+                if (!current() || !loaded.has_value()) {
+                    return;
+                }
+                const UINT dpi = UiFont::DpiForWindow(m_hWnd);
+                m_thumbnailWorker.Submit(
+                    ThumbnailWorker::Request{
+                        id,
+                        generation,
+                        std::move(*loaded),
+                        320,
+                        static_cast<UINT>(std::max(
+                            1,
+                            SearchHeaderLayout::Scale(m_settings.image_max_height, dpi)
+                        ))
+                    },
+                    [this, id, request](sqlite3_int64 result_id, std::uint64_t result_generation,
+                                        std::optional<PreviewBitmap> bitmap) {
+                        const auto it = m_thumbnailRequests.find(result_id);
+                        if (result_id != id || result_generation != m_thumbnailGeneration ||
+                            it == m_thumbnailRequests.end() || it->second != request ||
+                            m_hWnd == nullptr || !IsWindow() || !bitmap.has_value()) {
+                            return;
+                        }
+                        m_historyRenderer.SetImageThumbnail(result_id, std::move(*bitmap));
+                        m_historyListControls.UpdateItemHeight(result_id);
+                        for (CListBox *list : {
+                                 &m_historyListControls.HistoryListWindow(),
+                                 &m_historyListControls.PinsListWindow()
+                             }) {
+                            if (list->m_hWnd != nullptr) {
+                                list->Invalidate(FALSE);
+                            }
+                        }
+                    }
+                );
+            });
+    }
+}
+
 void MainWindow::ApplyHistoryItems(
     std::wstring query,
     std::vector<ClipboardItem> items
@@ -812,6 +875,7 @@ void MainWindow::ApplyHistoryItems(
         const std::wstring ownedQuery = query;
         m_items = std::move(items);
         m_historyRenderer.PrepareHistory(m_items);
+        LoadImageThumbnails();
 
         KillTimer(AppConstants::Timer::kPreview);
         m_previewCandidateId = 0;
@@ -819,6 +883,7 @@ void MainWindow::ApplyHistoryItems(
         m_searchQuery = ownedQuery;
 
         m_loadingList = true;
+        std::unordered_map<HWND, std::vector<int>> pending_rows;
         for (CListBox* list : {
                  &m_historyListControls.HistoryListWindow(),
                  &m_historyListControls.PinsListWindow()
@@ -840,6 +905,9 @@ void MainWindow::ApplyHistoryItems(
                 continue;
             }
             const std::wstring display = m_historyRenderer.DisplayText(item);
+            std::vector<int> &pending = pending_rows[list.m_hWnd];
+            pending.push_back(static_cast<int>(index));
+            m_historyListControls.SetPendingMeasureItems(list.m_hWnd, pending);
             const int row = list.AddString(display.c_str());
             if (row != LB_ERR) {
                 list.SetItemData(row, static_cast<DWORD_PTR>(index));
@@ -885,6 +953,12 @@ void MainWindow::ApplyHistoryItems(
             }
         }
         ApplyHistoryVisibility();
+        for (CListBox* list : {
+                 &m_historyListControls.HistoryListWindow(),
+                 &m_historyListControls.PinsListWindow()
+             }) {
+            m_historyListControls.SetPendingMeasureItems(list->m_hWnd, {});
+        }
         if (previewOpen && m_keyboardHandler.GetActiveItemId()) {
             ShowPreviewForItem(m_keyboardHandler.GetActiveItemId());
         } else if (!m_keyboardHandler.GetActiveItemId()) {
@@ -1445,6 +1519,13 @@ std::uint32_t MainWindow::ApplySettings(
          AppConstants::UiUpdate::kTray |
          AppConstants::UiUpdate::kFooter);
 
+    const bool previousChanged = previous.image_max_height != m_settings.image_max_height;
+    if (previousChanged) {
+        m_historyRenderer.ClearImageThumbnails();
+        m_historyListControls.SetImageMaxHeight(m_settings.image_max_height);
+        LoadImageThumbnails();
+    }
+
     const bool previewTipChanged = !SameHotKey(previous.preview_hotkey, m_settings.preview_hotkey);
     if (previewTipChanged && m_tooltips.m_hWnd != nullptr) {
         m_previewTip = L"显示或隐藏预览（" + HotKeyToText(m_settings.preview_hotkey) + L"）";
@@ -1670,6 +1751,7 @@ LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handl
                      suggested->right - suggested->left, suggested->bottom - suggested->top,
                      SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    LoadImageThumbnails();
     LayoutHistoryControls();
     RedrawHistoryLists();
     RedrawFooterButtons();
@@ -2080,6 +2162,12 @@ LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
 LRESULT MainWindow::OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     m_applicationController.DrainPreviewCallbacks();
+    return 0;
+}
+
+LRESULT MainWindow::OnThumbnailWorkerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    m_applicationController.DrainThumbnailCallbacks();
     return 0;
 }
 

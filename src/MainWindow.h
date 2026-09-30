@@ -17,12 +17,15 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 
 #include "HistoryRenderer.h"
 #include "HistoryListControls.h"
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
+#include "ThumbnailWorker.h"
+#include "PreviewDecoder.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
 #include "ClipboardData.h"
@@ -37,7 +40,8 @@ class MainWindow : public CDialogImpl<MainWindow> {
 public:
     enum { IDD = IDD_HISTORY };
 
-    MainWindow(StorageWorker &storage, PreviewWorker &preview, AppSettings settings,
+    MainWindow(StorageWorker &storage, PreviewWorker &preview, ThumbnailWorker &thumbnails,
+               AppSettings settings,
                StorageWorker::IgnoreLists ignored_lists, bool isolated = false);
     ~MainWindow();
 
@@ -76,6 +80,7 @@ public:
         MESSAGE_HANDLER(AppConstants::kUiUpdateMessage, OnUiUpdate)
         MESSAGE_HANDLER(WM_CLIPBOARDUPDATE, OnClipboardUpdate)
         MESSAGE_HANDLER(AppConstants::kPreviewWorkerResultMessage, OnPreviewWorkerResult)
+        MESSAGE_HANDLER(AppConstants::kThumbnailWorkerResultMessage, OnThumbnailWorkerResult)
         MESSAGE_HANDLER(AppConstants::kStorageWorkerResultMessage, OnStorageWorkerResult)
         MESSAGE_HANDLER(AppConstants::kUpdateCheckerResultMessage, OnUpdateCheckerResult)
         COMMAND_HANDLER(IDC_HISTORY_SEARCH, EN_CHANGE, OnSearchChanged)
@@ -164,6 +169,7 @@ private:
     // History management
     void RefreshHistory(std::wstring_view query);
     void ApplyHistoryItems(std::wstring query, std::vector<ClipboardItem> items);
+    void LoadImageThumbnails();
     void ApplyDeferredHistoryResult();
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
@@ -255,6 +261,7 @@ private:
     LRESULT OnUiUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnPreviewWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnThumbnailWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnStorageWorkerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnDestroy(UINT, WPARAM, LPARAM, BOOL&);
@@ -283,6 +290,7 @@ private:
     static void OnHideWindowCallback(void* context);
 
     StorageWorker &m_storage;
+    ThumbnailWorker &m_thumbnailWorker;
     AppSettings m_settings;
     bool m_suppressClearAlert = false;
     StorageWorker::IgnoreLists m_ignoredLists;
@@ -324,6 +332,8 @@ private:
         std::vector<ClipboardItem> items;
     };
     std::optional<DeferredHistoryResult> m_deferredHistoryResult;
+    std::unordered_map<sqlite3_int64, std::uint64_t> m_thumbnailRequests;
+    std::uint64_t m_thumbnailGeneration = 0;
 
     // Layout
     SearchHeaderLayout::Geometry m_searchHeader{};

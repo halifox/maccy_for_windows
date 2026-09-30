@@ -20,6 +20,7 @@
 #include "ClipboardData.h"
 #include "SearchHeaderLayout.h"
 #include "Settings.h"
+#include "PreviewDecoder.h"
 
 // History list rendering and drawing component
 class HistoryRenderer {
@@ -35,7 +36,10 @@ public:
     bool UpdateFonts(UINT dpi);
     void Shutdown();
     void PrepareHistory(const std::vector<ClipboardItem> &items);
-
+    void SetImageThumbnails(std::unordered_map<sqlite3_int64, PreviewBitmap> thumbnails);
+    void SetImageThumbnail(sqlite3_int64 id, PreviewBitmap thumbnail);
+    const PreviewBitmap* ImageThumbnail(sqlite3_int64 id) const noexcept;
+    void ClearImageThumbnails() noexcept;
     // Drawing operations
     void DrawHistoryItem(DRAWITEMSTRUCT* draw,
                          const std::vector<ClipboardItem>& items,
@@ -99,6 +103,7 @@ private:
 
     std::unordered_map<std::wstring, IconCacheEntry> m_iconCache;
     std::list<std::wstring> m_iconLru;
+    std::unordered_map<sqlite3_int64, PreviewBitmap> m_imageThumbnails;
     std::vector<int> m_unpinnedShortcutNumbers;
     std::wstring m_highlightQuery;
     SearchMode m_highlightMode = SearchMode::Exact;

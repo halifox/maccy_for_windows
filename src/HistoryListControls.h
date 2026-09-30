@@ -9,6 +9,7 @@
 
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "Constants.h"
@@ -34,6 +35,12 @@ public:
     const CContainedWindowT<CListBox> &PinsListWindow() const noexcept { return m_pinsList; }
     int ItemHeightPixels() const noexcept;
     void RefreshItemHeights() noexcept;
+    void SetImageMaxHeight(int image_max_height) noexcept;
+    int RowHeightPixels(const CListBox &list, int row) const noexcept;
+    int TotalHeightPixels(const CListBox &list) const noexcept;
+    void UpdateItemHeight(sqlite3_int64 item_id) noexcept;
+    void UpdateAllItemHeights() noexcept;
+    void SetPendingMeasureItems(HWND list, std::vector<int> item_indices);
 
     void Configure(KeyboardHandler &keyboard_handler,
                    HistoryRenderer &renderer,
@@ -44,7 +51,8 @@ public:
                    bool &popup_visible,
                    FooterUpdateCallback request_footer_update,
                    PasteCallback paste_item,
-                   SelectionCallback selection_changed);
+                   SelectionCallback selection_changed,
+                   int image_max_height);
     void Shutdown() noexcept;
 
     BEGIN_MSG_MAP(HistoryListControls)
@@ -92,4 +100,6 @@ private:
     FooterUpdateCallback m_requestFooterUpdate;
     PasteCallback m_pasteItem;
     SelectionCallback m_selectionChanged;
+    int m_imageMaxHeight = 0;
+    std::unordered_map<HWND, std::vector<int>> m_pendingMeasureItems;
 };
