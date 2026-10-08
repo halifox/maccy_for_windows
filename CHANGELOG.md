@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1](https://github.com/halifox/maccy_for_windows/compare/v1.3.0...v1.3.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **installer:** avoid force terminating maccy ([94acb80](https://github.com/halifox/maccy_for_windows/commit/94acb8053c3663d863c02722dbeb9bd0a43bac61))
+* **installer:** avoid force terminating maccy ([ddae890](https://github.com/halifox/maccy_for_windows/commit/ddae8909275cb160ab814cbfe5b72ced47844976))
+* validate and clear settings hotkeys ([b57867d](https://github.com/halifox/maccy_for_windows/commit/b57867dd77aaf05a82a831a067a100369ade6843))
+* validate and clear settings hotkeys ([dc3b5c3](https://github.com/halifox/maccy_for_windows/commit/dc3b5c364e43691c7ca8808f70326d006b503a11))
+
 ## [1.3.0](https://github.com/halifox/maccy_for_windows/compare/v1.2.2...v1.3.0) (2026-09-30)
 
 
