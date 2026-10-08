@@ -34,6 +34,45 @@ std::wstring ReadWindowText(CWindow window) {
     return text;
 }
 
+std::wstring FindHotkeyConflict(
+    const HotKeyConfig &open,
+    const HotKeyConfig &pin,
+    const HotKeyConfig &remove,
+    const HotKeyConfig &preview
+) {
+    struct Binding {
+        const wchar_t *name;
+        const HotKeyConfig *hotkey;
+    };
+    const std::array<Binding, 4> bindings = {{
+        {L"打开", &open},
+        {L"置顶", &pin},
+        {L"删除", &remove},
+        {L"预览", &preview},
+    }};
+
+    for (size_t first = 0; first < bindings.size(); ++first) {
+        if (bindings[first].hotkey->virtual_key == 0) {
+            continue;
+        }
+        for (size_t second = first + 1; second < bindings.size(); ++second) {
+            if (!SameHotKey(*bindings[first].hotkey, *bindings[second].hotkey)) {
+                continue;
+            }
+
+            std::wstring message = L"快捷键冲突：";
+            message += bindings[first].name;
+            message += L"和";
+            message += bindings[second].name;
+            message += L"不能使用相同的快捷键（";
+            message += HotKeyToText(*bindings[first].hotkey);
+            message += L"）。";
+            return message;
+        }
+    }
+    return {};
+}
+
 } // namespace
 
 std::wstring PinTextContent(const ClipboardItem &item) {
@@ -442,12 +481,22 @@ void HotkeyCaptureEdit::SetHotKey(const HotKeyConfig &hotkey) {
 }
 
 void HotkeyCaptureEdit::UpdateText() {
-    const std::wstring text = HotKeyToText(m_hotkey);
+    const std::wstring text = m_hotkey.virtual_key == 0 ? L"(空)" : HotKeyToText(m_hotkey);
     SetWindowText(text.c_str());
 }
 
 LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modifiers, BOOL &handled) {
-    m_hotkey = HotKeyConfig{static_cast<UINT>(modifiers), static_cast<UINT>(virtual_key)};
+    const UINT key = static_cast<UINT>(virtual_key);
+    if (key == VK_BACK) {
+        m_hotkey = HotKeyConfig{0, 0};
+    } else if (modifiers == 0) {
+        // Hotkeys must contain at least one modifier. Keep capturing until a
+        // valid combination is entered.
+        handled = TRUE;
+        return 0;
+    } else {
+        m_hotkey = HotKeyConfig{static_cast<UINT>(modifiers), key};
+    }
     UpdateText();
     const HWND focusTarget = ::GetParent(::GetParent(m_hWnd));
     if (focusTarget != nullptr) {
@@ -957,10 +1006,28 @@ void SettingsWindow::SaveCurrentPage() {
         case kPageGeneral: {
             m_pages[kPageGeneral]->AttachSettings(m_settings);
             m_pages[kPageGeneral]->ExchangeSettings(DDX_SAVE);
-            m_settings.open_hotkey = m_gOpenHotKey.GetHotKey();
-            m_settings.pin_hotkey = m_gPinHotKey.GetHotKey();
-            m_settings.delete_hotkey = m_gDeleteHotKey.GetHotKey();
-            m_settings.preview_hotkey = m_gPreviewHotKey.GetHotKey();
+            const HotKeyConfig openHotkey = m_gOpenHotKey.GetHotKey();
+            const HotKeyConfig pinHotkey = m_gPinHotKey.GetHotKey();
+            const HotKeyConfig deleteHotkey = m_gDeleteHotKey.GetHotKey();
+            const HotKeyConfig previewHotkey = m_gPreviewHotKey.GetHotKey();
+            const std::wstring conflict = FindHotkeyConflict(
+                openHotkey,
+                pinHotkey,
+                deleteHotkey,
+                previewHotkey
+            );
+            if (!conflict.empty()) {
+                m_settings = previous;
+                m_loading = true;
+                LoadGeneralControls();
+                m_loading = false;
+                ::MessageBoxW(m_hWnd, conflict.c_str(), L"快捷键冲突", MB_OK | MB_ICONWARNING);
+                return;
+            }
+            m_settings.open_hotkey = openHotkey;
+            m_settings.pin_hotkey = pinHotkey;
+            m_settings.delete_hotkey = deleteHotkey;
+            m_settings.preview_hotkey = previewHotkey;
             break;
         }
         case kPageAppearance: {
