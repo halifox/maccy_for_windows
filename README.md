@@ -22,6 +22,10 @@
 >
 > **本项目不是 Maccy 官方 Windows 版本，也不隶属于、代表或获得 Maccy 官方项目授权。**
 
+> [!CAUTION]
+>
+> **关于杀毒软件误报：** 为实现全局快捷键和跨应用粘贴，本项目使用 `WH_KEYBOARD_LL` 监听低级键盘事件，并可能屏蔽按键后通过 `SendInput` 重放。`WH_KEYBOARD_LL + 屏蔽按键 + SendInput 重放` 正是杀软常见的键盘记录器、自动化工具或木马启发式特征，因此部分杀软可能将 Maccy 报告为木马或高风险程序。该行为本身不代表恶意，但行为模式确实很像。请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载程序，并核对同一 Release 中的 `SHA256SUMS.txt`。
+
 ## 功能概览
 
 - 通过 Windows 系统托盘和全局快捷键访问剪贴板历史；
@@ -127,4 +131,3 @@ Maccy 的名称和 Logo 仍属于其相应权利人；本项目的许可证声�
 ## 致谢
 
 感谢 [Alex Rodionov](https://github.com/p0deje) 和 Maccy 项目为 macOS 提供了优秀的剪贴板工具，也感谢其 MIT 许可证允许社区学习、修改和再利用相关软件与资源。
-
