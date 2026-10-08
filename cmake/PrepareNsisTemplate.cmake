@@ -29,81 +29,35 @@ set(_maccy_nsis_runtime_code [=[
   Push $1
   Push $2
   Push $3
-  Push $4
-  Push $5
-  Push $6
 
+${prefix}_request_shutdown:
   System::Call 'user32::FindWindowExW(p -3, p 0, w "${MACCY_ACTIVATION_WINDOW_CLASS}", p 0) p .r0'
-  StrCmp $0 0 ${prefix}_check_mutex
-  Goto ${prefix}_have_window
+  StrCmp $0 0 ${prefix}_wait_for_mutex
+  ; Ask Maccy to shut down through its own message-only control window. The
+  ; mutex below is the authoritative indication that all cleanup is complete.
+  System::Call 'user32::SendMessageTimeoutW(p r0, i ${MACCY_SHUTDOWN_MESSAGE}, p 0, p 0, i 3, i 5000, *p .r2) p .r3'
 
-${prefix}_check_mutex:
+${prefix}_wait_for_mutex:
   System::Call 'kernel32::OpenMutexW(i 0x00100000, i 0, w "${MACCY_INSTANCE_MUTEX}") p .r1'
   StrCmp $1 0 ${prefix}_done
   System::Call 'kernel32::WaitForSingleObject(p r1, i 10000) i .r2'
   System::Call 'kernel32::CloseHandle(p r1)'
   StrCmp $2 0 ${prefix}_done
   StrCmp $2 128 ${prefix}_done
-  MessageBox MB_OK|MB_ICONEXCLAMATION "$(MACCY_APP_NOT_RESPONDING)"
+  StrCmp $2 258 ${prefix}_still_running
+  MessageBox MB_OK|MB_ICONEXCLAMATION "$(MACCY_APP_WAIT_FAILED)"
   Goto ${prefix}_abort
-
-${prefix}_have_window:
-  System::Call 'user32::GetWindowThreadProcessId(p r0, *i .r1) i .r2'
-  StrCmp $1 0 ${prefix}_abort
-  System::Call 'kernel32::OpenProcess(i 0x00100000, i 0, i r1) p .r3'
-  StrCmp $3 0 ${prefix}_access_denied
-  System::Call 'user32::SendMessageTimeoutW(p r0, i ${MACCY_SHUTDOWN_MESSAGE}, p 0, p 0, i 3, i 5000, *p .r4) p .r5'
-
-${prefix}_wait:
-  System::Call 'kernel32::WaitForSingleObject(p r3, i 10000) i .r6'
-  StrCmp $6 0 ${prefix}_closed
-  StrCmp $6 258 ${prefix}_still_running
-  Goto ${prefix}_wait_failed
 
 ${prefix}_still_running:
-  MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION "$(MACCY_APP_CLOSE_PROMPT)" IDYES ${prefix}_force IDNO ${prefix}_wait
-  Goto ${prefix}_cancel
-${prefix}_force:
-  System::Call 'kernel32::OpenProcess(i 0x00000001, i 0, i r1) p .r5'
-  StrCmp $5 0 ${prefix}_force_open_failed
-  System::Call 'kernel32::TerminateProcess(p r5, i 1) i .r6'
-  System::Call 'kernel32::CloseHandle(p r5)'
-  StrCmp $6 1 0 ${prefix}_force_failed
-  System::Call 'kernel32::WaitForSingleObject(p r3, i 5000) i .r6'
-  StrCmp $6 0 ${prefix}_closed
-  Goto ${prefix}_force_failed
-
-${prefix}_force_open_failed:
-  System::Call 'kernel32::WaitForSingleObject(p r3, i 0) i .r6'
-  StrCmp $6 0 ${prefix}_closed
-  Goto ${prefix}_force_failed
-
-${prefix}_closed:
-  System::Call 'kernel32::CloseHandle(p r3)'
-  Goto ${prefix}_done
-
-${prefix}_access_denied:
-  System::Call 'user32::SendMessageTimeoutW(p r0, i ${MACCY_SHUTDOWN_MESSAGE}, p 0, p 0, i 3, i 5000, *p .r4) p .r5'
-  MessageBox MB_OK|MB_ICONEXCLAMATION "$(MACCY_APP_ACCESS_DENIED)"
-  Goto ${prefix}_abort
-
-${prefix}_wait_failed:
-  System::Call 'kernel32::CloseHandle(p r3)'
-${prefix}_force_failed:
-  MessageBox MB_OK|MB_ICONSTOP "$(MACCY_APP_FORCE_FAILED)"
-  Goto ${prefix}_abort
-
-${prefix}_cancel:
-  System::Call 'kernel32::CloseHandle(p r3)'
+  ; Never terminate another process from the installer. Ask the user to close
+  ; Maccy and retry so the application can finish its normal cleanup path.
+  MessageBox MB_YESNO|MB_ICONEXCLAMATION "$(MACCY_APP_CLOSE_PROMPT)" IDYES ${prefix}_request_shutdown
   Goto ${prefix}_abort
 
 ${prefix}_abort:
   Quit
 
 ${prefix}_done:
-  Pop $6
-  Pop $5
-  Pop $4
   Pop $3
   Pop $2
   Pop $1
@@ -123,14 +77,10 @@ Function MaccyDirectoryPagePre
     Abort
 FunctionEnd
 
-LangString MACCY_APP_NOT_RESPONDING ${LANG_ENGLISH} "Maccy is starting or closing but has not made its installer control window available. Wait for it to finish, then retry."
-LangString MACCY_APP_NOT_RESPONDING ${LANG_SIMPCHINESE} "Maccy 正在启动或退出，但暂时无法响应安装程序。请等待操作完成后重试。"
-LangString MACCY_APP_CLOSE_PROMPT ${LANG_ENGLISH} "Maccy is still running. Yes: force close it; No: wait another 10 seconds; Cancel: stop setup."
-LangString MACCY_APP_CLOSE_PROMPT ${LANG_SIMPCHINESE} "Maccy 仍在运行。选择“是”强制结束，“否”再等待 10 秒，“取消”则停止安装或卸载。"
-LangString MACCY_APP_ACCESS_DENIED ${LANG_ENGLISH} "The installer could not wait for or safely close Maccy. Close it manually and retry."
-LangString MACCY_APP_ACCESS_DENIED ${LANG_SIMPCHINESE} "安装程序无法等待或安全关闭 Maccy。请手动关闭程序后重试。"
-LangString MACCY_APP_FORCE_FAILED ${LANG_ENGLISH} "Maccy could not be closed. Setup has been cancelled."
-LangString MACCY_APP_FORCE_FAILED ${LANG_SIMPCHINESE} "无法关闭 Maccy，安装或卸载已取消。"
+LangString MACCY_APP_CLOSE_PROMPT ${LANG_ENGLISH} "Maccy is still running. Close it manually, then choose Yes to retry; choose No to stop setup."
+LangString MACCY_APP_CLOSE_PROMPT ${LANG_SIMPCHINESE} "Maccy 仍在运行。请手动关闭程序后选择“是”重试；选择“否”停止安装或卸载。"
+LangString MACCY_APP_WAIT_FAILED ${LANG_ENGLISH} "The installer could not confirm that Maccy has exited. Close it manually and retry."
+LangString MACCY_APP_WAIT_FAILED ${LANG_SIMPCHINESE} "安装程序无法确认 Maccy 已退出。请手动关闭程序后重试。"
 LangString MACCY_MACHINE_INSTALL_MESSAGE ${LANG_ENGLISH} "A previous all-users Maccy installation is present. Uninstall it from Windows Settings using an administrator account, then run this per-user installer again. Your data under LocalAppData is kept by the old uninstaller."
 LangString MACCY_MACHINE_INSTALL_MESSAGE ${LANG_SIMPCHINESE} "检测到旧版全机安装。请使用管理员账户在 Windows 设置中卸载旧版，再重新运行此每用户安装程序。旧卸载程序会保留 LocalAppData 中的数据。"
 LangString MACCY_BROKEN_INSTALL_MESSAGE ${LANG_ENGLISH} "A previous per-user Maccy installation has incomplete uninstall registration. Use its existing Uninstall.exe before installing again."
