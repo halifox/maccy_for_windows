@@ -15,6 +15,7 @@
 
 #include "MainWindow.h"
 #include "Constants.h"
+#include "Localization.h"
 #include "PreviewWorker.h"
 #include "StorageWorker.h"
 #include "ThumbnailWorker.h"
@@ -223,13 +224,16 @@ std::filesystem::path GetDatabasePath() {
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+    Localization::Initialize();
+
     SingleInstanceMutex instance_mutex;
     bool already_running = false;
     DWORD instance_error = ERROR_SUCCESS;
     if (!instance_mutex.Create(already_running, instance_error)) {
-        const std::wstring message = L"Unable to establish application instance: " +
+        const std::wstring message = Localization::Text(IDS_INIT_INSTANCE_ERROR) +
             std::to_wstring(instance_error);
-        MessageBoxW(nullptr, message.c_str(), L"maccy error", MB_OK | MB_ICONERROR);
+        const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+        MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -240,36 +244,40 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             return 0;
         }
         if (result == ExistingInstanceResult::Failed) {
-            const std::wstring message = L"Unable to contact the running application: " +
+            const std::wstring message = Localization::Text(IDS_INIT_CONTACT_ERROR) +
                 std::to_wstring(instance_error);
-            MessageBoxW(nullptr, message.c_str(), L"maccy error", MB_OK | MB_ICONERROR);
+            const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+            MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
             return 1;
         }
     }
 
     const HRESULT com_result = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(com_result)) {
-        const std::wstring message = L"COM 初始化失败。HRESULT：" +
+        const std::wstring message = Localization::Text(IDS_INIT_COM_ERROR) +
             std::to_wstring(static_cast<unsigned long>(com_result));
-        MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+        const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+        MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         return 1;
     }
     const HRESULT module_result = _Module.Init(nullptr, instance);
     if (FAILED(module_result)) {
         CoUninitialize();
-        const std::wstring message = L"WTL 模块初始化失败。HRESULT：" +
+        const std::wstring message = Localization::Text(IDS_INIT_WTL_ERROR) +
             std::to_wstring(static_cast<unsigned long>(module_result));
-        MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+        const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+        MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         return 1;
     }
 
     ActivationWindow activation_window;
     if (!activation_window.Create(instance, instance_error)) {
-        const std::wstring message = L"Unable to create application activation window: " +
+        const std::wstring message = Localization::Text(IDS_INIT_ACTIVATION_ERROR) +
             std::to_wstring(instance_error);
         _Module.Term();
         CoUninitialize();
-        MessageBoxW(nullptr, message.c_str(), L"maccy error", MB_OK | MB_ICONERROR);
+        const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+        MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -287,8 +295,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         activation_window.Destroy();
         _Module.Term();
         CoUninitialize();
-        const std::wstring message = L"InitCommonControlsEx failed: " + std::to_wstring(error);
-        MessageBoxW(nullptr, message.c_str(), L"maccy error", MB_OK | MB_ICONERROR);
+        const std::wstring message = Localization::Text(IDS_INIT_COMMON_CONTROLS_ERROR) + std::to_wstring(error);
+        const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+        MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         return 1;
     }
 
@@ -309,21 +318,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             activation_window.Destroy();
             _Module.Term();
             CoUninitialize();
-            const std::wstring message = L"无法创建主窗口。Windows 错误代码：" +
+            const std::wstring message = Localization::Text(IDS_INIT_WINDOW_ERROR) +
                 std::to_wstring(error);
-            MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+            const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+            MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
             return 1;
         }
         if (!window.IsInitialized()) {
             const std::wstring message = window.InitializationError().empty()
-                ? L"主窗口初始化未完成。"
+                ? Localization::Text(IDS_INIT_INCOMPLETE_ERROR)
                 : window.InitializationError();
             window.DestroyWindow();
             storage.Stop();
             activation_window.Destroy();
             _Module.Term();
             CoUninitialize();
-            MessageBoxW(nullptr, message.c_str(), L"maccy 启动失败", MB_OK | MB_ICONERROR);
+            const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+            MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
             return 1;
         }
         g_mainWindow = &window;
@@ -356,7 +367,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         return exitCode;
     } catch (const std::exception &error) {
         g_mainWindow = nullptr;
-        MessageBoxA(nullptr, error.what(), "maccy error", MB_OK | MB_ICONERROR);
+        const std::wstring message = Localization::FromUtf8(error.what());
+        const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
+        MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         activation_window.Destroy();
         _Module.Term();
         CoUninitialize();

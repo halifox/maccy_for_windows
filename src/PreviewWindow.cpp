@@ -2,6 +2,7 @@
 #include "ClipboardRules.h"
 #include "Constants.h"
 #include "GdiScope.h"
+#include "Localization.h"
 #include "UiFont.h"
 
 #include <dwmapi.h>
@@ -28,25 +29,25 @@ void ApplySystemRoundedCorners(HWND window) {
 
 std::wstring FormatCopyTime(sqlite3_int64 milliseconds) {
     if (milliseconds <= 0) {
-        return L"未知";
+        return Localization::Text(IDS_PREVIEW_UNKNOWN);
     }
 
     const time_t seconds = static_cast<time_t>(milliseconds / 1000);
     tm local_time{};
     if (::localtime_s(&local_time, &seconds) != 0) {
-        return L"未知";
+        return Localization::Text(IDS_PREVIEW_UNKNOWN);
     }
 
     wchar_t buffer[64]{};
     if (::wcsftime(buffer, ARRAYSIZE(buffer), L"%Y-%m-%d %H:%M:%S", &local_time) == 0) {
-        return L"未知";
+        return Localization::Text(IDS_PREVIEW_UNKNOWN);
     }
     return buffer;
 }
 
 std::wstring FormatApplication(std::wstring_view application) {
     if (application.empty()) {
-        return L"未知";
+        return Localization::Text(IDS_PREVIEW_UNKNOWN);
     }
     const size_t separator = application.find_last_of(L"\\/");
     if (separator == std::wstring_view::npos || separator + 1 >= application.size()) {
@@ -89,16 +90,30 @@ void PreviewWindow::UpdateStatus(const ClipboardItem &item) {
         return;
     }
 
-    std::wstring status = L"应用来源：" + FormatApplication(item.application);
-    status += L"\r\n第一次复制时间：" + FormatCopyTime(item.first_copied_at);
-    status += L"\r\n最后一次复制时间：" + FormatCopyTime(item.copied_at);
-    status += L"\r\n复制次数：" + std::to_wstring(std::max(1, item.copy_count));
+    std::wstring status = Localization::Format(
+        IDS_PREVIEW_SOURCE,
+        {FormatApplication(item.application)}
+    );
+    status += L"\r\n" + Localization::Format(
+        IDS_PREVIEW_FIRST_COPIED,
+        {FormatCopyTime(item.first_copied_at)}
+    );
+    status += L"\r\n" + Localization::Format(
+        IDS_PREVIEW_LAST_COPIED,
+        {FormatCopyTime(item.copied_at)}
+    );
+    status += L"\r\n" + Localization::Format(
+        IDS_PREVIEW_COPY_COUNT,
+        {std::to_wstring(std::max(1, item.copy_count))}
+    );
     m_status.SetWindowText(status.c_str());
 }
 
 void PreviewWindow::SetItem(const ClipboardItem &item, std::wstring text, PreviewBitmap bitmap) {
     m_itemId = item.id;
-    m_pinButton.SetWindowText(item.pinned ? L"取消置顶" : L"置顶");
+    m_pinButton.SetWindowText(Localization::Text(
+        item.pinned ? IDS_PREVIEW_UNPIN : IDS_PREVIEW_PIN
+    ).c_str());
     ClearBitmap();
     m_bitmapWidth = bitmap.width;
     m_bitmapHeight = bitmap.height;
@@ -140,6 +155,7 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_status = GetDlgItem(IDC_PREVIEW_STATUS);
     m_pinButton = GetDlgItem(IDC_PREVIEW_PIN);
     m_deleteButton = GetDlgItem(IDC_PREVIEW_DELETE);
+    m_deleteButton.SetWindowText(Localization::Text(IDS_PREVIEW_DELETE).c_str());
     const UINT dpi = UiFont::DpiForWindow(m_hWnd);
     UpdateFont(dpi);
     m_text.SetLimitText(ClipboardRules::Limits::kMaximumPreviewTextCharacters);
@@ -220,7 +236,7 @@ LRESULT PreviewWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled) {
         ::SetBkMode(draw->hDC, TRANSPARENT);
         ::DrawTextW(
             draw->hDC,
-            L"无法显示图片",
+            Localization::Text(IDS_MAIN_IMAGE_UNAVAILABLE).c_str(),
             -1,
             &draw->rcItem,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE

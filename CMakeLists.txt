@@ -77,6 +77,7 @@ configure_file(
 
 set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/ApplicationController.cpp"
+        "${MACCY_SOURCE_DIR}/Localization.cpp"
         "${MACCY_SOURCE_DIR}/main.cpp"
         "${MACCY_SOURCE_DIR}/MainWindow.cpp"
         "${MACCY_SOURCE_DIR}/HistoryListControls.cpp"
@@ -98,6 +99,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
         "${MACCY_SOURCE_DIR}/SettingsWindow.rc"
         "${MACCY_SOURCE_DIR}/MainWindow.rc"
+        "${MACCY_SOURCE_DIR}/Localization.rc"
         "${MACCY_RESOURCE_FILE}"
         "${MACCY_VERSION_RESOURCE}"
 )

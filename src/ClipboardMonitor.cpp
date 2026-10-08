@@ -1,6 +1,7 @@
 #include "ClipboardMonitor.h"
 #include "ClipboardRules.h"
 #include "Constants.h"
+#include "Localization.h"
 #include "Win32Resources.h"
 
 #include <atlbase.h>
@@ -470,14 +471,18 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
     capture.fingerprint = HashCapture(capture.data);
     capture.preview = !text.empty() ? text : file_preview;
     if (capture.preview.empty() && capture.has_image) {
-        capture.preview = L"[图片]";
+        capture.preview = Localization::Text(IDS_CONTENT_IMAGE);
     }
     if (capture.preview.empty() && capture.has_files) {
-        capture.preview = L"[文件]";
+        capture.preview = Localization::Text(IDS_CONTENT_FILE);
     }
     capture.title = ClipboardRules::MakeTitle(capture.preview, m_settings.show_special_symbols);
     if (capture.title.empty()) {
-        capture.title = capture.has_image ? L"[图片]" : (capture.has_files ? L"[文件]" : L"[剪贴板项目]");
+        capture.title = capture.has_image
+            ? Localization::Text(IDS_CONTENT_IMAGE)
+            : (capture.has_files
+                ? Localization::Text(IDS_CONTENT_FILE)
+                : Localization::Text(IDS_CONTENT_CLIPBOARD_ITEM));
     }
     return capture;
 }

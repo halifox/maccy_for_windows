@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 #include "Constants.h"
 #include "GdiScope.h"
+#include "Localization.h"
 #include "PinKeys.h"
 #include "SettingsWindow.h"
 #include "TrayIcon.h"
@@ -22,8 +23,6 @@ constexpr int kHistoryListControlId = IDC_HISTORY_LIST;
 constexpr int kHistoryFooterGap = 6;
 constexpr int kHistorySectionGap = 6;
 constexpr int kResizeBorder = 8;
-
-constexpr wchar_t kHistorySearchCue[] = L"搜索剪贴板内容…";
 
 UINT DpiForMonitor(HMONITOR monitor) {
     if (monitor != nullptr) {
@@ -68,6 +67,19 @@ std::wstring ReadWindowText(CWindow window) {
     const int copied = window.GetWindowText(text.data(), length + 1);
     text.resize(static_cast<size_t>(std::max(copied, 0)));
     return text;
+}
+
+void ShowRuntimeError(
+    HWND owner,
+    std::string_view error,
+    UINT title_resource,
+    UINT fallback_message_resource
+) {
+    const std::wstring message = error.empty()
+        ? Localization::Text(fallback_message_resource)
+        : Localization::FromUtf8(error);
+    const std::wstring title = Localization::Text(title_resource);
+    ::MessageBoxW(owner, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
 }
 
 bool IsShiftKey(WPARAM key) {
@@ -167,7 +179,8 @@ void MainWindow::DrawSearchCue(CDC dc) const {
     );
     const int previous_mode = dc.SetBkMode(TRANSPARENT);
     const COLORREF previous_color = dc.SetTextColor(::GetSysColor(COLOR_GRAYTEXT));
-    dc.DrawText(kHistorySearchCue, -1, &rect,
+    const std::wstring cue = Localization::Text(IDS_MAIN_SEARCH_CUE);
+    dc.DrawText(cue.c_str(), -1, &rect,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     dc.SetTextColor(previous_color);
     dc.SetBkMode(previous_mode);
@@ -349,7 +362,7 @@ bool MainWindow::BindControls() {
     if (search == nullptr || history == nullptr || pins == nullptr || previewToggle == nullptr ||
         footerClear == nullptr || footerSettings == nullptr || footerAbout == nullptr ||
         footerExit == nullptr) {
-        m_initializationError = L"主窗口资源缺少必需控件。";
+        m_initializationError = Localization::Text(IDS_MAIN_INIT_RESOURCE_ERROR);
         return false;
     }
     if (!m_search.SubclassWindow(search) ||
@@ -360,7 +373,7 @@ bool MainWindow::BindControls() {
         !m_footerSettings.SubclassWindow(footerSettings) ||
         !m_footerAbout.SubclassWindow(footerAbout) ||
         !m_footerExit.SubclassWindow(footerExit)) {
-        m_initializationError = L"无法关联主窗口控件的 WTL 消息处理器。";
+        m_initializationError = Localization::Text(IDS_MAIN_INIT_BIND_ERROR);
         return false;
     }
 
@@ -379,8 +392,15 @@ bool MainWindow::BindControls() {
         control->ModifyStyleEx(WS_EX_CLIENTEDGE, 0, frameUpdateFlags);
     }
 
-    m_previewToggle.SetWindowText(L"预览");
-    m_previewTip = L"显示或隐藏预览（" + HotKeyToText(m_settings.preview_hotkey) + L"）";
+    m_previewToggle.SetWindowText(Localization::Text(IDS_MAIN_PREVIEW).c_str());
+    m_footerSettings.SetWindowText(Localization::Text(IDS_MAIN_SETTINGS).c_str());
+    m_footerAbout.SetWindowText(Localization::Text(IDS_MAIN_ABOUT).c_str());
+    m_footerExit.SetWindowText(Localization::Text(IDS_MAIN_EXIT).c_str());
+    UpdateFooterControls();
+    m_previewTip = Localization::Format(
+        IDS_MAIN_PREVIEW_TOOLTIP,
+        {HotKeyToText(m_settings.preview_hotkey)}
+    );
 
     RECT tooltipRect{};
     m_tooltips.Create(m_hWnd, tooltipRect, nullptr, WS_POPUP | TTS_ALWAYSTIP, WS_EX_TOPMOST);
@@ -553,7 +573,9 @@ void MainWindow::SetHistorySearchVisible(bool visible) {
 void MainWindow::UpdateFooterControls() {
     if (m_footerClear.m_hWnd == nullptr) return;
     const bool all = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-    const std::wstring caption = all ? L"清空全部历史" : L"清空历史";
+    const std::wstring caption = Localization::Text(
+        all ? IDS_MAIN_CLEAR_ALL_HISTORY : IDS_MAIN_CLEAR_HISTORY
+    );
     if (ReadWindowText(m_footerClear) != caption) {
         m_footerClear.SetWindowText(caption.c_str());
     }
@@ -1017,7 +1039,12 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
                     return;
                 }
                 if (!result->error.empty()) {
-                    ::MessageBoxA(m_hWnd, result->error.c_str(), "无法加载预览", MB_OK | MB_ICONERROR);
+                    ShowRuntimeError(
+                        m_hWnd,
+                        result->error,
+                        IDS_MAIN_PREVIEW_LOAD_ERROR_TITLE,
+                        IDS_MAIN_PREVIEW_LOAD_ERROR
+                    );
                     HidePreview();
                     return;
                 }
@@ -1103,11 +1130,11 @@ void MainWindow::PasteItem(int index) {
                 m_pasteInProgress = false;
                 bool success = error.empty() && item.has_value();
                 if (!success && error.empty()) {
-                    error = "剪贴板项目不存在";
+                    error.clear();
                 }
                 if (success && !m_applicationController.WriteClipboardItem(*item, plain)) {
                     success = false;
-                    error = "无法写入系统剪贴板";
+                    error.clear();
                 }
                 if (success) {
                     try {
@@ -1117,15 +1144,15 @@ void MainWindow::PasteItem(int index) {
                         error = exception.what();
                     } catch (...) {
                         success = false;
-                        error = "无法更新剪贴板项目状态";
+                        error.clear();
                     }
                 }
                 if (!success) {
-                    ::MessageBoxA(
+                    ShowRuntimeError(
                         m_hWnd,
-                        error.empty() ? "无法粘贴剪贴板项目" : error.c_str(),
-                        "无法粘贴",
-                        MB_OK | MB_ICONERROR
+                        error,
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
                     );
                     return;
                 }
@@ -1136,10 +1163,20 @@ void MainWindow::PasteItem(int index) {
         );
     } catch (const std::exception &exception) {
         m_pasteInProgress = false;
-        ::MessageBoxA(m_hWnd, exception.what(), "无法粘贴", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            exception.what(),
+            IDS_MAIN_PASTE_ERROR_TITLE,
+            IDS_MAIN_PASTE_ERROR
+        );
     } catch (...) {
         m_pasteInProgress = false;
-        ::MessageBoxW(m_hWnd, L"无法粘贴剪贴板项目。", L"无法粘贴", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_PASTE_ERROR_TITLE,
+            IDS_MAIN_PASTE_ERROR
+        );
     }
 }
 
@@ -1164,8 +1201,8 @@ void MainWindow::ToggleSelectedPin() {
             if (key.empty()) {
                 ::MessageBoxW(
                     m_hWnd,
-                    L"没有可用的置顶快捷键，请先取消一个置顶项目。",
-                    L"置顶",
+                    Localization::Text(IDS_MAIN_NO_PIN_HOTKEY).c_str(),
+                    Localization::Text(IDS_PREVIEW_PIN).c_str(),
                     MB_OK
                 );
                 return;
@@ -1174,9 +1211,19 @@ void MainWindow::ToggleSelectedPin() {
         }
         RequestUiUpdate(AppConstants::UiUpdate::kHistory);
     } catch (const std::exception &error) {
-        ::MessageBoxA(m_hWnd, error.what(), "无法修改置顶", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            error.what(),
+            IDS_MAIN_PIN_ERROR_TITLE,
+            IDS_MAIN_PIN_ERROR
+        );
     } catch (...) {
-        ::MessageBoxW(m_hWnd, L"无法修改置顶项目。", L"无法修改置顶", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_PIN_ERROR_TITLE,
+            IDS_MAIN_PIN_ERROR
+        );
     }
 }
 
@@ -1190,10 +1237,19 @@ void MainWindow::DeleteSelectedItem() {
         m_storage.DeleteItem(item_id);
         RequestUiUpdate(AppConstants::UiUpdate::kHistory);
     } catch (const std::exception &error) {
-        ::MessageBoxA(m_hWnd, error.what(), "无法删除剪贴板项目", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            error.what(),
+            IDS_MAIN_DELETE_ERROR_TITLE,
+            IDS_MAIN_DELETE_ERROR
+        );
     } catch (...) {
-        ::MessageBoxW(m_hWnd, L"无法删除剪贴板项目。", L"无法删除剪贴板项目",
-                      MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_DELETE_ERROR_TITLE,
+            IDS_MAIN_DELETE_ERROR
+        );
     }
 }
 
@@ -1207,10 +1263,20 @@ void MainWindow::ClearHistory(bool all) {
         config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
         config.dwCommonButtons = TDCBF_YES_BUTTON | TDCBF_NO_BUTTON;
         config.nDefaultButton = IDNO;
-        config.pszWindowTitle = L"清空历史";
-        config.pszMainInstruction = all ? L"清空全部历史，包括置顶项目？" : L"清空未置顶的历史？";
-        config.pszContent = m_settings.clear_system_clipboard ? L"此操作无法撤销，并将清空系统剪贴板。" : L"此操作无法撤销。";
-        config.pszVerificationText = L"以后不再询问";
+        const std::wstring clear_title = Localization::Text(IDS_MAIN_CLEAR_HISTORY_TITLE);
+        const std::wstring clear_instruction = Localization::Text(
+            all ? IDS_MAIN_CLEAR_ALL_HISTORY_PROMPT : IDS_MAIN_CLEAR_HISTORY_PROMPT
+        );
+        const std::wstring clear_content = Localization::Text(
+            m_settings.clear_system_clipboard
+                ? IDS_MAIN_CLEAR_UNDOABLE_WITH_CLIPBOARD
+                : IDS_MAIN_CLEAR_UNDOABLE
+        );
+        const std::wstring clear_verification = Localization::Text(IDS_MAIN_DONT_ASK_AGAIN);
+        config.pszWindowTitle = clear_title.c_str();
+        config.pszMainInstruction = clear_instruction.c_str();
+        config.pszContent = clear_content.c_str();
+        config.pszVerificationText = clear_verification.c_str();
         int button = IDNO; BOOL checked = FALSE;
         const HRESULT result = TaskDialogIndirect(&config, &button, nullptr, &checked);
         if (FAILED(result)) {
@@ -1239,16 +1305,30 @@ void MainWindow::ClearHistory(bool all) {
         }
     } catch (const std::exception &error) {
         if (remember) m_suppressClearAlert = false;
-        ::MessageBoxA(m_hWnd, error.what(), "无法清空历史", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            error.what(),
+            IDS_MAIN_CLEAR_ERROR_TITLE,
+            IDS_MAIN_CLEAR_ERROR
+        );
         return;
     } catch (...) {
         if (remember) m_suppressClearAlert = false;
-        ::MessageBoxW(m_hWnd, L"无法清空历史。", L"无法清空历史", MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_CLEAR_ERROR_TITLE,
+            IDS_MAIN_CLEAR_ERROR
+        );
         return;
     }
     if (clear_clipboard && !m_applicationController.ClearClipboard()) {
-        ::MessageBoxW(m_hWnd, L"无法清空系统剪贴板。", L"无法清空系统剪贴板",
-                      MB_OK | MB_ICONERROR);
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_CLEAR_CLIPBOARD_ERROR_TITLE,
+            IDS_MAIN_CLEAR_CLIPBOARD_ERROR
+        );
     }
     m_search.SetWindowText(L"");
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
@@ -1256,16 +1336,11 @@ void MainWindow::ClearHistory(bool all) {
 
 void MainWindow::OpenAbout() {
     m_modalShowing = true;
-    std::wstring about = L"maccy ";
-    about += AppConstants::kAppVersion;
-    about += L"\n\n轻量 Windows 剪贴板历史工具"
-             L"\n这是一个独立的 Windows 项目，受 macOS 版 Maccy 启发。"
-             L"\n本项目不是 Maccy 官方 Windows 版本，也不隶属于或代表 Maccy 官方项目。"
-             L"\n布局和交互参考 Maccy 2.7.1。"
-             L"\n部分视觉资源来自 Maccy 项目，按 MIT 许可证使用。"
-             L"\n本项目源代码采用 MIT License，第三方组件和视觉资源遵循各自许可证。"
-             L"\n\n使用 C++、WTL 和 SQLite 构建。";
-    const std::wstring caption = L"关于 maccy";
+    const std::wstring about = Localization::Format(
+        IDS_MAIN_ABOUT_BODY,
+        {AppConstants::kAppVersion}
+    );
+    const std::wstring caption = Localization::Text(IDS_MAIN_ABOUT_TITLE);
     MessageBoxW(about.c_str(), caption.c_str(), MB_OK | MB_ICONINFORMATION);
     m_modalShowing = false;
 }
@@ -1289,7 +1364,9 @@ void MainWindow::OpenSettings() {
         m_settingsWindow->SetStateSnapshot(m_settings, m_ignoredLists);
     }
     if (!m_settingsWindow->CreateOrShow()) {
-        ::MessageBoxW(m_hWnd, L"无法打开设置窗口。", L"maccy", MB_OK | MB_ICONERROR);
+        const std::wstring message = Localization::Text(IDS_MAIN_OPEN_SETTINGS_ERROR);
+        const std::wstring title = Localization::Text(IDS_MAIN_SETTINGS);
+        ::MessageBoxW(m_hWnd, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
     } else {
         m_settingsWindow->SetUpdateCheckBusy(m_applicationController.IsUpdateChecking());
     }
@@ -1316,9 +1393,10 @@ void MainWindow::HandleUpdateCheckResult(const UpdateCheckResult &result) {
 
     if (!result.succeeded) {
         if (result.mode == UpdateCheckMode::Manual) {
-            std::wstring message = L"检查更新失败。\n";
-            message += result.error.empty() ? L"请稍后重试。" : result.error;
-            ::MessageBoxW(owner, message.c_str(), L"检查更新", MB_OK | MB_ICONWARNING);
+            std::wstring message = Localization::Text(IDS_MAIN_UPDATE_FAILED);
+            message += Localization::Text(IDS_MAIN_TRY_AGAIN);
+            const std::wstring title = Localization::Text(IDS_MAIN_UPDATE_CHECK_TITLE);
+            ::MessageBoxW(owner, message.c_str(), title.c_str(), MB_OK | MB_ICONWARNING);
         } else if (!result.error.empty()) {
             ::OutputDebugStringW((L"Update check failed: " + result.error + L"\n").c_str());
         }
@@ -1327,22 +1405,28 @@ void MainWindow::HandleUpdateCheckResult(const UpdateCheckResult &result) {
 
     if (!result.update_available) {
         if (result.mode == UpdateCheckMode::Manual) {
-            std::wstring message = L"当前已经是最新版本。\n当前版本：";
-            message += DisplayVersion(result.current_version);
-            ::MessageBoxW(owner, message.c_str(), L"检查更新", MB_OK | MB_ICONINFORMATION);
+            const std::wstring message = Localization::Format(
+                IDS_MAIN_LATEST_VERSION,
+                {DisplayVersion(result.current_version)}
+            );
+            const std::wstring title = Localization::Text(IDS_MAIN_UPDATE_CHECK_TITLE);
+            ::MessageBoxW(owner, message.c_str(), title.c_str(), MB_OK | MB_ICONINFORMATION);
         }
         return;
     }
 
-    const std::wstring message = L"发现新版本 " + DisplayVersion(result.latest_version) +
-        L"。\n当前版本：" + DisplayVersion(result.current_version) +
-        L"\n是否打开下载页面？";
-    if (::MessageBoxW(owner, message.c_str(), L"检查更新", MB_YESNO | MB_ICONINFORMATION) == IDYES &&
+    const std::wstring message = Localization::Format(
+        IDS_MAIN_NEW_VERSION,
+        {DisplayVersion(result.latest_version), DisplayVersion(result.current_version)}
+    );
+    const std::wstring title = Localization::Text(IDS_MAIN_UPDATE_CHECK_TITLE);
+    if (::MessageBoxW(owner, message.c_str(), title.c_str(), MB_YESNO | MB_ICONINFORMATION) == IDYES &&
         !OpenReleasePage(owner, result.release_url)) {
+        const std::wstring error = Localization::Text(IDS_MAIN_OPEN_UPDATE_ERROR);
         ::MessageBoxW(
             owner,
-            L"无法打开更新页面，请检查默认浏览器设置。",
-            L"检查更新",
+            error.c_str(),
+            title.c_str(),
             MB_OK | MB_ICONERROR
         );
     }
@@ -1447,17 +1531,22 @@ void MainWindow::ShowTrayMenu() {
         return;
     }
     m_trayMenuShowing = true;
-    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandShow, L"打开");
-    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandSettings, L"设置");
-    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandClear, L"清空");
+    const std::wstring open_text = Localization::Text(IDS_TRAY_OPEN);
+    const std::wstring settings_text = Localization::Text(IDS_TRAY_SETTINGS);
+    const std::wstring clear_text = Localization::Text(IDS_TRAY_CLEAR);
+    const std::wstring pause_text = Localization::Text(IDS_TRAY_PAUSE);
+    const std::wstring exit_text = Localization::Text(IDS_TRAY_EXIT);
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandShow, open_text.c_str());
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandSettings, settings_text.c_str());
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandClear, clear_text.c_str());
     AppendMenuW(
         menu.Get(),
         MF_STRING | (m_settings.ignore_events ? MF_CHECKED : MF_UNCHECKED),
         kTrayCommandIgnore,
-        L"暂停"
+        pause_text.c_str()
     );
     AppendMenuW(menu.Get(), MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandExit, L"退出");
+    AppendMenuW(menu.Get(), MF_STRING, kTrayCommandExit, exit_text.c_str());
     POINT cursor{};
     GetCursorPos(&cursor);
     SetForegroundWindow(m_hWnd);
@@ -1528,7 +1617,10 @@ std::uint32_t MainWindow::ApplySettings(
 
     const bool previewTipChanged = !SameHotKey(previous.preview_hotkey, m_settings.preview_hotkey);
     if (previewTipChanged && m_tooltips.m_hWnd != nullptr) {
-        m_previewTip = L"显示或隐藏预览（" + HotKeyToText(m_settings.preview_hotkey) + L"）";
+        m_previewTip = Localization::Format(
+            IDS_MAIN_PREVIEW_TOOLTIP,
+            {HotKeyToText(m_settings.preview_hotkey)}
+        );
         TOOLINFOW info{sizeof(info)};
         info.uFlags = TTF_IDISHWND;
         info.hwnd = m_hWnd;
@@ -1665,7 +1757,7 @@ void MainWindow::OnHideWindowCallback(void* context) {
 bool MainWindow::InitializeHistoryControls() {
     m_applicationController.AttachWindow(m_hWnd);
     if (!m_historyRenderer.Initialize(CWindow(m_hWnd))) {
-        m_initializationError = L"无法初始化历史记录字体。";
+        m_initializationError = Localization::Text(IDS_MAIN_INIT_FONT_ERROR);
         return false;
     }
     const UINT dpi = UiFont::DpiForWindow(m_hWnd);
@@ -1677,7 +1769,7 @@ bool MainWindow::InitializeHistoryControls() {
         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     if (!BindControls()) {
         if (m_initializationError.empty()) {
-            m_initializationError = L"无法初始化主窗口控件。";
+            m_initializationError = Localization::Text(IDS_MAIN_INIT_CONTROL_ERROR);
         }
         m_applicationController.Shutdown();
         return false;
@@ -1685,7 +1777,7 @@ bool MainWindow::InitializeHistoryControls() {
 
     m_pasteController.SetOwner(m_hWnd);
     if (!m_applicationController.InitializeClipboard(m_hWnd, m_ignoredLists)) {
-        m_initializationError = L"无法注册剪贴板监听。";
+        m_initializationError = Localization::Text(IDS_MAIN_INIT_CLIPBOARD_ERROR);
         m_applicationController.Shutdown();
         return false;
     }
@@ -2219,7 +2311,7 @@ bool MainWindow::AddTrayIcon() {
         m_hWnd,
         kTrayIconId,
         AppConstants::kTrayIconMessage,
-        L"剪贴板历史",
+        Localization::Text(IDS_MAIN_TRAY_TOOLTIP),
         m_settings.menu_icon
     );
 }

@@ -1,6 +1,7 @@
 #include "SettingsWindow.h"
 #include "Constants.h"
 #include "ClipboardRules.h"
+#include "Localization.h"
 
 #include <windows.h>
 #include <commctrl.h>
@@ -34,6 +35,27 @@ std::wstring ReadWindowText(CWindow window) {
     return text;
 }
 
+void SetLocalizedText(CWindow window, int control_id, UINT resource_id) {
+    if (window.m_hWnd == nullptr) {
+        return;
+    }
+    const std::wstring text = Localization::Text(resource_id);
+    ::SetDlgItemTextW(window.m_hWnd, control_id, text.c_str());
+}
+
+void ShowSettingsRuntimeError(
+    HWND owner,
+    std::string_view error,
+    UINT fallback_message_resource,
+    UINT title_resource = IDS_SETTINGS_ERROR_TITLE
+) {
+    const std::wstring message = error.empty()
+        ? Localization::Text(fallback_message_resource)
+        : Localization::FromUtf8(error);
+    const std::wstring title = Localization::Text(title_resource);
+    ::MessageBoxW(owner, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
+}
+
 std::wstring FindHotkeyConflict(
     const HotKeyConfig &open,
     const HotKeyConfig &pin,
@@ -41,14 +63,14 @@ std::wstring FindHotkeyConflict(
     const HotKeyConfig &preview
 ) {
     struct Binding {
-        const wchar_t *name;
+        UINT name_resource;
         const HotKeyConfig *hotkey;
     };
     const std::array<Binding, 4> bindings = {{
-        {L"打开", &open},
-        {L"置顶", &pin},
-        {L"删除", &remove},
-        {L"预览", &preview},
+        {IDS_G_OPEN, &open},
+        {IDS_G_PIN, &pin},
+        {IDS_G_DELETE, &remove},
+        {IDS_G_PREVIEW, &preview},
     }};
 
     for (size_t first = 0; first < bindings.size(); ++first) {
@@ -60,14 +82,13 @@ std::wstring FindHotkeyConflict(
                 continue;
             }
 
-            std::wstring message = L"快捷键冲突：";
-            message += bindings[first].name;
-            message += L"和";
-            message += bindings[second].name;
-            message += L"不能使用相同的快捷键（";
-            message += HotKeyToText(*bindings[first].hotkey);
-            message += L"）。";
-            return message;
+            const std::wstring first_name = Localization::Text(bindings[first].name_resource);
+            const std::wstring second_name = Localization::Text(bindings[second].name_resource);
+            const std::wstring shortcut = HotKeyToText(*bindings[first].hotkey);
+            return Localization::Format(
+                IDS_SETTINGS_SHORTCUT_CONFLICT,
+                {first_name, second_name, shortcut}
+            );
         }
     }
     return {};
@@ -102,6 +123,13 @@ EditPinDialog::EditPinDialog(const AppSettings &settings, sqlite3_int64 item_id,
 LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     CenterWindow(GetParent());
+
+    SetWindowText(Localization::Text(IDS_EDIT_PIN_TITLE).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDC_EDIT_PIN_KEY_LABEL, Localization::Text(IDS_EDIT_PIN_KEY).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDC_EDIT_PIN_TITLE_LABEL, Localization::Text(IDS_EDIT_PIN_ALIAS).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDC_EDIT_PIN_CONTENT_LABEL, Localization::Text(IDS_EDIT_PIN_CONTENT).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDOK, Localization::Text(IDS_EDIT_PIN_OK).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDCANCEL, Localization::Text(IDS_EDIT_PIN_CANCEL).c_str());
 
     m_keyCombo = GetDlgItem(IDC_EDIT_PIN_KEY);
     m_titleEdit = GetDlgItem(IDC_EDIT_PIN_TITLE);
@@ -144,7 +172,7 @@ LRESULT EditPinDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     } else {
         m_contentEdit.SetWindowText(m_originalContent.c_str());
         m_contentEdit.EnableWindow(FALSE);
-        m_hintLabel.SetWindowText(L"此项目包含格式或非文本内容，无法在此编辑。");
+        m_hintLabel.SetWindowText(Localization::Text(IDS_UNEDITABLE_CONTENT).c_str());
     }
 
     return TRUE;
@@ -165,7 +193,9 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     std::wstring keyLower = m_key;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), std::towlower);
     if (!PinKeyPolicy::IsValid(keyLower, m_pins, m_settings, m_itemId)) {
-        MessageBoxW(L"请选择未使用且不与搜索、编辑或已配置快捷键冲突的单个英文字母。", L"置顶快捷键", MB_OK | MB_ICONWARNING);
+        const std::wstring message = Localization::Text(IDS_SETTINGS_INVALID_PIN_KEY);
+        const std::wstring title = Localization::Text(IDS_G_PIN);
+        MessageBoxW(message.c_str(), title.c_str(), MB_OK | MB_ICONWARNING);
         return 0;
     }
     m_key = keyLower;
@@ -178,7 +208,9 @@ LRESULT EditPinDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
         m_content = ReadWindowText(m_contentEdit);
 
         if (m_content != m_originalContent) {
-            if (MessageBoxW(L"修改内容将保存为纯文本并移除原有格式。继续？", L"修改置顶内容",
+            const std::wstring message = Localization::Text(IDS_SETTINGS_EDIT_CONTENT_WARNING);
+            const std::wstring title = Localization::Text(IDS_EDIT_PIN_TITLE);
+            if (MessageBoxW(message.c_str(), title.c_str(),
                 MB_YESNO | MB_DEFBUTTON2 | MB_ICONWARNING) != IDYES) {
                 return 0;
             }
@@ -204,6 +236,11 @@ EditIgnoreDialog::EditIgnoreDialog(const std::wstring &value, const std::wstring
 LRESULT EditIgnoreDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     CenterWindow(GetParent());
+
+    SetWindowText(Localization::Text(IDS_EDIT_IGNORE_TITLE).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDC_EDIT_IGNORE_VALUE_LABEL, Localization::Text(IDS_EDIT_IGNORE_VALUE).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDOK, Localization::Text(IDS_EDIT_IGNORE_OK).c_str());
+    ::SetDlgItemTextW(m_hWnd, IDCANCEL, Localization::Text(IDS_EDIT_IGNORE_CANCEL).c_str());
 
     m_valueEdit = GetDlgItem(IDC_EDIT_IGNORE_VALUE);
     m_descriptionLabel = GetDlgItem(IDC_I_DESCRIPTION);
@@ -232,7 +269,9 @@ LRESULT EditIgnoreDialog::OnOK(WORD, WORD, HWND, BOOL &handled) {
     m_value = ReadWindowText(m_valueEdit);
 
     if (m_value.empty()) {
-        MessageBoxW(L"值不能为空。", L"错误", MB_OK | MB_ICONWARNING);
+        const std::wstring message = Localization::Text(IDS_SETTINGS_VALUE_EMPTY);
+        const std::wstring title = Localization::Text(IDS_SETTINGS_ERROR_TITLE);
+        MessageBoxW(message.c_str(), title.c_str(), MB_OK | MB_ICONWARNING);
         return 0;
     }
 
@@ -330,9 +369,6 @@ UINT WindowDpi(CWindow window) {
 }
 
 void UpdateBehaviorHint(CStatic window, bool paste_default, bool plain_default) {
-    std::wstring hint = ReadWindowText(window);
-    constexpr std::wstring_view marker = L"• 按住 ";
-    constexpr std::wstring_view suffix = L" 选择项目";
     const std::array<std::wstring, 3> key_expressions = {
         paste_default ? L"Alt+Enter" : L"Enter",
         paste_default ? L"Enter" : L"Alt+Enter",
@@ -341,21 +377,10 @@ void UpdateBehaviorHint(CStatic window, bool paste_default, bool plain_default) 
             : (paste_default ? L"Ctrl+Shift+Enter" : L"Alt+Shift+Enter"),
     };
 
-    size_t search_position = 0;
-    for (const std::wstring &key_expression : key_expressions) {
-        const size_t marker_position = hint.find(marker, search_position);
-        if (marker_position == std::wstring::npos) {
-            return;
-        }
-        const size_t key_start = marker_position + marker.size();
-        const size_t key_end = hint.find(suffix, key_start);
-        if (key_end == std::wstring::npos) {
-            return;
-        }
-        hint.replace(key_start, key_end - key_start, key_expression);
-        search_position = key_start + key_expression.size();
-    }
-
+    const std::wstring hint = Localization::Format(
+        IDS_G_BEHAVIOR_HINT,
+        {key_expressions[0], key_expressions[1], key_expressions[2]}
+    );
     window.SetWindowText(hint.c_str());
 }
 
@@ -443,27 +468,27 @@ void AddListViewColumn(CListViewCtrl list, int index, int width, const wchar_t *
 }
 
 struct PageDefinition {
-    const wchar_t *title;
+    UINT title_resource;
 };
 
 constexpr std::array<PageDefinition, AppConstants::SettingsUI::kPageCount> kPageDefinitions = {
-    PageDefinition{L"通用"},
-    PageDefinition{L"存储"},
-    PageDefinition{L"外观"},
-    PageDefinition{L"置顶项"},
-    PageDefinition{L"忽略"},
-    PageDefinition{L"高级"},
+    PageDefinition{IDS_SETTINGS_GENERAL},
+    PageDefinition{IDS_SETTINGS_STORAGE},
+    PageDefinition{IDS_SETTINGS_APPEARANCE},
+    PageDefinition{IDS_SETTINGS_PINS},
+    PageDefinition{IDS_SETTINGS_IGNORE},
+    PageDefinition{IDS_SETTINGS_ADVANCED},
 };
 
 struct IgnorePageDefinition {
-    const wchar_t *title;
+    UINT title_resource;
 };
 
 constexpr std::array<IgnorePageDefinition, AppConstants::SettingsUI::kIgnorePageCount>
     kIgnorePageDefinitions = {
-    IgnorePageDefinition{L"忽略应用"},
-    IgnorePageDefinition{L"忽略剪贴板类型"},
-    IgnorePageDefinition{L"正则表达式"},
+    IgnorePageDefinition{IDS_SETTINGS_IGNORE_APPLICATIONS},
+    IgnorePageDefinition{IDS_SETTINGS_IGNORE_FORMATS},
+    IgnorePageDefinition{IDS_SETTINGS_IGNORE_REGEXPS},
 };
 
 }
@@ -481,7 +506,9 @@ void HotkeyCaptureEdit::SetHotKey(const HotKeyConfig &hotkey) {
 }
 
 void HotkeyCaptureEdit::UpdateText() {
-    const std::wstring text = m_hotkey.virtual_key == 0 ? L"(空)" : HotKeyToText(m_hotkey);
+    const std::wstring text = m_hotkey.virtual_key == 0
+        ? Localization::Text(IDS_HOTKEY_EMPTY)
+        : HotKeyToText(m_hotkey);
     SetWindowText(text.c_str());
 }
 
@@ -507,7 +534,7 @@ LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modi
 }
 
 LRESULT HotkeyCaptureEdit::OnSetFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
-    SetWindowText(L"按下快捷键");
+    SetWindowText(Localization::Text(IDS_HOTKEY_PRESS).c_str());
     handled = FALSE;
     return 0;
 }
@@ -615,9 +642,83 @@ void SettingsWindow::CreateTabs() {
     for (const PageDefinition &definition : kPageDefinitions) {
         TCITEMW item{};
         item.mask = TCIF_TEXT;
-        item.pszText = const_cast<wchar_t *>(definition.title);
+        const std::wstring title = Localization::Text(definition.title_resource);
+        item.pszText = const_cast<wchar_t *>(title.c_str());
         m_tabs.InsertItem(m_tabs.GetItemCount(), &item);
     }
+}
+
+void SettingsWindow::LocalizeControls() {
+    SetWindowText(Localization::Text(IDS_SETTINGS_TITLE).c_str());
+
+    const CWindow general = m_pages[kPageGeneral]->Window();
+    SetLocalizedText(general, IDC_G_LAUNCH, IDS_G_LAUNCH);
+    SetLocalizedText(general, IDC_G_UPDATES, IDS_G_UPDATES);
+    SetLocalizedText(general, IDC_G_CHECK_NOW, IDS_G_CHECK_NOW);
+    SetLocalizedText(general, IDC_G_OPEN_LABEL, IDS_G_OPEN);
+    SetLocalizedText(general, IDC_G_PIN_LABEL, IDS_G_PIN);
+    SetLocalizedText(general, IDC_G_DELETE_LABEL, IDS_G_DELETE);
+    SetLocalizedText(general, IDC_G_PREVIEW_LABEL, IDS_G_PREVIEW);
+    SetLocalizedText(general, IDC_G_SEARCH_LABEL, IDS_G_SEARCH);
+    SetLocalizedText(general, IDC_G_BEHAVIOR_LABEL, IDS_G_BEHAVIOR);
+    SetLocalizedText(general, IDC_G_PASTE_BY_DEFAULT, IDS_G_AUTO_PASTE);
+    SetLocalizedText(general, IDC_G_REMOVE_FORMATTING, IDS_G_PLAIN_PASTE);
+    SetLocalizedText(general, IDC_G_NOTIFICATIONS, IDS_G_NOTIFICATIONS);
+
+    const CWindow appearance = m_pages[kPageAppearance]->Window();
+    SetLocalizedText(appearance, IDC_A_POPUP_POSITION_LABEL, IDS_A_POPUP_POSITION);
+    SetLocalizedText(appearance, IDC_A_SCREEN_LABEL, IDS_A_SCREEN);
+    SetLocalizedText(appearance, IDC_A_RESET_POSITION, IDS_A_RESET_POSITION);
+    SetLocalizedText(appearance, IDC_A_PIN_TO_LABEL, IDS_A_PIN_TO);
+    SetLocalizedText(appearance, IDC_A_IMAGE_HEIGHT_LABEL, IDS_A_IMAGE_HEIGHT);
+    SetLocalizedText(appearance, IDC_A_OPEN_PREVIEW, IDS_A_AUTO_PREVIEW);
+    SetLocalizedText(appearance, IDC_A_PREVIEW_DELAY_LABEL, IDS_A_PREVIEW_DELAY);
+    SetLocalizedText(appearance, IDC_A_HIGHLIGHT_LABEL, IDS_A_HIGHLIGHT);
+    SetLocalizedText(appearance, IDC_A_SHOW_SPECIAL, IDS_A_SHOW_SPECIAL);
+    SetLocalizedText(appearance, IDC_A_SHOW_STATUS, IDS_A_SHOW_STATUS);
+    SetLocalizedText(appearance, IDC_A_SHOW_RECENT, IDS_A_SHOW_RECENT);
+    SetLocalizedText(appearance, IDC_A_SHOW_SEARCH, IDS_A_SHOW_SEARCH);
+    SetLocalizedText(appearance, IDC_A_SHOW_TITLE, IDS_A_SHOW_TITLE);
+    SetLocalizedText(appearance, IDC_A_SHOW_ICONS, IDS_A_SHOW_ICONS);
+    SetLocalizedText(appearance, IDC_A_SHOW_SWATCH, IDS_A_SHOW_SWATCH);
+    SetLocalizedText(appearance, IDC_A_SHOW_FOOTER, IDS_A_SHOW_FOOTER);
+
+    const CWindow storage = m_pages[kPageStorage]->Window();
+    SetLocalizedText(storage, IDC_S_SAVE_LABEL, IDS_S_SAVE);
+    SetLocalizedText(storage, IDC_S_SAVE_FILES, IDS_S_FILES);
+    SetLocalizedText(storage, IDC_S_SAVE_IMAGES, IDS_S_IMAGES);
+    SetLocalizedText(storage, IDC_S_SAVE_TEXT, IDS_S_TEXT);
+    SetLocalizedText(storage, IDC_S_DESCRIPTION, IDS_S_DESCRIPTION);
+    SetLocalizedText(storage, IDC_S_COUNT_LABEL, IDS_S_COUNT);
+    SetLocalizedText(storage, IDC_S_SORT_LABEL, IDS_S_SORT);
+
+    SetLocalizedText(m_pages[kPagePins]->Window(), IDC_P_LIST_HINT, IDS_P_LIST_HINT);
+    SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_IGNORE_EVENTS, IDS_X_PAUSE);
+    SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_DESCRIPTION, IDS_X_PAUSE_DESCRIPTION);
+    SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_CLEAR_ON_QUIT, IDS_X_CLEAR_ON_QUIT);
+    SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_CLEAR_CLIPBOARD, IDS_X_CLEAR_CLIPBOARD);
+    SetLocalizedText(
+        m_pages[kPageAdvanced]->Window(),
+        IDC_X_RESPECT_WINDOWS_CLIPBOARD_HISTORY,
+        IDS_X_RESPECT_HISTORY
+    );
+    SetLocalizedText(
+        m_pages[kPageAdvanced]->Window(),
+        IDC_X_HISTORY_DESCRIPTION,
+        IDS_X_HISTORY_DESCRIPTION
+    );
+
+    SetLocalizedText(
+        m_ignorePages[0]->Window(),
+        IDC_I_WHITELIST,
+        IDS_I_WHITELIST
+    );
+    for (const auto &page : m_ignorePages) {
+        SetLocalizedText(page->Window(), IDC_I_ADD, IDS_IGNORE_ADD);
+        SetLocalizedText(page->Window(), IDC_I_REMOVE, IDS_IGNORE_REMOVE);
+    }
+    SetLocalizedText(m_ignorePages[1]->Window(), IDC_I_RESET, IDS_IGNORE_RESET);
+
 }
 
 bool SettingsWindow::CreatePageWindows() {
@@ -640,7 +741,8 @@ bool SettingsWindow::CreatePageWindows() {
     for (const IgnorePageDefinition &definition : kIgnorePageDefinitions) {
         TCITEMW item{};
         item.mask = TCIF_TEXT;
-        item.pszText = const_cast<wchar_t *>(definition.title);
+        const std::wstring title = Localization::Text(definition.title_resource);
+        item.pszText = const_cast<wchar_t *>(title.c_str());
         m_ignoreTabs.InsertItem(m_ignoreTabs.GetItemCount(), &item);
     }
 
@@ -735,39 +837,39 @@ void SettingsWindow::BindControls() {
     m_xIgnoreNext = get(kPageAdvanced, kXIgnoreNext);
 
     CComboBox searchMode(get(kPageGeneral, kGSearchMode).m_hWnd);
-    AddComboItem(searchMode, L"精确");
-    AddComboItem(searchMode, L"模糊");
-    AddComboItem(searchMode, L"正则表达式");
-    AddComboItem(searchMode, L"混合");
+    AddComboItem(searchMode, Localization::Text(IDS_SEARCH_EXACT).c_str());
+    AddComboItem(searchMode, Localization::Text(IDS_SEARCH_FUZZY).c_str());
+    AddComboItem(searchMode, Localization::Text(IDS_SEARCH_REGEX).c_str());
+    AddComboItem(searchMode, Localization::Text(IDS_SEARCH_HYBRID).c_str());
 
-    AddComboItem(m_aPopupPosition, L"光标");
-    AddComboItem(m_aPopupPosition, L"菜单栏图标");
-    AddComboItem(m_aPopupPosition, L"窗口中心");
-    AddComboItem(m_aPopupPosition, L"屏幕中央");
-    AddComboItem(m_aPopupPosition, L"最后位置");
+    AddComboItem(m_aPopupPosition, Localization::Text(IDS_POPUP_CURSOR).c_str());
+    AddComboItem(m_aPopupPosition, Localization::Text(IDS_POPUP_STATUS_ICON).c_str());
+    AddComboItem(m_aPopupPosition, Localization::Text(IDS_POPUP_WINDOW_CENTER).c_str());
+    AddComboItem(m_aPopupPosition, Localization::Text(IDS_POPUP_SCREEN_CENTER).c_str());
+    AddComboItem(m_aPopupPosition, Localization::Text(IDS_POPUP_LAST_POSITION).c_str());
 
     CComboBox pinTo(get(kPageAppearance, kAPinTo).m_hWnd);
-    AddComboItem(pinTo, L"顶部");
-    AddComboItem(pinTo, L"底部");
+    AddComboItem(pinTo, Localization::Text(IDS_PIN_TOP).c_str());
+    AddComboItem(pinTo, Localization::Text(IDS_PIN_BOTTOM).c_str());
 
     CComboBox highlight(get(kPageAppearance, kAHighlight).m_hWnd);
-    AddComboItem(highlight, L"颜色");
-    AddComboItem(highlight, L"粗体");
-    AddComboItem(highlight, L"斜体");
-    AddComboItem(highlight, L"强调");
+    AddComboItem(highlight, Localization::Text(IDS_HIGHLIGHT_COLOR).c_str());
+    AddComboItem(highlight, Localization::Text(IDS_HIGHLIGHT_BOLD).c_str());
+    AddComboItem(highlight, Localization::Text(IDS_HIGHLIGHT_ITALIC).c_str());
+    AddComboItem(highlight, Localization::Text(IDS_HIGHLIGHT_EMPHASIS).c_str());
 
     AddComboItem(m_aMenuIcon, L"maccy");
-    AddComboItem(m_aMenuIcon, L"剪贴板");
-    AddComboItem(m_aMenuIcon, L"剪刀");
-    AddComboItem(m_aMenuIcon, L"回形针");
+    AddComboItem(m_aMenuIcon, Localization::Text(IDS_MENU_ICON_CLIPBOARD).c_str());
+    AddComboItem(m_aMenuIcon, Localization::Text(IDS_MENU_ICON_SCISSORS).c_str());
+    AddComboItem(m_aMenuIcon, Localization::Text(IDS_MENU_ICON_PAPERCLIP).c_str());
 
-    AddComboItem(m_aSearchVisibility, L"始终");
-    AddComboItem(m_aSearchVisibility, L"在搜索过程中");
+    AddComboItem(m_aSearchVisibility, Localization::Text(IDS_SEARCH_ALWAYS).c_str());
+    AddComboItem(m_aSearchVisibility, Localization::Text(IDS_SEARCH_WHILE_TYPING).c_str());
 
     CComboBox sortBy(get(kPageStorage, kSSortBy).m_hWnd);
-    AddComboItem(sortBy, L"上次复制时间");
-    AddComboItem(sortBy, L"首次复制时间");
-    AddComboItem(sortBy, L"复制次数");
+    AddComboItem(sortBy, Localization::Text(IDS_SORT_LAST_COPIED).c_str());
+    AddComboItem(sortBy, Localization::Text(IDS_SORT_FIRST_COPIED).c_str());
+    AddComboItem(sortBy, Localization::Text(IDS_SORT_COPY_COUNT).c_str());
 
     ConfigurePinsList();
     LayoutPages();
@@ -801,9 +903,9 @@ void SettingsWindow::ConfigureIgnoreList() {
 
 void SettingsWindow::ConfigurePinsList() {
     ConfigureListView(m_pList, false, true);
-    AddListViewColumn(m_pList, 0, 63, L"键位");
-    AddListViewColumn(m_pList, 1, 158, L"别名");
-    AddListViewColumn(m_pList, 2, 300, L"内容");
+    AddListViewColumn(m_pList, 0, 63, Localization::Text(IDS_P_KEY).c_str());
+    AddListViewColumn(m_pList, 1, 158, Localization::Text(IDS_P_TITLE).c_str());
+    AddListViewColumn(m_pList, 2, 300, Localization::Text(IDS_P_CONTENT).c_str());
 }
 
 void SettingsWindow::SetPage(int page) {
@@ -856,9 +958,12 @@ void SettingsWindow::LoadAppearanceControls() {
     CComboBox popupScreen(m_pages[kPageAppearance]->Control(kAPopupScreen).m_hWnd);
     popupScreen.ResetContent();
     const int monitor_count = std::max(1, GetSystemMetrics(SM_CMONITORS));
-    AddComboItem(popupScreen, L"活动屏幕");
+    AddComboItem(popupScreen, Localization::Text(IDS_ACTIVE_SCREEN).c_str());
     for (int index = 0; index < monitor_count; ++index) {
-        const std::wstring name = L"显示器 " + std::to_wstring(index + 1);
+        const std::wstring name = Localization::Format(
+            IDS_MONITOR,
+            {std::to_wstring(index + 1)}
+        );
         AddComboItem(popupScreen, name.c_str());
     }
     auto &page = *m_pages[kPageAppearance];
@@ -892,8 +997,10 @@ void SettingsWindow::LoadStorageControls() {
     const std::uintmax_t storage_bytes = m_storage.StorageBytes();
     const sqlite3_int64 current_count = m_storage.CountItems();
     m_sStorageSize.SetWindowText(FormatByteCount(storage_bytes).c_str());
-    const std::wstring current_size_text =
-        L"（当前: " + std::to_wstring(current_count) + L" 项）";
+    const std::wstring current_size_text = Localization::Format(
+        IDS_CURRENT_ITEMS,
+        {std::to_wstring(current_count)}
+    );
     m_sCurrentSize.SetWindowText(current_size_text.c_str());
 }
 
@@ -960,7 +1067,7 @@ void SettingsWindow::RefreshPinsList() {
                 content = item.preview;
             }
         } else {
-            content = L"不可编辑的内容（图像或文件）";
+            content = Localization::Text(IDS_UNEDITABLE_CONTENT);
         }
         for (wchar_t &character : content) {
             if (character == L'\r' || character == L'\n') {
@@ -1021,7 +1128,8 @@ void SettingsWindow::SaveCurrentPage() {
                 m_loading = true;
                 LoadGeneralControls();
                 m_loading = false;
-                ::MessageBoxW(m_hWnd, conflict.c_str(), L"快捷键冲突", MB_OK | MB_ICONWARNING);
+                const std::wstring title = Localization::Text(IDS_SETTINGS_ERROR_TITLE);
+                ::MessageBoxW(m_hWnd, conflict.c_str(), title.c_str(), MB_OK | MB_ICONWARNING);
                 return;
             }
             m_settings.open_hotkey = openHotkey;
@@ -1083,7 +1191,7 @@ void SettingsWindow::SaveCurrentPage() {
     } catch (const std::exception &error) {
         m_settings = previous;
         LoadControlsFromSettings();
-        MessageBoxA(m_hWnd, error.what(), "无法保存设置", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, error.what(), IDS_SETTINGS_SAVE_ERROR);
     }
 }
 
@@ -1125,10 +1233,9 @@ void SettingsWindow::EditSelectedPin() {
         RefreshPinsList();
         NotifyOwner();
     } catch (const std::exception &error) {
-        ::MessageBoxA(m_hWnd, error.what(), "无法修改置顶项目", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, error.what(), IDS_SETTINGS_EDIT_PIN_ERROR);
     } catch (...) {
-        ::MessageBoxW(m_hWnd, L"无法修改置顶项目。", L"无法修改置顶项目",
-                      MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, {}, IDS_SETTINGS_EDIT_PIN_ERROR);
     }
 }
 
@@ -1137,7 +1244,14 @@ void SettingsWindow::DeleteSelectedPin() {
     if (selected < 0 || selected >= static_cast<int>(m_pins.size())) {
         return;
     }
-    if (::MessageBoxW(m_hWnd, L"删除当前置顶项目？", L"确认", MB_YESNO | MB_ICONQUESTION) != IDYES) {
+    const std::wstring delete_message = Localization::Text(IDS_SETTINGS_DELETE_PIN_CONFIRM);
+    const std::wstring confirm_title = Localization::Text(IDS_SETTINGS_CONFIRM_TITLE);
+    if (::MessageBoxW(
+            m_hWnd,
+            delete_message.c_str(),
+            confirm_title.c_str(),
+            MB_YESNO | MB_ICONQUESTION
+        ) != IDYES) {
         return;
     }
     const sqlite3_int64 item_id = m_pins[selected].id;
@@ -1146,10 +1260,9 @@ void SettingsWindow::DeleteSelectedPin() {
         RefreshPinsList();
         NotifyOwner();
     } catch (const std::exception &error) {
-        ::MessageBoxA(m_hWnd, error.what(), "无法删除置顶项目", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, error.what(), IDS_SETTINGS_DELETE_PIN_ERROR);
     } catch (...) {
-        ::MessageBoxW(m_hWnd, L"无法删除置顶项目。", L"无法删除置顶项目",
-                      MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, {}, IDS_SETTINGS_DELETE_PIN_ERROR);
     }
 }
 
@@ -1159,19 +1272,23 @@ void SettingsWindow::OpenNotificationsSettings() {
 
 void SettingsWindow::CheckForUpdatesNow() {
     if (m_updateCheckBusy) {
+        const std::wstring message = Localization::Text(IDS_SETTINGS_UPDATE_BUSY);
+        const std::wstring title = Localization::Text(IDS_MAIN_UPDATE_CHECK_TITLE);
         ::MessageBoxW(
             m_hWnd,
-            L"正在检查更新，请稍候。",
-            L"检查更新",
+            message.c_str(),
+            title.c_str(),
             MB_OK | MB_ICONINFORMATION
         );
         return;
     }
     if (m_onUpdateCheck == nullptr || !m_onUpdateCheck()) {
+        const std::wstring message = Localization::Text(IDS_SETTINGS_UPDATE_START_ERROR);
+        const std::wstring title = Localization::Text(IDS_MAIN_UPDATE_CHECK_TITLE);
         ::MessageBoxW(
             m_hWnd,
-            L"无法开始检查更新，请稍后重试。",
-            L"检查更新",
+            message.c_str(),
+            title.c_str(),
             MB_OK | MB_ICONWARNING
         );
     }
@@ -1187,11 +1304,11 @@ void SettingsWindow::ResetPopupPosition() {
     } catch (const std::exception &error) {
         m_settings = previous;
         LoadControlsFromSettings();
-        ::MessageBoxA(m_hWnd, error.what(), "无法保存设置", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, error.what(), IDS_SETTINGS_SAVE_ERROR);
     } catch (...) {
         m_settings = previous;
         LoadControlsFromSettings();
-        ::MessageBoxW(m_hWnd, L"无法保存设置。", L"无法保存设置", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(m_hWnd, {}, IDS_SETTINGS_SAVE_ERROR);
     }
 }
 
@@ -1199,7 +1316,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
     // Keep preferences as a normal top-level window so it remains visible in
     // the taskbar and Alt+Tab without inheriting the main window's topmost state.
-    SetWindowText(L"偏好设置");
+    SetWindowText(Localization::Text(IDS_SETTINGS_TITLE).c_str());
     m_windowIcon = LoadApplicationIcon();
     if (m_windowIcon) {
         SetIcon(m_windowIcon.Get(), TRUE);
@@ -1224,6 +1341,7 @@ LRESULT SettingsWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
         handled = FALSE;
         return FALSE;
     }
+    LocalizeControls();
     LayoutPages();
     BindControls();
     LoadControlsFromSettings();
@@ -1445,12 +1563,20 @@ bool IgnorePage::PersistValues() {
     } catch (const std::exception &error) {
         m_values = m_persistedValues;
         Refresh();
-        ::MessageBoxA(m_pageWindow.m_hWnd, error.what(), "无法保存忽略规则", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(
+            m_pageWindow.m_hWnd,
+            error.what(),
+            IDS_SETTINGS_IGNORE_SAVE_ERROR
+        );
         return false;
     } catch (...) {
         m_values = m_persistedValues;
         Refresh();
-        ::MessageBoxW(m_pageWindow.m_hWnd, L"无法保存忽略规则。", L"无法保存忽略规则", MB_OK | MB_ICONERROR);
+        ShowSettingsRuntimeError(
+            m_pageWindow.m_hWnd,
+            {},
+            IDS_SETTINGS_IGNORE_SAVE_ERROR
+        );
         return false;
     }
 }
@@ -1466,7 +1592,9 @@ void IgnorePage::Initialize(
     m_description = page_window.GetDlgItem(IDC_I_DESCRIPTION);
     SetValues(std::move(values));
     if (m_description.m_hWnd != nullptr) {
-        m_description.SetWindowText(m_descriptionText);
+        m_description.SetWindowText(
+            Localization::Text(m_descriptionResource).c_str()
+        );
     }
 }
 
@@ -1511,7 +1639,13 @@ bool IgnorePage::ChooseFile(std::wstring &value, bool editing) const {
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = m_pageWindow.m_hWnd;
-    dialog.lpstrFilter = L"Windows application (*.exe)\0*.exe\0All files (*.*)\0*.*\0\0";
+    const std::wstring application_filter = Localization::Text(
+        IDS_IGNORE_WINDOWS_APPLICATION_FILTER
+    );
+    const std::wstring all_files_filter = Localization::Text(IDS_IGNORE_ALL_FILES_FILTER);
+    const std::wstring filter = application_filter + L'\0' + L"*.exe" + L'\0' +
+        all_files_filter + L'\0' + L"*.*" + L'\0' + L'\0';
+    dialog.lpstrFilter = filter.c_str();
     dialog.lpstrFile = path.data();
     dialog.nMaxFile = static_cast<DWORD>(path.size());
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
@@ -1525,10 +1659,12 @@ bool IgnorePage::ChooseFile(std::wstring &value, bool editing) const {
 }
 
 bool IgnorePage::EditTextValue(std::wstring &value, bool editing) const {
-    const wchar_t *hint = editing ? m_editHint : m_addHint;
+    const std::wstring hint = Localization::Text(
+        editing ? m_editHintResource : m_addHintResource
+    );
     EditIgnoreDialog dialog(
         editing ? value : L"",
-        hint != nullptr ? hint : L"",
+        hint,
         m_dialogPage
     );
     if (dialog.DoModal(m_pageWindow) != IDOK) {
@@ -1545,10 +1681,15 @@ bool IgnorePage::IsDuplicate(const std::wstring &value, int selected) const {
             continue;
         }
         if (selected >= 0) {
+            const UINT message_resource = m_filePicker
+                ? IDS_SETTINGS_DUPLICATE_APPLICATION
+                : IDS_SETTINGS_DUPLICATE_VALUE;
+            const std::wstring message = Localization::Text(message_resource);
+            const std::wstring title = Localization::Text(IDS_SETTINGS_ERROR_TITLE);
             MessageBoxW(
                 m_pageWindow.m_hWnd,
-                m_filePicker ? L"该应用程序已存在。" : L"该值已存在。",
-                L"错误",
+                message.c_str(),
+                title.c_str(),
                 MB_OK | MB_ICONWARNING
             );
         }
