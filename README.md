@@ -37,6 +37,13 @@
 - 可手动或在启动时检查 GitHub Releases，只提示新版本，不自动下载或替换程序；
 - 本地 SQLite 存储，不上传剪贴板内容。
 
+## 界面预览
+
+<div align="center">
+  <img src="screenshot/screenshot_3.png" width="60%" />
+  <img src="screenshot/screenshot_5.png" width="60%" />
+</div>
+
 ## 与原版 Maccy 的差异
 
 - Maccy 使用 macOS 菜单栏；本项目使用 Windows 系统托盘和全局快捷键。
@@ -47,8 +54,6 @@
 - 本项目不包含 Universal Clipboard、iCloud 或 macOS App Intents 等 macOS 集成。
 
 ## 内存测试
-
-测试软件版本:1.0.1
 
 |    历史记录 | 内容                 |   后台内存占用 |
 |--------:|--------------------|---------:|
