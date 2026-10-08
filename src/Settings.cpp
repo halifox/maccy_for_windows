@@ -41,7 +41,10 @@ HotKeyConfig ReadHotKey(
 ) {
     HotKeyConfig result;
     result.modifiers = static_cast<UINT>(ReadInt(database, modifier_key, static_cast<int>(fallback.modifiers), 0, 0xFFFF));
-    result.virtual_key = static_cast<UINT>(ReadInt(database, virtual_key_key, static_cast<int>(fallback.virtual_key), 1, 0xFF));
+    result.virtual_key = static_cast<UINT>(ReadInt(database, virtual_key_key, static_cast<int>(fallback.virtual_key), 0, 0xFF));
+    if (result.virtual_key == 0) {
+        result.modifiers = 0;
+    }
     return result;
 }
 
@@ -302,6 +305,10 @@ void AppSettings::Save(const Database &database) const {
 }
 
 std::wstring HotKeyToText(const HotKeyConfig &hotkey) {
+    if (hotkey.virtual_key == 0) {
+        return {};
+    }
+
     std::wstring text;
     if ((hotkey.modifiers & MOD_CONTROL) != 0) {
         text += L"Ctrl+";
@@ -319,7 +326,7 @@ std::wstring HotKeyToText(const HotKeyConfig &hotkey) {
 }
 
 bool IsHotKeyPressed(const HotKeyConfig &hotkey, WPARAM virtual_key) {
-    if (virtual_key != hotkey.virtual_key) {
+    if (hotkey.virtual_key == 0 || virtual_key != hotkey.virtual_key) {
         return false;
     }
     const auto pressed = [](int key) {

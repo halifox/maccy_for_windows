@@ -131,6 +131,9 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) modifiers |= MOD_SHIFT;
         if (handler->m_pendingWinKey != 0 || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
             (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) modifiers |= MOD_WIN;
+        if (modifiers == 0 && key->vkCode != VK_BACK) {
+            return CallNextHookEx(nullptr, code, message, data);
+        }
         handler->m_suppressingCaptureKey = key->vkCode;
         handler->m_captureTargetWindow = focusedWindow;
         handler->m_capturedKey = key->vkCode;
