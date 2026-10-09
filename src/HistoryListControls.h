@@ -41,6 +41,7 @@ public:
     void UpdateItemHeight(sqlite3_int64 item_id) noexcept;
     void UpdateAllItemHeights() noexcept;
     void SetPendingMeasureItems(HWND list, std::vector<int> item_indices);
+    void ResetScrollPositions() noexcept;
 
     void Configure(KeyboardHandler &keyboard_handler,
                    HistoryRenderer &renderer,

@@ -953,6 +953,10 @@ void MainWindow::ApplyHistoryItems(
             }
         }
         ApplyHistoryVisibility();
+        if (m_resetHistoryListScrollOnOpen) {
+            m_historyListControls.ResetScrollPositions();
+            m_resetHistoryListScrollOnOpen = false;
+        }
         for (CListBox* list : {
                  &m_historyListControls.HistoryListWindow(),
                  &m_historyListControls.PinsListWindow()
@@ -2230,6 +2234,7 @@ void MainWindow::ShowMainWindow() {
 
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_activePopupPosition = popup_position;
+    m_resetHistoryListScrollOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
     m_pasteController.CaptureTargetWindow();
     m_previewSuppressed = false;
@@ -2241,6 +2246,7 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_popupVisible = true;
     ShowWindow(SW_SHOW);
     ApplyPendingState();
+    m_historyListControls.ResetScrollPositions();
     if (!SetForegroundWindow(m_hWnd) || GetForegroundWindow() != m_hWnd) {
         const HWND foreground = GetForegroundWindow();
         const DWORD foregroundThread = foreground != nullptr

@@ -121,6 +121,14 @@ void HistoryListControls::SetPendingMeasureItems(HWND list, std::vector<int> ite
     m_pendingMeasureItems.insert_or_assign(list, std::move(item_indices));
 }
 
+void HistoryListControls::ResetScrollPositions() noexcept {
+    for (CListBox *list : {&m_historyList, &m_pinsList}) {
+        if (list->m_hWnd != nullptr) {
+            list->SetTopIndex(0);
+        }
+    }
+}
+
 void HistoryListControls::SetImageMaxHeight(int image_max_height) noexcept {
     m_imageMaxHeight = std::clamp(image_max_height, 1, 200);
     UpdateAllItemHeights();

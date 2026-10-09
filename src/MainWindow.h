@@ -323,6 +323,7 @@ private:
     bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;
+    bool m_resetHistoryListScrollOnOpen = false;
     std::uint32_t m_pendingUpdates = 0;
     bool m_updateMessagePosted = false;
     std::uint64_t m_historyGeneration = 0;
