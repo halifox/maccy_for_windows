@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/halifox/maccy_for_windows/compare/v1.3.1...v1.3.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* **history:** reset list scroll position when opening ([ef0045b](https://github.com/halifox/maccy_for_windows/commit/ef0045ba8106c09c1b6e4a316d44af1ed71ea5b4))
+* **history:** reset list scroll position when opening ([e98a774](https://github.com/halifox/maccy_for_windows/commit/e98a77417dd34f25d29fb08e7db70d1271f3f0b6))
+
 ## [1.3.1](https://github.com/halifox/maccy_for_windows/compare/v1.3.0...v1.3.1) (2026-10-08)
 
 
