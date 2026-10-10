@@ -1,10 +1,20 @@
 #include "UpdateChecker.h"
 
 #include "Constants.h"
+#include "Localization.h"
 
-#include <cpr/cpr.h>
-#include <nlohmann/json.hpp>
+#include <boost/asio/connect.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
+#include <boost/beast/ssl.hpp>
+#include <boost/json.hpp>
+#include <boost/system/system_error.hpp>
 
+#include <openssl/ssl.h>
+
+#include <chrono>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -15,49 +25,49 @@
 
 namespace {
 
-constexpr char kGitHubLatestReleaseUrl[] =
-    "https://api.github.com/repos/halifox/maccy_for_windows/releases/latest";
+namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace json = boost::json;
+namespace ssl = asio::ssl;
+using tcp = asio::ip::tcp;
+
+constexpr char kGitHubHost[] = "api.github.com";
+constexpr char kGitHubPort[] = "443";
+constexpr char kGitHubLatestReleaseTarget[] =
+    "/repos/halifox/maccy_for_windows/releases/latest";
 constexpr std::string_view kGitHubReleaseUrlPrefix =
     "https://github.com/halifox/maccy_for_windows/releases/";
 constexpr wchar_t kGitHubReleasePage[] =
     L"https://github.com/halifox/maccy_for_windows/releases/latest";
 constexpr std::size_t kMaximumResponseBytes = 4 * 1024 * 1024;
+constexpr auto kConnectTimeout = std::chrono::seconds(3);
+constexpr auto kRequestTimeout = std::chrono::seconds(5);
 
-std::wstring Utf8ToWide(std::string_view value) {
-    if (value.empty()) {
-        return {};
+class LocalizedUpdateError final : public std::exception {
+public:
+    explicit LocalizedUpdateError(std::wstring message)
+        : m_message(std::move(message)) {}
+
+    const std::wstring &Message() const noexcept { return m_message; }
+
+    const char *what() const noexcept override {
+        return "localized update check error";
     }
 
-    const int length = MultiByteToWideChar(
-        CP_UTF8,
-        MB_ERR_INVALID_CHARS,
-        value.data(),
-        static_cast<int>(value.size()),
-        nullptr,
-        0
-    );
-    if (length <= 0) {
-        throw std::runtime_error("GitHub 返回了无效的 UTF-8 数据");
-    }
-
-    std::wstring result(static_cast<std::size_t>(length), L'\0');
-    if (MultiByteToWideChar(
-            CP_UTF8,
-            MB_ERR_INVALID_CHARS,
-            value.data(),
-            static_cast<int>(value.size()),
-            result.data(),
-            length
-        ) != length) {
-        throw std::runtime_error("无法解码 GitHub 返回的数据");
-    }
-    return result;
-}
+private:
+    std::wstring m_message;
+};
 
 struct SemanticVersion {
     int major = 0;
     int minor = 0;
     int patch = 0;
+};
+
+struct HttpResponse {
+    unsigned status = 0;
+    std::string body;
 };
 
 std::optional<SemanticVersion> ParseSemanticVersion(std::wstring_view value) {
@@ -115,50 +125,102 @@ std::wstring WithoutLeadingV(std::wstring value) {
     return value;
 }
 
-nlohmann::json DownloadLatestRelease() {
-    std::string response;
-    bool response_too_large = false;
-    const auto http_response = cpr::Get(
-        cpr::Url{kGitHubLatestReleaseUrl},
-        cpr::Header{
-            {"Accept", "application/vnd.github+json"},
-            {"X-GitHub-Api-Version", "2022-11-28"},
-            {"User-Agent", "maccy-for-windows/" + std::string(AppVersion::kStringUtf8)}
-        },
-        cpr::Timeout{5000},
-        cpr::ConnectTimeout{3000},
-        cpr::WriteCallback{[&response, &response_too_large](std::string_view data, std::intptr_t) {
-            if (data.size() > kMaximumResponseBytes - response.size()) {
-                response_too_large = true;
-                return false;
-            }
-            response.append(data);
-            return true;
-        }}
+void SetTlsServerName(ssl::stream<beast::tcp_stream> &stream) {
+    if (SSL_set_tlsext_host_name(stream.native_handle(), kGitHubHost) == 0) {
+        throw std::runtime_error("Unable to configure the TLS server name");
+    }
+}
+
+HttpResponse DownloadLatestRelease() {
+    asio::io_context io_context;
+    ssl::context tls_context(ssl::context::tls_client);
+    tls_context.set_default_verify_paths();
+    tls_context.set_verify_mode(ssl::verify_peer);
+
+    ssl::stream<beast::tcp_stream> stream(io_context, tls_context);
+    SetTlsServerName(stream);
+
+    tcp::resolver resolver(io_context);
+    const tcp::resolver::results_type endpoints = resolver.resolve(
+        kGitHubHost,
+        kGitHubPort
     );
 
-    if (response_too_large) {
-        throw std::runtime_error("GitHub 响应过大");
+    beast::get_lowest_layer(stream).expires_after(kConnectTimeout);
+    beast::get_lowest_layer(stream).connect(endpoints);
+
+    beast::get_lowest_layer(stream).expires_after(kRequestTimeout);
+    stream.handshake(ssl::stream_base::client);
+
+    http::request<http::empty_body> request(http::verb::get, kGitHubLatestReleaseTarget, 11);
+    request.set(http::field::host, kGitHubHost);
+    request.set(http::field::accept, "application/vnd.github+json");
+    request.set(http::field::user_agent,
+        "maccy-for-windows/" + std::string(AppVersion::kStringUtf8));
+    request.set("X-GitHub-Api-Version", "2022-11-28");
+
+    http::write(stream, request);
+
+    beast::flat_buffer buffer;
+    http::response_parser<http::string_body> parser;
+    parser.body_limit(kMaximumResponseBytes);
+    http::read(stream, buffer, parser);
+    const http::response<http::string_body> response = parser.release();
+
+    beast::error_code shutdown_error;
+    stream.shutdown(shutdown_error);
+    if (shutdown_error == asio::error::eof ||
+        shutdown_error == ssl::error::stream_truncated) {
+        shutdown_error = {};
     }
-    if (http_response.error.code != cpr::ErrorCode::OK) {
-        throw std::runtime_error("无法获取 GitHub Release：" + http_response.error.message);
-    }
-    if (http_response.status_code != 200) {
-        const auto error = nlohmann::json::parse(response, nullptr, false);
-        if (error.is_object() && error.contains("message") && error["message"].is_string()) {
-            throw std::runtime_error(
-                "GitHub 返回 HTTP " + std::to_string(http_response.status_code) +
-                "：" + error["message"].get<std::string>()
-            );
-        }
-        throw std::runtime_error("GitHub 返回 HTTP " + std::to_string(http_response.status_code));
+    if (shutdown_error) {
+        throw boost::system::system_error(shutdown_error);
     }
 
-    auto release = nlohmann::json::parse(response, nullptr, false);
-    if (release.is_discarded() || !release.is_object()) {
-        throw std::runtime_error("GitHub 返回的 Release 数据格式无效");
+    return HttpResponse{response.result_int(), response.body()};
+}
+
+std::optional<std::string> JsonString(const json::object &object, const char *key) {
+    const json::value *value = object.if_contains(key);
+    if (value == nullptr || !value->is_string()) {
+        return std::nullopt;
     }
-    return release;
+    const json::string &string = value->as_string();
+    return std::string(string.data(), string.size());
+}
+
+json::object DownloadAndParseLatestRelease() {
+    const HttpResponse response = DownloadLatestRelease();
+    boost::system::error_code parse_error;
+    const json::value document = json::parse(
+        json::string_view(response.body.data(), response.body.size()),
+        parse_error
+    );
+
+    if (response.status != 200) {
+        if (!parse_error && document.is_object()) {
+            const auto message = JsonString(document.as_object(), "message");
+            if (message.has_value()) {
+                throw LocalizedUpdateError(Localization::Format(
+                    IDS_UPDATE_HTTP_ERROR,
+                    {std::to_wstring(response.status), Localization::FromUtf8(*message)}
+                ));
+            }
+        }
+        throw LocalizedUpdateError(Localization::Format(
+            IDS_UPDATE_HTTP_STATUS,
+            {std::to_wstring(response.status)}
+        ));
+    }
+
+    if (parse_error) {
+        throw LocalizedUpdateError(Localization::Text(IDS_UPDATE_INVALID_JSON));
+    }
+
+    if (!document.is_object()) {
+        throw LocalizedUpdateError(Localization::Text(IDS_UPDATE_INVALID_RELEASE));
+    }
+    return document.as_object();
 }
 
 } // namespace
@@ -260,27 +322,23 @@ UpdateCheckResult UpdateChecker::Check(UpdateCheckMode mode) {
     try {
         const auto current = ParseSemanticVersion(result.current_version);
         if (!current) {
-            throw std::runtime_error("当前应用版本格式无效");
+            throw LocalizedUpdateError(Localization::Text(IDS_UPDATE_CURRENT_VERSION_INVALID));
         }
 
-        const auto release = DownloadLatestRelease();
-        const auto tag = release.find("tag_name");
-        if (tag == release.end() || !tag->is_string() ||
-            tag->get_ref<const std::string &>().empty()) {
-            throw std::runtime_error("GitHub Release 缺少版本号");
+        const json::object release = DownloadAndParseLatestRelease();
+        const auto tag = JsonString(release, "tag_name");
+        if (!tag.has_value() || tag->empty()) {
+            throw LocalizedUpdateError(Localization::Text(IDS_UPDATE_RELEASE_TAG_MISSING));
         }
-        result.latest_version = WithoutLeadingV(Utf8ToWide(tag->get<std::string>()));
+        result.latest_version = WithoutLeadingV(Localization::FromUtf8(*tag));
         const auto latest = ParseSemanticVersion(result.latest_version);
         if (!latest) {
-            throw std::runtime_error("GitHub Release 版本格式无效");
+            throw LocalizedUpdateError(Localization::Text(IDS_UPDATE_RELEASE_VERSION_INVALID));
         }
 
-        const auto url = release.find("html_url");
-        if (url != release.end() && url->is_string()) {
-            const auto &release_url = url->get_ref<const std::string &>();
-            if (release_url.starts_with(kGitHubReleaseUrlPrefix)) {
-                result.release_url = Utf8ToWide(release_url);
-            }
+        const auto url = JsonString(release, "html_url");
+        if (url.has_value() && url->starts_with(kGitHubReleaseUrlPrefix)) {
+            result.release_url = Localization::FromUtf8(*url);
         }
         if (result.release_url.empty()) {
             result.release_url = kGitHubReleasePage;
@@ -288,10 +346,15 @@ UpdateCheckResult UpdateChecker::Check(UpdateCheckMode mode) {
 
         result.succeeded = true;
         result.update_available = IsNewerSemanticVersion(result.current_version, result.latest_version);
+    } catch (const LocalizedUpdateError &error) {
+        result.error = error.Message();
     } catch (const std::exception &error) {
-        result.error = Utf8ToWide(error.what());
+        result.error = Localization::Format(
+            IDS_UPDATE_NETWORK_ERROR,
+            {Localization::FromUtf8(error.what())}
+        );
     } catch (...) {
-        result.error = L"未知网络错误";
+        result.error = Localization::Text(IDS_UPDATE_UNKNOWN_ERROR);
     }
     return result;
 }

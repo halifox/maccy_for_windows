@@ -13,11 +13,12 @@
 
 ## 构建依赖许可证
 
-WTL、SQLite、CPR、nlohmann-json 及其传递依赖的许可证和版权声明随二进制发行包提供，可在以下文件中查阅：
+WTL、SQLite、Boost.Beast、Boost.JSON、Boost.Locale、OpenSSL 及其传递依赖的许可证和版权声明随二进制发行包提供，可在以下文件中查阅：
 
-- `licenses/cpr/copyright`
-- `licenses/curl/copyright`
-- `licenses/nlohmann-json/copyright`
+- `licenses/boost-beast/copyright`
+- `licenses/boost-json/copyright`
+- `licenses/boost-locale/copyright`
+- `licenses/boost-system/copyright`
+- `licenses/openssl/copyright`
 - `licenses/wtl/copyright`
 - `licenses/sqlite3/copyright`
-- `licenses/zlib/copyright`

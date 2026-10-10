@@ -113,13 +113,13 @@ private:
 
 class IgnorePage {
 public:
-    IgnorePage(IgnoreListKind list, int dialog_page, const wchar_t *description,
-               const wchar_t *add_hint, const wchar_t *edit_hint, bool file_picker)
+    IgnorePage(IgnoreListKind list, int dialog_page, UINT description_resource,
+               UINT add_hint_resource, UINT edit_hint_resource, bool file_picker)
         : m_listKind(list),
           m_dialogPage(dialog_page),
-          m_descriptionText(description),
-          m_addHint(add_hint),
-          m_editHint(edit_hint),
+          m_descriptionResource(description_resource),
+          m_addHintResource(add_hint_resource),
+          m_editHintResource(edit_hint_resource),
           m_filePicker(file_picker) {}
 
     void Initialize(CWindow page_window, StorageWorker &storage,
@@ -152,9 +152,9 @@ private:
     std::vector<std::wstring> m_persistedValues;
     IgnoreListKind m_listKind;
     int m_dialogPage;
-    const wchar_t *m_descriptionText;
-    const wchar_t *m_addHint;
-    const wchar_t *m_editHint;
+    UINT m_descriptionResource;
+    UINT m_addHintResource;
+    UINT m_editHintResource;
     bool m_filePicker;
 };
 
@@ -447,6 +447,7 @@ public:
 private:
     void CreateTabs();
     bool CreatePageWindows();
+    void LocalizeControls();
     void BindControls();
     void ConfigureIgnoreList();
     void ConfigurePinsList();
@@ -544,25 +545,25 @@ private:
         IgnorePage{
             IgnoreListKind::Applications,
             0,
-            L"忽略来自特定应用的内容。\r\n请注意此选项并非总是有效，最好使用忽略剪贴板类型设置。",
-            nullptr,
-            nullptr,
+            IDS_IGNORE_APPLICATIONS_DESCRIPTION,
+            0,
+            0,
             true
         },
         IgnorePage{
             IgnoreListKind::Formats,
             1,
-            L"忽略特定剪贴板内容类型。\r\n默认提供了一些已知的适用于特定应用的类型。您可以删除预置类型，或根据需要添加自定义类型。",
-            L"输入要忽略的 pasteboard 类型（例如：com.example.custom）。",
-            L"编辑要忽略的 pasteboard 类型（例如：com.example.custom）。",
+            IDS_IGNORE_FORMATS_DESCRIPTION,
+            IDS_IGNORE_FORMAT_ADD_HINT,
+            IDS_IGNORE_FORMAT_EDIT_HINT,
             false
         },
         IgnorePage{
             IgnoreListKind::Regexps,
             2,
-            L"可以根据定义的正则表达式忽略某些副本。",
-            L"输入正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
-            L"编辑正则表达式以忽略匹配的内容（例如：^[a-zA-Z0-9]{50}$）。",
+            IDS_IGNORE_REGEXPS_DESCRIPTION,
+            IDS_IGNORE_REGEXPS_ADD_HINT,
+            IDS_IGNORE_REGEXPS_EDIT_HINT,
             false
         }
     };
