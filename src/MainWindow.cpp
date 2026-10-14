@@ -869,7 +869,8 @@ void MainWindow::ApplyHistoryItems(
     }
     try {
         const bool sameQuery = query == m_searchQuery;
-        const sqlite3_int64 previous = sameQuery ? m_keyboardHandler.GetActiveItemId() : 0;
+        const sqlite3_int64 previous = sameQuery && !m_resetHistoryListOnOpen
+            ? m_keyboardHandler.GetActiveItemId() : 0;
         const int previousIndex = m_keyboardHandler.GetActiveItemIndex();
         const bool previewOpen = m_previewWorker.IsVisible();
         const std::wstring ownedQuery = query;
@@ -953,9 +954,9 @@ void MainWindow::ApplyHistoryItems(
             }
         }
         ApplyHistoryVisibility();
-        if (m_resetHistoryListScrollOnOpen) {
+        if (m_resetHistoryListOnOpen) {
             m_historyListControls.ResetScrollPositions();
-            m_resetHistoryListScrollOnOpen = false;
+            m_resetHistoryListOnOpen = false;
         }
         for (CListBox* list : {
                  &m_historyListControls.HistoryListWindow(),
@@ -2234,7 +2235,7 @@ void MainWindow::ShowMainWindow() {
 
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_activePopupPosition = popup_position;
-    m_resetHistoryListScrollOnOpen = true;
+    m_resetHistoryListOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
     m_pasteController.CaptureTargetWindow();
     m_previewSuppressed = false;
