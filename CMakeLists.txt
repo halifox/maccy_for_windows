@@ -19,8 +19,8 @@ if(NOT WIN32)
 endif()
 
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
-find_package(cpr CONFIG REQUIRED)
-find_package(nlohmann_json CONFIG REQUIRED)
+find_package(Boost CONFIG REQUIRED COMPONENTS json locale system)
+find_package(OpenSSL REQUIRED)
 find_path(WTL_INCLUDE_DIR NAMES atlapp.h REQUIRED)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -77,6 +77,7 @@ configure_file(
 
 set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/ApplicationController.cpp"
+        "${MACCY_SOURCE_DIR}/Localization.cpp"
         "${MACCY_SOURCE_DIR}/main.cpp"
         "${MACCY_SOURCE_DIR}/MainWindow.cpp"
         "${MACCY_SOURCE_DIR}/HistoryListControls.cpp"
@@ -98,6 +99,7 @@ set(MACCY_SOURCES
         "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
         "${MACCY_SOURCE_DIR}/SettingsWindow.rc"
         "${MACCY_SOURCE_DIR}/MainWindow.rc"
+        "${MACCY_SOURCE_DIR}/Localization.rc"
         "${MACCY_RESOURCE_FILE}"
         "${MACCY_VERSION_RESOURCE}"
 )
@@ -144,17 +146,22 @@ target_include_directories(maccy PRIVATE
 
 target_link_libraries(maccy PRIVATE
         unofficial::sqlite3::sqlite3
-        cpr::cpr
-        nlohmann_json::nlohmann_json
+        Boost::json
+        Boost::locale
+        Boost::system
+        OpenSSL::SSL
+        OpenSSL::Crypto
         user32
         imm32
         gdi32
         shell32
         advapi32
+        crypt32
         comdlg32
         comctl32
         dwmapi
         shcore
+        ws2_32
         windowscodecs
         ole32
 )
@@ -173,7 +180,9 @@ enable_testing()
 
 add_executable(maccy_update_checker_tests
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/UpdateCheckerTests.cpp"
+        "${MACCY_SOURCE_DIR}/Localization.cpp"
         "${MACCY_SOURCE_DIR}/UpdateChecker.cpp"
+        "${MACCY_SOURCE_DIR}/Localization.rc"
 )
 target_include_directories(maccy_update_checker_tests PRIVATE
         "${MACCY_GENERATED_DIR}"
@@ -181,8 +190,13 @@ target_include_directories(maccy_update_checker_tests PRIVATE
 )
 target_compile_definitions(maccy_update_checker_tests PRIVATE UNICODE _UNICODE)
 target_link_libraries(maccy_update_checker_tests PRIVATE
-        cpr::cpr
-        nlohmann_json::nlohmann_json
+        Boost::json
+        Boost::locale
+        Boost::system
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        crypt32
+        ws2_32
 )
 if(MSVC)
     target_compile_options(maccy_update_checker_tests PRIVATE /utf-8)
@@ -233,7 +247,7 @@ install(FILES
 )
 
 set(MACCY_VCPKG_SHARE_DIR "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share")
-foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS cpr curl nlohmann-json sqlite3 wtl zlib)
+foreach(MACCY_VCPKG_LICENSE_PORT IN ITEMS boost-beast boost-json boost-locale boost-system openssl sqlite3 wtl)
     install(FILES "${MACCY_VCPKG_SHARE_DIR}/${MACCY_VCPKG_LICENSE_PORT}/copyright"
             DESTINATION "licenses/${MACCY_VCPKG_LICENSE_PORT}")
 endforeach()

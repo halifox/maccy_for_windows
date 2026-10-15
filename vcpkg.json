@@ -9,8 +9,10 @@
         "fts5"
       ]
     },
-    "cpr",
-    "nlohmann-json",
+    "boost-beast",
+    "boost-json",
+    "boost-locale",
+    "openssl",
     "wtl"
   ]
 }

@@ -2,6 +2,7 @@
 #include "UiFont.h"
 #include "ClipboardRules.h"
 #include "GdiScope.h"
+#include "Localization.h"
 
 #include <algorithm>
 #include <array>
@@ -166,19 +167,20 @@ void HistoryRenderer::ClearImageThumbnails() noexcept {
 }
 
 std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
-    if (!item.title.empty() && item.title != L"[图片]") {
+    const std::wstring image_placeholder = Localization::Text(IDS_CONTENT_IMAGE);
+    if (!item.title.empty() && item.title != image_placeholder) {
         return item.title;
     }
-    if (!item.preview.empty() && item.preview != L"[图片]") {
+    if (!item.preview.empty() && item.preview != image_placeholder) {
         return ClipboardRules::PreviewText(item.preview);
     }
     if (item.has_image) {
         return {};
     }
     if (item.has_files) {
-        return L"[文件]";
+        return Localization::Text(IDS_CONTENT_FILE);
     }
-    return L"[剪贴板项目]";
+    return Localization::Text(IDS_CONTENT_CLIPBOARD_ITEM);
 }
 
 HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
