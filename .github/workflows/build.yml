@@ -1,18 +1,29 @@
-name: GitHub Release
+name: Build and publish Windows release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - feature/release-workflow
   workflow_dispatch:
     inputs:
-      tag:
-        description: Release tag to build and publish, for example v1.0.5
+      release_tag:
+        description: Existing draft release tag (leave empty to build only)
+        required: false
+        type: string
+
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Release tag to build and publish
         required: true
         type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: build-${{ inputs.release_tag || github.ref }}
+  cancel-in-progress: false
 
 env:
   VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite'
@@ -22,17 +33,20 @@ jobs:
     name: Build and publish Windows x64 release
     runs-on: windows-latest
     env:
-      MACCY_RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      MACCY_RELEASE_TAG: ${{ inputs.release_tag }}
 
     steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Validate release tag
         shell: pwsh
         run: |
+          if (-not $env:MACCY_RELEASE_TAG) {
+            $env:MACCY_RELEASE_TAG = 'v' + (Get-Content -LiteralPath 'version.txt' -Raw).Trim()
+          }
           if ($env:MACCY_RELEASE_TAG -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
             throw "Release tag '$env:MACCY_RELEASE_TAG' must use the vX.Y.Z format."
           }
@@ -104,10 +118,21 @@ jobs:
           $lines = @("$hash  $($installer.Name)")
           [System.IO.File]::WriteAllLines((Join-Path (Get-Location) 'SHA256SUMS.txt'), $lines)
 
+      - name: Upload installer and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: maccy-windows-x64
+          path: |
+            MaccyForWindows-*-x64.exe
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Upload assets to the existing draft Release and publish it
+        if: inputs.release_tag != ''
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           function Get-ReleaseByTag([string]$tagName) {
             $releaseListEndpoint = "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
