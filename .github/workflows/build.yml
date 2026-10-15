@@ -32,31 +32,17 @@ jobs:
     env:
       MACCY_RELEASE_TAG: ${{ inputs.release_tag }}
 
+    defaults:
+      run:
+        shell: pwsh
+
     steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag || github.ref }}
 
-      - name: Validate release tag
-        shell: pwsh
-        run: |
-          if (-not $env:MACCY_RELEASE_TAG) {
-            $env:MACCY_RELEASE_TAG = 'v' + (Get-Content -LiteralPath 'version.txt' -Raw).Trim()
-          }
-          if ($env:MACCY_RELEASE_TAG -notmatch '^v([0-9]+\.[0-9]+\.[0-9]+)$') {
-            throw "Release tag '$env:MACCY_RELEASE_TAG' must use the vX.Y.Z format."
-          }
-          $tagVersion = $Matches[1]
-          $versionFileValue = (Get-Content -LiteralPath 'version.txt' -Raw).Trim()
-          if ($versionFileValue -ne $tagVersion) {
-            throw "Tag version $tagVersion does not match version.txt ($versionFileValue)."
-          }
-          "Release version: $tagVersion"
-          "MACCY_RELEASE_VERSION=$tagVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
       - name: Install NSIS
-        shell: pwsh
         run: choco install nsis --yes --no-progress
 
       - name: Restore vcpkg binaries
@@ -69,19 +55,11 @@ jobs:
             vcpkg-${{ runner.os }}-x64-windows-static-md-vs2026-
 
       - name: Configure Release
-        shell: pwsh
-        run: |
-          $cmakeArgs = @(
-            '-S', '.',
-            '-B', 'build/Release-vcpkg',
-            '-G', 'Visual Studio 18 2026',
-            '-A', 'x64',
-            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake",
-            '-DVCPKG_TARGET_TRIPLET=x64-windows-static-md',
-            "-DMACCY_VERSION=$env:MACCY_RELEASE_VERSION",
-            '-DMACCY_REQUIRE_BUNDLED_MSVC_RUNTIME=ON'
-          )
-          cmake @cmakeArgs
+        run: >-
+          cmake -S . -B build/Release-vcpkg -G "Visual Studio 18 2026" -A x64
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static-md
+          -DMACCY_REQUIRE_BUNDLED_MSVC_RUNTIME=ON
 
       - name: Save vcpkg binaries
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -91,96 +69,30 @@ jobs:
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build Release
-        shell: pwsh
         run: cmake --build build/Release-vcpkg --config Release --parallel
 
       - name: Run tests
-        shell: pwsh
         run: ctest --test-dir build/Release-vcpkg -C Release --output-on-failure
 
       - name: Create NSIS installer
-        shell: pwsh
-        run: |
-          cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G NSIS
+        run: cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G NSIS
 
-      - name: Create checksums
-        shell: pwsh
-        run: |
-          $installerName = "MaccyForWindows-$env:MACCY_RELEASE_VERSION-x64.exe"
-          $installer = Get-Item -LiteralPath $installerName -ErrorAction SilentlyContinue
-          if ($null -eq $installer) {
-            throw "Expected NSIS installer '$installerName' was not produced."
-          }
-          $hash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $lines = @("$hash  $($installer.Name)")
-          [System.IO.File]::WriteAllLines((Join-Path (Get-Location) 'SHA256SUMS.txt'), $lines)
-
-      - name: Upload installer and checksums
+      - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
           name: maccy-windows-x64
-          path: |
-            MaccyForWindows-*-x64.exe
-            SHA256SUMS.txt
+          path: MaccyForWindows-*-x64.exe
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload assets to the existing draft Release and publish it
+      - name: Upload installer to Release
         if: inputs.release_tag != ''
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          function Get-ReleaseByTag([string]$tagName) {
-            $releaseListEndpoint = "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
-            $releasePagesResponse = gh api --paginate --slurp $releaseListEndpoint
-            if ($LASTEXITCODE -ne 0) {
-              throw "Could not list Releases while looking for tag '$tagName'."
-            }
+        run: gh release upload "$env:MACCY_RELEASE_TAG" MaccyForWindows-*-x64.exe --repo "$env:GITHUB_REPOSITORY" --clobber
 
-            $releasePagesJson = [string]::Join([Environment]::NewLine, $releasePagesResponse)
-            $releasePages = ConvertFrom-Json -InputObject $releasePagesJson -NoEnumerate
-            foreach ($releasePage in $releasePages) {
-              foreach ($candidateRelease in $releasePage) {
-                if ($candidateRelease.tag_name -eq $tagName) {
-                  return $candidateRelease
-                }
-              }
-            }
-            return $null
-          }
-
-          $release = Get-ReleaseByTag $env:MACCY_RELEASE_TAG
-          if ($null -eq $release) {
-            throw "Release Please did not create a Release for tag '$env:MACCY_RELEASE_TAG'."
-          }
-          if ($release.tag_name -ne $env:MACCY_RELEASE_TAG -or -not $release.draft) {
-            throw "Expected an existing draft Release for tag '$env:MACCY_RELEASE_TAG'."
-          }
-
-          $installerName = "MaccyForWindows-$env:MACCY_RELEASE_VERSION-x64.exe"
-          $installer = Get-Item -LiteralPath $installerName -ErrorAction SilentlyContinue
-          if ($null -eq $installer) {
-            throw "Expected installer '$installerName' is missing."
-          }
-          $assets = @($installer.FullName, (Join-Path (Get-Location) 'SHA256SUMS.txt'))
-          gh release upload "$env:MACCY_RELEASE_TAG" $assets --repo "$env:GITHUB_REPOSITORY" --clobber
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Uploading the installer and SHA-256 file failed; the Release remains a draft.'
-          }
-
-          $publishedRelease = Get-ReleaseByTag $env:MACCY_RELEASE_TAG
-          if ($null -eq $publishedRelease) {
-            throw 'Could not verify uploaded Release assets; the Release remains a draft.'
-          }
-          $uploadedNames = @($publishedRelease.assets | ForEach-Object { $_.name })
-          foreach ($requiredName in @($installerName, 'SHA256SUMS.txt')) {
-            if ($uploadedNames -notcontains $requiredName) {
-              throw "Release asset '$requiredName' is missing; the Release remains a draft."
-            }
-          }
-
-          gh api "repos/$env:GITHUB_REPOSITORY/releases/$($release.id)" --method PATCH --field draft=false | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Publishing the Release failed; it remains a draft.'
-          }
+      - name: Publish Release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$env:MACCY_RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --draft=false

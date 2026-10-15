@@ -24,7 +24,7 @@
 
 > [!CAUTION]
 >
-> **关于杀毒软件误报：** 为实现全局快捷键和跨应用粘贴，本项目使用 `WH_KEYBOARD_LL` 监听低级键盘事件，并可能屏蔽按键后通过 `SendInput` 重放。`WH_KEYBOARD_LL + 屏蔽按键 + SendInput 重放` 正是杀软常见的键盘记录器、自动化工具或木马启发式特征，因此部分杀软可能将 Maccy 报告为木马或高风险程序。该行为本身不代表恶意，但行为模式确实很像。请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载程序，并核对同一 Release 中的 `SHA256SUMS.txt`。
+> **关于杀毒软件误报：** 为实现全局快捷键和跨应用粘贴，本项目使用 `WH_KEYBOARD_LL` 监听低级键盘事件，并可能屏蔽按键后通过 `SendInput` 重放。`WH_KEYBOARD_LL + 屏蔽按键 + SendInput 重放` 正是杀软常见的键盘记录器、自动化工具或木马启发式特征，因此部分杀软可能将 Maccy 报告为木马或高风险程序。该行为本身不代表恶意，但行为模式确实很像。请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载程序，并核对 GitHub Release 页面中对应安装包的 SHA256。
 
 ## 功能概览
 
@@ -69,7 +69,7 @@
 
 ## 安装
 
-请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 NSIS 安装程序，并核对同一 Release 中的 `SHA256SUMS.txt`。
+请从 [GitHub Releases](https://github.com/halifox/maccy_for_windows/releases) 下载带有版本号的 NSIS 安装程序，并核对 GitHub Release 页面中对应安装包的 SHA256。
 
 NSIS 安装程序仅为当前 Windows 用户安装到 `%LOCALAPPDATA%\Programs\maccy`，无需管理员权限；开始菜单快捷方式和登录启动项也仅属于当前用户。安装完成页可选择启动 Maccy，桌面快捷方式可在安装过程中选择。
 
