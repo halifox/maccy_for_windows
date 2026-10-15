@@ -147,7 +147,7 @@ Pull Request 应包含：
 - 数据库、存储或迁移变更的说明；
 - 第三方内容和许可证变更说明。
 
-PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格式。CI 会检查两者；合并时请使用 squash，并保留已通过检查的 PR 标题作为 squash 提交标题。
+PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格式。由维护者审查提交格式；合并时请使用 squash，并保留符合格式的 PR 标题作为 squash 提交标题。
 
 提交 Pull Request 不代表一定会被合并。维护者可能要求缩小范围、重写实现、补充测试，或因项目方向不符而关闭变更。
 
@@ -164,11 +164,10 @@ PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格
 
 普通 PR 的标题和每个提交标题都需要遵循该格式。破坏性变更可在类型后使用 `!`，或在提交正文中添加 `BREAKING CHANGE: ...`。不要把 `BREAKING CHANGE:` 加到只包含文档、CI 或维护工作的提交中，除非该变更确实影响用户兼容性。
 
-Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR，由维护者审查合并。PR 仅运行 Conventional Commits 检查，不再运行 x64/x86 构建。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release，并直接调用可复用的 `build.yml` 构建、测试、生成 x64 NSIS 安装器和 SHA-256 文件；校验资产上传完成后才发布 Release。构建失败时可手动运行 Windows 发布工作流并填写已有草稿 Release 的 Tag 重试；留空则仅构建并上传安装包和校验文件作为 Actions artifact，不发布 Release。文档、CI 或维护类提交不会单独创建版本 PR。
+Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR，由维护者审查合并。PR 不再运行 Windows CI；构建和测试由发布工作流执行。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release，并直接调用可复用的 `build.yml` 构建、测试、生成 x64 NSIS 安装器和 SHA-256 文件；校验资产上传完成后才发布 Release。构建失败时可手动运行 Windows 发布工作流并填写已有草稿 Release 的 Tag 重试；留空则仅构建并上传安装包和校验文件作为 Actions artifact，不发布 Release。文档、CI 或维护类提交不会单独创建版本 PR。
 
-发布使用仓库自带的 `GITHUB_TOKEN`，无需配置 PAT。维护者需在 Settings → Actions → General 中允许 GitHub Actions 创建 Pull Request。若分支保护或 Ruleset 仍要求 `Release x64`、`Release x86`，需移除这两个必需检查。Dependabot 每周检查 GitHub Actions 更新，最多同时打开 10 个 PR。
+发布使用仓库自带的 `GITHUB_TOKEN`，无需配置 PAT。维护者需在 Settings → Actions → General 中允许 GitHub Actions 创建 Pull Request。若分支保护或 Ruleset 仍要求 `Conventional Commits`、`Debug x64`、`Release x64`、`Debug x86`、`Release x86`，需移除这些已停用的必需检查。Dependabot 每周检查 GitHub Actions 更新，最多同时打开 10 个 PR。
 
-在 `master` 分支规则中保留现有保护，并将 `Conventional Commits`、`Debug x64`、`Release x64`、`Debug x86`、`Release x86` 设为必需检查；在仓库设置中启用 Auto-merge。GitHub 自动合并会遵守审批规则，因此若当前规则要求人工审批，版本 PR 会等待审批。
 
 如果要让版本 PR 无需人工审批，同时保留普通 PR 的审批和必需 CI，可将审批要求单独放入一个只包含审批规则的 branch ruleset，将自动化 App 仅加入该 ruleset 的 pull-request-only bypass；必需状态检查继续留在没有该 App bypass 的 branch protection 或另一个 ruleset 中。若当前使用 classic branch protection 的必需审批，需先把审批要求迁移到这个独立 ruleset。不要让 App bypass 包含 CI 检查的规则集；如果仓库设置无法把审批和检查分开，就保留现有保护并接受版本 PR 需要人工审批。
 
