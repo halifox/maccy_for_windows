@@ -1,9 +1,6 @@
 name: Build and publish Windows release
 
 on:
-  push:
-    branches:
-      - feature/release-workflow
   workflow_dispatch:
     inputs:
       release_tag:
