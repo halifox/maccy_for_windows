@@ -77,19 +77,11 @@ jobs:
       - name: Create NSIS installer
         run: cpack --config build/Release-vcpkg/CPackConfig.cmake -C Release -G NSIS
 
-      - name: Create checksums
-        run: |
-          Get-FileHash -Path 'MaccyForWindows-*-x64.exe' -Algorithm SHA256 -ErrorAction Stop |
-            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($_.Path))" } |
-            Set-Content -Path SHA256SUMS.txt -Encoding utf8
-
-      - name: Upload installer and checksums
+      - name: Upload installer
         uses: actions/upload-artifact@v7
         with:
           name: maccy-windows-x64
-          path: |
-            MaccyForWindows-*-x64.exe
-            SHA256SUMS.txt
+          path: MaccyForWindows-*-x64.exe
           if-no-files-found: error
           retention-days: 1
 
@@ -102,7 +94,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $isDraft -ne 'true') {
             throw "Expected an existing draft Release for tag '$env:MACCY_RELEASE_TAG'."
           }
-          $assets = @((Get-Item 'MaccyForWindows-*-x64.exe' -ErrorAction Stop).FullName) + 'SHA256SUMS.txt'
+          $assets = @((Get-Item 'MaccyForWindows-*-x64.exe' -ErrorAction Stop).FullName)
           gh release upload "$env:MACCY_RELEASE_TAG" @assets --repo "$env:GITHUB_REPOSITORY" --clobber
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           gh release edit "$env:MACCY_RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --draft=false
