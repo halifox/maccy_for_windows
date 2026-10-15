@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+env:
+  VCPKG_BINARY_SOURCES: 'clear;files,${{ github.workspace }}/.vcpkg-binary-cache,readwrite'
+
 jobs:
   release:
     name: Build and publish Windows x64 release
@@ -45,6 +48,15 @@ jobs:
         shell: pwsh
         run: choco install nsis --yes --no-progress
 
+      - name: Restore vcpkg binaries
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: vcpkg-${{ runner.os }}-x64-windows-static-md-vs2026-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'triplets/**') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-x64-windows-static-md-vs2026-
+
       - name: Configure Release
         shell: pwsh
         run: |
@@ -59,6 +71,13 @@ jobs:
             '-DMACCY_REQUIRE_BUNDLED_MSVC_RUNTIME=ON'
           )
           cmake @cmakeArgs
+
+      - name: Save vcpkg binaries
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .vcpkg-binary-cache
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
       - name: Build Release
         shell: pwsh
