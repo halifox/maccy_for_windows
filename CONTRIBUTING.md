@@ -164,7 +164,7 @@ PR 标题和 PR 中每个提交的标题都必须使用 Conventional Commits 格
 
 普通 PR 的标题和每个提交标题都需要遵循该格式。破坏性变更可在类型后使用 `!`，或在提交正文中添加 `BREAKING CHANGE: ...`。不要把 `BREAKING CHANGE:` 加到只包含文档、CI 或维护工作的提交中，除非该变更确实影响用户兼容性。
 
-Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR，由维护者审查合并。PR 仅运行 Conventional Commits 检查，不再运行 x64/x86 构建。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release，并直接调用可复用的 `build.yml` 构建、测试、生成 x64 NSIS 安装器和 SHA-256 文件；校验资产上传完成后才发布 Release。构建失败时可手动运行 Windows 发布工作流并填写已有 Tag 重试。文档、CI 或维护类提交不会单独创建版本 PR。
+Release Please 在 `master` 上更新 `version.txt`、`vcpkg.json` 和 `CHANGELOG.md`，并创建版本 PR，由维护者审查合并。PR 仅运行 Conventional Commits 检查，不再运行 x64/x86 构建。合并后 Release Please 创建 `vX.Y.Z` Tag 和草稿 Release，并直接调用可复用的 `build.yml` 构建、测试、生成 x64 NSIS 安装器和 SHA-256 文件；校验资产上传完成后才发布 Release。构建失败时可手动运行 Windows 发布工作流并填写已有草稿 Release 的 Tag 重试；留空则仅构建并上传安装包和校验文件作为 Actions artifact，不发布 Release。文档、CI 或维护类提交不会单独创建版本 PR。
 
 发布使用仓库自带的 `GITHUB_TOKEN`，无需配置 PAT。维护者需在 Settings → Actions → General 中允许 GitHub Actions 创建 Pull Request。若分支保护或 Ruleset 仍要求 `Release x64`、`Release x86`，需移除这两个必需检查。Dependabot 每周检查 GitHub Actions 更新，最多同时打开 10 个 PR。
 
