@@ -1,7 +1,7 @@
 {
   "name": "maccy",
-  "version-string": "1.3.2",
-  "builtin-baseline": "0c8f465c549616e897a34b9393054931fda6339c",
+  "version-string": "1.3.3",
+  "builtin-baseline": "6ecbbbdf31cba47aafa7cf6189b1e73e10ac61f8",
   "dependencies": [
     {
       "name": "sqlite3",

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.3](https://github.com/halifox/maccy_for_windows/compare/v1.3.2...v1.3.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* reset history highlight when reopening popup ([8e7a52e](https://github.com/halifox/maccy_for_windows/commit/8e7a52e054ab5ff05e2b865bb3597f3d4a7915f5))
+* reset history highlight when reopening popup ([ae4bc9a](https://github.com/halifox/maccy_for_windows/commit/ae4bc9a293e1a8c8f8148f6bdd4c647727046847))
+
 ## [1.3.2](https://github.com/halifox/maccy_for_windows/compare/v1.3.1...v1.3.2) (2026-10-09)
 
 
