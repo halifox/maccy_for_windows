@@ -85,16 +85,14 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-      - name: Upload assets to the existing draft Release and publish it
+      - name: Upload installer to Release
         if: inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $isDraft = gh release view "$env:MACCY_RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --json isDraft --jq '.isDraft'
-          if ($LASTEXITCODE -ne 0 -or $isDraft -ne 'true') {
-            throw "Expected an existing draft Release for tag '$env:MACCY_RELEASE_TAG'."
-          }
-          $assets = @((Get-Item 'MaccyForWindows-*-x64.exe' -ErrorAction Stop).FullName)
-          gh release upload "$env:MACCY_RELEASE_TAG" @assets --repo "$env:GITHUB_REPOSITORY" --clobber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          gh release edit "$env:MACCY_RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --draft=false
+        run: gh release upload "$env:MACCY_RELEASE_TAG" MaccyForWindows-*-x64.exe --repo "$env:GITHUB_REPOSITORY" --clobber
+
+      - name: Publish Release
+        if: inputs.release_tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$env:MACCY_RELEASE_TAG" --repo "$env:GITHUB_REPOSITORY" --draft=false
