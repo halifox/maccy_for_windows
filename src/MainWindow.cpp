@@ -830,7 +830,7 @@ void MainWindow::LoadImageThumbnails() {
     m_thumbnailRequests.clear();
     m_historyRenderer.ClearImageThumbnails();
     for (const ClipboardItem &item : m_items) {
-        if (!item.has_image) {
+        if (!item.has_image || item.has_files) {
             continue;
         }
         const sqlite3_int64 id = item.id;

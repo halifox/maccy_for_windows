@@ -175,53 +175,13 @@ std::optional<PreviewBitmap> CreateBitmapFromDib(
     return PreviewBitmap(bitmap.Detach(), static_cast<int>(width), static_cast<int>(height));
 }
 
-std::optional<PreviewBitmap> CreateBitmapFromEncoded(
-    const std::vector<unsigned char> &bytes,
+std::optional<PreviewBitmap> CreateBitmapFromDecoder(
+    IWICImagingFactory *factory,
+    IWICBitmapDecoder *decoder,
     UINT maximum_width,
     UINT maximum_height,
     std::stop_token stop_token
 ) {
-    if (bytes.empty() || stop_token.stop_requested()) {
-        return std::nullopt;
-    }
-
-    CComPtr<IWICImagingFactory> factory;
-    if (FAILED(::CoCreateInstance(
-        CLSID_WICImagingFactory,
-        nullptr,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&factory)
-    ))) {
-        return std::nullopt;
-    }
-
-    UniqueGlobal memory(::GlobalAlloc(GMEM_MOVEABLE, bytes.size()));
-    if (!memory) {
-        return std::nullopt;
-    }
-    ScopedGlobalLock destination(memory.Get());
-    if (destination.Data() == nullptr) {
-        return std::nullopt;
-    }
-    std::memcpy(destination.Data(), bytes.data(), bytes.size());
-    destination.Unlock();
-
-    CComPtr<IStream> stream;
-    if (FAILED(::CreateStreamOnHGlobal(memory.Get(), TRUE, &stream))) {
-        return std::nullopt;
-    }
-    memory.Release();
-
-    CComPtr<IWICBitmapDecoder> decoder;
-    if (FAILED(factory->CreateDecoderFromStream(
-        stream,
-        nullptr,
-        WICDecodeMetadataCacheOnLoad,
-        &decoder
-    ))) {
-        return std::nullopt;
-    }
-
     CComPtr<IWICBitmapFrameDecode> frame;
     if (FAILED(decoder->GetFrame(0, &frame))) {
         return std::nullopt;
@@ -298,6 +258,56 @@ std::optional<PreviewBitmap> CreateBitmapFromEncoded(
     return PreviewBitmap(bitmap.Detach(), static_cast<int>(width), static_cast<int>(height));
 }
 
+std::optional<PreviewBitmap> CreateBitmapFromEncoded(
+    const std::vector<unsigned char> &bytes,
+    UINT maximum_width,
+    UINT maximum_height,
+    std::stop_token stop_token
+) {
+    if (bytes.empty() || stop_token.stop_requested()) {
+        return std::nullopt;
+    }
+
+    CComPtr<IWICImagingFactory> factory;
+    if (FAILED(::CoCreateInstance(
+        CLSID_WICImagingFactory,
+        nullptr,
+        CLSCTX_INPROC_SERVER,
+        IID_PPV_ARGS(&factory)
+    ))) {
+        return std::nullopt;
+    }
+
+    UniqueGlobal memory(::GlobalAlloc(GMEM_MOVEABLE, bytes.size()));
+    if (!memory) {
+        return std::nullopt;
+    }
+    ScopedGlobalLock destination(memory.Get());
+    if (destination.Data() == nullptr) {
+        return std::nullopt;
+    }
+    std::memcpy(destination.Data(), bytes.data(), bytes.size());
+    destination.Unlock();
+
+    CComPtr<IStream> stream;
+    if (FAILED(::CreateStreamOnHGlobal(memory.Get(), TRUE, &stream))) {
+        return std::nullopt;
+    }
+    memory.Release();
+
+    CComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(factory->CreateDecoderFromStream(
+        stream,
+        nullptr,
+        WICDecodeMetadataCacheOnLoad,
+        &decoder
+    ))) {
+        return std::nullopt;
+    }
+
+    return CreateBitmapFromDecoder(factory, decoder, maximum_width, maximum_height, stop_token);
+}
+
 } // namespace
 
 PreviewBitmap::~PreviewBitmap() {
@@ -342,6 +352,22 @@ std::optional<PreviewBitmap> DecodePreviewBitmap(
     UINT maximum_height,
     std::stop_token stop_token
 ) {
+    if (item.has_files) {
+        if (item.file_paths.size() != 1 || stop_token.stop_requested()) {
+            return std::nullopt;
+        }
+        CComPtr<IWICImagingFactory> factory;
+        if (FAILED(::CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))) {
+            return std::nullopt;
+        }
+        CComPtr<IWICBitmapDecoder> decoder;
+        if (FAILED(factory->CreateDecoderFromFilename(item.file_paths.front().c_str(),
+                nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad, &decoder))) {
+            return std::nullopt;
+        }
+        return CreateBitmapFromDecoder(factory, decoder, maximum_width, maximum_height, stop_token);
+    }
     if (!item.has_image) {
         return std::nullopt;
     }

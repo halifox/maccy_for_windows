@@ -223,6 +223,25 @@ if(MSVC)
 endif()
 add_test(NAME maccy_core_rules_tests COMMAND maccy_core_rules_tests)
 
+add_executable(maccy_file_history_tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/FileHistoryTests.cpp"
+        "${MACCY_SOURCE_DIR}/ClipboardRules.cpp"
+        "${MACCY_SOURCE_DIR}/Database.cpp"
+        "${MACCY_SOURCE_DIR}/HistoryRenderer.cpp"
+        "${MACCY_SOURCE_DIR}/Localization.cpp"
+        "${MACCY_SOURCE_DIR}/Localization.rc"
+        "${MACCY_SOURCE_DIR}/PreviewDecoder.cpp"
+)
+target_include_directories(maccy_file_history_tests PRIVATE
+        "${MACCY_GENERATED_DIR}" "${MACCY_SOURCE_DIR}" "${WTL_INCLUDE_DIR}")
+target_compile_definitions(maccy_file_history_tests PRIVATE UNICODE _UNICODE)
+target_link_libraries(maccy_file_history_tests PRIVATE
+        unofficial::sqlite3::sqlite3 Boost::locale user32 gdi32 shell32 windowscodecs ole32)
+if(MSVC)
+    target_compile_options(maccy_file_history_tests PRIVATE /utf-8)
+endif()
+add_test(NAME maccy_file_history_tests COMMAND maccy_file_history_tests)
+
 include(GNUInstallDirs)
 
 install(TARGETS maccy

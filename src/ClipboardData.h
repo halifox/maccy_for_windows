@@ -39,6 +39,7 @@ struct ClipboardItem {
     bool has_text = false;
     bool has_image = false;
     bool has_files = false;
+    std::vector<std::wstring> file_paths;
     std::vector<ClipboardFormatData> data;
 };
 

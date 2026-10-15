@@ -75,7 +75,7 @@ private:
 
     // Layout
     HistoryItemLayout LayoutHistoryItem(const RECT& row, const ClipboardItem& item,
-                                        bool has_color_swatch) const;
+                                        bool has_color_swatch, UINT dpi) const;
 
     // Drawing helpers
     void DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_view text,
@@ -86,7 +86,7 @@ private:
     HFONT FontForHighlight(HighlightMatch match) const;
 
     // Icon management
-    HICON IconForApplication(std::wstring_view application);
+    HICON IconForPath(std::wstring_view path);
 
     struct IconCacheEntry {
         UniqueIcon icon;

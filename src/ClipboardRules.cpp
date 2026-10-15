@@ -418,7 +418,7 @@ std::wstring StripRtf(std::wstring_view value) {
     return TrimWhitespace(std::move(result));
 }
 
-std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes) {
+std::vector<std::wstring> DecodeDropPaths(const std::vector<unsigned char> &bytes) {
     if (bytes.size() < sizeof(DROPFILES)) {
         return {};
     }
@@ -428,7 +428,7 @@ std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes) {
         return {};
     }
 
-    std::wstring result;
+    std::vector<std::wstring> result;
     size_t offset = header.pFiles;
     while (offset < bytes.size()) {
         std::wstring path;
@@ -475,9 +475,15 @@ std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes) {
         if (path.empty()) {
             break;
         }
-        if (!result.empty()) {
-            result += L"; ";
-        }
+        result.push_back(std::move(path));
+    }
+    return result;
+}
+
+std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes) {
+    std::wstring result;
+    for (const auto &path : DecodeDropPaths(bytes)) {
+        if (!result.empty()) result += L"; ";
         result += path;
     }
     return result;
