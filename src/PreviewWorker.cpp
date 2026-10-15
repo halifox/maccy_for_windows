@@ -18,6 +18,14 @@ constexpr WPARAM kHideCommand = 2;
 constexpr WPARAM kRepositionCommand = 3;
 
 std::wstring FullText(const ClipboardItem &item) {
+    if (item.has_files) {
+        std::wstring paths;
+        for (const auto &path : item.file_paths) {
+            if (!paths.empty()) paths += L"\r\n";
+            paths += path;
+        }
+        return paths.empty() ? item.preview : paths;
+    }
     for (const ClipboardFormatData &data : item.data) {
         if (!ClipboardRules::IsUnicodeTextFormat(data)) {
             continue;

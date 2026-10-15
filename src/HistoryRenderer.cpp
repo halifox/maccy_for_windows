@@ -9,6 +9,7 @@
 #include <cwctype>
 #include <optional>
 #include <regex>
+#include <filesystem>
 
 #include <shellapi.h>
 #include <shlobj.h>
@@ -167,6 +168,16 @@ void HistoryRenderer::ClearImageThumbnails() noexcept {
 }
 
 std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
+    if (item.has_files) {
+        std::wstring names;
+        for (const auto &path : item.file_paths) {
+            if (!names.empty()) names += L"; ";
+            auto file = std::filesystem::path(path);
+            if (file.filename().empty()) file = file.parent_path();
+            names += file.filename().empty() ? file.root_path().wstring() : file.filename().wstring();
+        }
+        return names.empty() ? Localization::Text(IDS_CONTENT_FILE) : names;
+    }
     const std::wstring image_placeholder = Localization::Text(IDS_CONTENT_IMAGE);
     if (!item.title.empty() && item.title != image_placeholder) {
         return item.title;
@@ -201,7 +212,7 @@ HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
         layout.icon = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
         x += kHistoryItemSlot + kHistoryItemSlotGap;
     }
-    if (item.has_image) {
+    if (item.has_image && !item.has_files) {
         if (const auto *thumbnail = ImageThumbnail(item.id); thumbnail != nullptr) {
             layout.attachment = {x, row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2),
                                  x + thumbnail->width, row.top + std::max<LONG>(0, ((row.bottom - row.top) - thumbnail->height) / 2) + thumbnail->height};
@@ -435,24 +446,25 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_vie
     SetBkMode(dc, old_bk_mode);
 }
 
-HICON HistoryRenderer::IconForApplication(std::wstring_view application) {
-    if (application.empty()) {
+HICON HistoryRenderer::IconForPath(std::wstring_view path) {
+    if (path.empty()) {
         return nullptr;
     }
-    const std::wstring key = ClipboardRules::NormalizePath(std::wstring(application));
+    const std::wstring key = ClipboardRules::NormalizePath(std::wstring(path));
     if (const auto found = m_iconCache.find(key); found != m_iconCache.end()) {
         m_iconLru.splice(m_iconLru.begin(), m_iconLru, found->second.lru);
         return found->second.icon.Get();
     }
     SHFILEINFOW info{};
     if (SHGetFileInfoW(
-        application.data(),
+        path.data(),
         0,
         &info,
         sizeof(info),
         SHGFI_ICON | SHGFI_SMALLICON
     ) == 0) {
-        info.hIcon = nullptr;
+        SHGetFileInfoW(path.data(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info),
+            SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES);
     }
     UniqueIcon icon(info.hIcon);
     if (m_iconCache.size() >= 32) {
@@ -530,13 +542,20 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     text_rect.bottom = text_top + text_height;
 
     if (!IsRectEmpty(&layout.icon)) {
-        if (const HICON icon = IconForApplication(item.application)) {
+        if (const HICON icon = IconForPath(item.application)) {
             DrawIconEx(draw->hDC, layout.icon.left, layout.icon.top, icon, 16, 16, 0, nullptr, DI_NORMAL);
         }
     }
     if (!IsRectEmpty(&layout.attachment)) {
         const auto thumbnail = m_imageThumbnails.find(item.id);
-        if (item.has_image && thumbnail != m_imageThumbnails.end() && thumbnail->second.handle != nullptr) {
+        if (item.has_files) {
+            if (!item.file_paths.empty()) {
+                if (const HICON icon = IconForPath(item.file_paths.front())) {
+                    DrawIconEx(draw->hDC, layout.attachment.left, layout.attachment.top,
+                        icon, kHistoryItemSlot, kHistoryItemSlot, 0, nullptr, DI_NORMAL);
+                }
+            }
+        } else if (item.has_image && thumbnail != m_imageThumbnails.end() && thumbnail->second.handle != nullptr) {
             const int width = thumbnail->second.width;
             const int height = thumbnail->second.height;
             const int x = layout.attachment.left;

@@ -86,7 +86,7 @@ private:
     HFONT FontForHighlight(HighlightMatch match) const;
 
     // Icon management
-    HICON IconForApplication(std::wstring_view application);
+    HICON IconForPath(std::wstring_view path);
 
     struct IconCacheEntry {
         UniqueIcon icon;

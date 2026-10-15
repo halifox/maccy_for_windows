@@ -1093,6 +1093,10 @@ std::vector<ClipboardItem> Database::SearchHistory(
         }
         return lhs.id > rhs.id;
     });
+    for (auto &item : filtered) {
+        if (cancelled()) return {};
+        LoadPayload(item, PayloadMode::Metadata);
+    }
     return filtered;
 }
 
@@ -1113,9 +1117,7 @@ std::optional<ClipboardItem> Database::GetItem(sqlite3_int64 id, PayloadMode pay
     }
 
     ClipboardItem item = ReadItemMetadata(statement.get());
-    if (payload_mode != PayloadMode::Metadata) {
-        LoadPayload(item, payload_mode);
-    }
+    LoadPayload(item, payload_mode);
     return item;
 }
 
@@ -1136,16 +1138,14 @@ std::vector<ClipboardItem> Database::GetPinnedItems(PayloadMode payload_mode) co
             throw MakeSqliteError(m_db, "Unable to read pinned clipboard items");
         }
         ClipboardItem item = ReadItemMetadata(statement.get());
-        if (payload_mode != PayloadMode::Metadata) {
-            LoadPayload(item, payload_mode);
-        }
+        LoadPayload(item, payload_mode);
         pinned.push_back(std::move(item));
     }
     return pinned;
 }
 
 void Database::LoadPayload(ClipboardItem &item, PayloadMode payload_mode) const {
-    if (payload_mode == PayloadMode::Metadata) {
+    if (payload_mode == PayloadMode::Metadata && !item.has_files) {
         return;
     }
 
@@ -1154,6 +1154,11 @@ void Database::LoadPayload(ClipboardItem &item, PayloadMode payload_mode) const 
         sql =
             "SELECT format, name, data FROM clipboard_formats "
             "WHERE item_id = ?1 ORDER BY sequence ASC;";
+    } else if (item.has_files) {
+        sql =
+            "SELECT format, name, data FROM clipboard_formats "
+            "WHERE item_id = ?1 AND (format = 15 OR name COLLATE NOCASE = 'CF_HDROP') "
+            "ORDER BY sequence ASC LIMIT 1;";
     } else if (item.has_image) {
         sql =
             "SELECT format, name, data FROM clipboard_formats "
@@ -1192,7 +1197,12 @@ void Database::LoadPayload(ClipboardItem &item, PayloadMode payload_mode) const 
         format.format = static_cast<UINT>(sqlite3_column_int64(statement.get(), 0));
         format.name = ColumnText16(statement.get(), 1);
         format.bytes = ColumnBlob(statement.get(), 2);
-        item.data.push_back(std::move(format));
+        if (ClipboardRules::IsFilesFormat(format)) {
+            item.file_paths = ClipboardRules::DecodeDropPaths(format.bytes);
+        }
+        if (payload_mode != PayloadMode::Metadata) {
+            item.data.push_back(std::move(format));
+        }
     }
 }
 

@@ -57,6 +57,7 @@ std::wstring DecodeByteText(
 std::wstring StripHtml(std::wstring value);
 std::wstring StripRtf(std::wstring_view value);
 std::wstring ExtractDropPaths(const std::vector<unsigned char> &bytes);
+std::vector<std::wstring> DecodeDropPaths(const std::vector<unsigned char> &bytes);
 
 struct SearchParts {
     std::wstring body;

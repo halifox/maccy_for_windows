@@ -62,7 +62,8 @@ int HistoryListControls::RowHeightPixels(const CListBox &list, int row) const no
         data = pending->second[static_cast<size_t>(row)];
     }
     if (static_cast<size_t>(data) >= m_items->size() ||
-        !(*m_items)[static_cast<size_t>(data)].has_image) {
+        !(*m_items)[static_cast<size_t>(data)].has_image ||
+        (*m_items)[static_cast<size_t>(data)].has_files) {
         return base_height;
     }
 
