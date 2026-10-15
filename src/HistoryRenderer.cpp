@@ -22,6 +22,7 @@ constexpr int kHistoryItemInset = 2;
 constexpr int kHistoryItemLeftPadding = 10;
 constexpr int kHistoryItemRightPadding = 10;
 constexpr int kHistoryItemSlot = 16;
+constexpr int kHistoryFileIconSize = 16;
 constexpr int kHistoryItemSlotGap = 6;
 constexpr int kHistoryShortcutWidth = 74;
 constexpr int kHistoryItemRadius = 4;
@@ -197,7 +198,8 @@ std::wstring HistoryRenderer::DisplayText(const ClipboardItem& item) const {
 HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
     const RECT& row,
     const ClipboardItem& item,
-    bool has_color_swatch
+    bool has_color_swatch,
+    UINT dpi
 ) const {
     HistoryItemLayout layout{};
     layout.background = row;
@@ -222,8 +224,10 @@ HistoryRenderer::HistoryItemLayout HistoryRenderer::LayoutHistoryItem(
             x += kHistoryItemSlot + kHistoryItemSlotGap;
         }
     } else if (item.has_files) {
-        layout.attachment = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
-        x += kHistoryItemSlot + kHistoryItemSlotGap;
+        const int size = SearchHeaderLayout::Scale(kHistoryFileIconSize, dpi);
+        const int top = row.top + std::max<LONG>(0, ((row.bottom - row.top) - size) / 2);
+        layout.attachment = {x, top, x + size, top + size};
+        x += size + kHistoryItemSlotGap;
     }
     if (has_color_swatch) {
         layout.swatch = {x, y, x + kHistoryItemSlot, y + kHistoryItemSlot};
@@ -461,10 +465,10 @@ HICON HistoryRenderer::IconForPath(std::wstring_view path) {
         0,
         &info,
         sizeof(info),
-        SHGFI_ICON | SHGFI_SMALLICON
+        SHGFI_ICON | SHGFI_LARGEICON
     ) == 0) {
         SHGetFileInfoW(path.data(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info),
-            SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES);
+            SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES);
     }
     UniqueIcon icon(info.hIcon);
     if (m_iconCache.size() >= 32) {
@@ -501,7 +505,8 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     if (m_settings.show_hex_color_swatch) {
         swatch_color = ParseHexColor(text);
     }
-    const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item, swatch_color.has_value());
+    const HistoryItemLayout layout = LayoutHistoryItem(draw->rcItem, item,
+        swatch_color.has_value(), UiFont::DpiForWindow(draw->hwndItem));
     ScopedDcState dc_state(draw->hDC);
     FillRect(draw->hDC, &draw->rcItem, GetSysColorBrush(COLOR_WINDOW));
     if (selected) {
@@ -552,7 +557,8 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             if (!item.file_paths.empty()) {
                 if (const HICON icon = IconForPath(item.file_paths.front())) {
                     DrawIconEx(draw->hDC, layout.attachment.left, layout.attachment.top,
-                        icon, kHistoryItemSlot, kHistoryItemSlot, 0, nullptr, DI_NORMAL);
+                        icon, layout.attachment.right - layout.attachment.left,
+                        layout.attachment.bottom - layout.attachment.top, 0, nullptr, DI_NORMAL);
                 }
             }
         } else if (item.has_image && thumbnail != m_imageThumbnails.end() && thumbnail->second.handle != nullptr) {
