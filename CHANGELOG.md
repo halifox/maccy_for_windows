@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/halifox/maccy_for_windows/compare/v1.3.3...v1.4.0) (2026-10-15)
+
+
+### Features
+
+* localize WTL UI and migrate update checker dependencies ([4311694](https://github.com/halifox/maccy_for_windows/commit/4311694567f7f7616af9ba5e1e226e3fec3e4524))
+
 ## [1.3.3](https://github.com/halifox/maccy_for_windows/compare/v1.3.2...v1.3.3) (2026-10-14)
 
 
