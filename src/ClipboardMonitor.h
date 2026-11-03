@@ -68,7 +68,8 @@ private:
     HWND m_owner = nullptr;
 
     bool m_clipboardListenerAdded = false;
-    std::optional<std::wstring> m_expectedClipboardFingerprint;
+    // Suppress the WM_CLIPBOARDUPDATE echo from our own SetClipboardData writes.
+    std::optional<DWORD> m_selfWriteSequence;
 
     std::vector<std::wstring> m_ignoredApps;
     std::vector<std::wstring> m_ignoredFormats;

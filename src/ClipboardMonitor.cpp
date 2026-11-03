@@ -185,7 +185,7 @@ void ClipboardMonitor::Shutdown() {
         RemoveClipboardFormatListener(m_owner);
         m_clipboardListenerAdded = false;
     }
-    m_expectedClipboardFingerprint.reset();
+    m_selfWriteSequence.reset();
     m_owner = nullptr;
 }
 
@@ -358,9 +358,21 @@ std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
 }
 
 std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {
+    std::vector<const ClipboardFormatData *> ordered;
+    ordered.reserve(data.size());
+    for (const ClipboardFormatData &item : data) {
+        ordered.push_back(&item);
+    }
+    std::sort(ordered.begin(), ordered.end(), [](const ClipboardFormatData *lhs, const ClipboardFormatData *rhs) {
+        if (lhs->format != rhs->format) {
+            return lhs->format < rhs->format;
+        }
+        return lhs->name < rhs->name;
+    });
+
     ClipboardFingerprint fingerprint;
-    for (const ClipboardFormatData& item : data) {
-        fingerprint.Add(item.name, item.format, item.bytes.data(), item.bytes.size());
+    for (const ClipboardFormatData *item : ordered) {
+        fingerprint.Add(item->name, item->format, item->bytes.data(), item->bytes.size());
     }
     return fingerprint.Finish();
 }
@@ -488,28 +500,36 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
 }
 
 void ClipboardMonitor::ReadClipboardAndSave() {
+    const DWORD sequence = ::GetClipboardSequenceNumber();
+    if (m_selfWriteSequence.has_value()) {
+        if (sequence == *m_selfWriteSequence) {
+            // Our own write's clipboard update — drop the echo (H-01 / H-08).
+            m_selfWriteSequence.reset();
+            return;
+        }
+        // Clipboard advanced past our write without an exact match observation.
+        m_selfWriteSequence.reset();
+    }
+
     std::optional<ClipboardSnapshot> capture;
+    bool opened = false;
     for (int attempt = 0; attempt < 10; ++attempt) {
         ClipboardGuard clipboard(m_owner);
         if (!clipboard.IsOpen()) {
             ::Sleep(10);
             continue;
         }
+        opened = true;
         capture = CaptureClipboard();
         break;
     }
-    if (!capture.has_value()) {
-        m_expectedClipboardFingerprint.reset();
+    // Keep going only when open succeeded; leave self-write state alone on busy
+    // open failures so a later update can still suppress an echo (H-02).
+    if (!opened) {
         return;
     }
-
-    if (m_expectedClipboardFingerprint.has_value()) {
-        const bool was_written_by_this_process =
-            capture->fingerprint == *m_expectedClipboardFingerprint;
-        m_expectedClipboardFingerprint.reset();
-        if (was_written_by_this_process) {
-            return;
-        }
+    if (!capture.has_value()) {
+        return;
     }
 
     if (m_saveCallback) {
@@ -535,7 +555,6 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     };
 
     std::vector<PendingFormat> pending;
-    ClipboardFingerprint fingerprint;
     bool has_text = false;
     for (const ClipboardFormatData& data : item.data) {
         const bool is_text = ClipboardRules::IsTextFormat(data.format, data.name);
@@ -564,7 +583,6 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
             std::memcpy(lock.Data(), data.bytes.data(), data.bytes.size());
         }
 
-        fingerprint.Add(data.name, format, data.bytes.data(), data.bytes.size());
         pending.push_back(PendingFormat{format, std::move(handle)});
         has_text = has_text || is_text;
     }
@@ -579,11 +597,14 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     }
     for (PendingFormat &format : pending) {
         if (::SetClipboardData(format.format, format.data.Get()) == nullptr) {
+            // Avoid leaving a partial clipboard after EmptyClipboard (H-03).
+            ::EmptyClipboard();
+            m_selfWriteSequence.reset();
             return false;
         }
         format.data.Release();
     }
-    m_expectedClipboardFingerprint = fingerprint.Finish();
+    m_selfWriteSequence = ::GetClipboardSequenceNumber();
     return true;
 }
 
@@ -592,7 +613,7 @@ bool ClipboardMonitor::ClearClipboard() {
     if (!clipboard.IsOpen() || ::EmptyClipboard() == FALSE) {
         return false;
     }
-    m_expectedClipboardFingerprint.reset();
+    m_selfWriteSequence.reset();
     return true;
 }
 

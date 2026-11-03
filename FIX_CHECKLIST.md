@@ -19,7 +19,7 @@
 | 批次 | 主题 | pending | in_progress | done | deferred | wontfix |
 |------|------|---------|-------------|------|----------|---------|
 | P0 | 关机 / 预览线程亲和 | 0 | 0 | 4 | 0 | 0 |
-| P1 | 剪贴板回声去重 | 4 | 0 | 0 | 0 | 0 |
+| P1 | 剪贴板回声去重 | 0 | 0 | 4 | 0 | 0 |
 | P2 | 粘贴可靠性 | 7 | 0 | 0 | 0 | 0 |
 | P3 | UI / 设置一致性 | 6 | 0 | 0 | 0 | 0 |
 | P4 | 捕获正确性 | 4 | 0 | 0 | 0 | 0 |
@@ -66,10 +66,10 @@
 
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
-| H-01 | pending | 指纹顺序 + 合成格式导致粘贴回声入库 | [H-01](AUDIT_LOGIC_REPORT.md#H-01) | |
-| H-02 | pending | 捕获失败清除期望指纹 | [H-02](AUDIT_LOGIC_REPORT.md#H-02) | |
-| H-03 | pending | SetClipboardData 半提交 | [H-03](AUDIT_LOGIC_REPORT.md#H-03) | |
-| H-08 | pending | 单槽期望指纹被覆盖 | [H-08](AUDIT_LOGIC_REPORT.md#H-08) | |
+| H-01 | done | 指纹顺序 + 合成格式导致粘贴回声入库 | [H-01](AUDIT_LOGIC_REPORT.md#H-01) | 用 GetClipboardSequenceNumber 抑制自写；HashCapture 顺序无关 |
+| H-02 | done | 捕获失败清除期望指纹 | [H-02](AUDIT_LOGIC_REPORT.md#H-02) | 序列号匹配即跳过，不再因 open/capture 失败清抑制态 |
+| H-03 | done | SetClipboardData 半提交 | [H-03](AUDIT_LOGIC_REPORT.md#H-03) | Set 失败后 EmptyClipboard 并放弃 self-write 标记 |
+| H-08 | done | 单槽期望指纹被覆盖 | [H-08](AUDIT_LOGIC_REPORT.md#H-08) | 以最新 clipboard sequence 为准抑制回声 |
 
 ## P2 — 粘贴可靠性
 
