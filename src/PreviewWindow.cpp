@@ -1,7 +1,6 @@
 #include "PreviewWindow.h"
 #include "AutoSizeText.h"
 #include "ClipboardRules.h"
-#include "Constants.h"
 #include "GdiScope.h"
 #include "Localization.h"
 #include "UiFont.h"
@@ -241,20 +240,6 @@ LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) 
     UpdateFont(HIWORD(wParam));
     InvalidateRect(nullptr, TRUE);
     UpdateWindow();
-    return 0;
-}
-
-LRESULT PreviewWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
-    if (LOWORD(wParam) != WA_INACTIVE) {
-        handled = FALSE;
-        return 0;
-    }
-
-    handled = TRUE;
-    CWindow owner(::GetWindow(m_hWnd, GW_OWNER));
-    if (owner.IsWindow()) {
-        owner.PostMessage(AppConstants::kPopupActivationMessage, wParam, lParam);
-    }
     return 0;
 }
 

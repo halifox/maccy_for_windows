@@ -33,8 +33,7 @@ namespace AppConstants {
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
-    constexpr UINT kPopupActivationMessage = kCustomMessageBase + 1;
-    // Posted by dismiss hooks (mouse / foreground) to hide on the UI thread.
+    // Posted by the click-outside mouse hook to hide on the UI thread.
     constexpr UINT kPopupDismissMessage = kCustomMessageBase + 2;
 
     // ========================================================================

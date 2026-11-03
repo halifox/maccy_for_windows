@@ -166,6 +166,37 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
     return {paste, plain};
 }
 
+constexpr int kTrayHitPadDip = 12;
+constexpr int kTrayReshowPadDip = 40;
+constexpr DWORD kTrayReshowWindowMs = 300;
+
+int ScaleDip(HWND window, int dip) {
+    const UINT dpi = window != nullptr ? UiFont::DpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
+    return ::MulDiv(dip, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+}
+
+bool PointInInflatedRect(RECT rect, POINT point, int pad) {
+    ::InflateRect(&rect, pad, pad);
+    return ::PtInRect(&rect, point) != FALSE;
+}
+
+// The overflow flyout is not covered by Shell_NotifyIconGetRect until it is
+// open, and the reported rect can be the chevron instead of the icon.
+bool IsOverflowTrayWindow(HWND window) {
+    HWND current = window;
+    for (int depth = 0; depth < 8 && current != nullptr; ++depth) {
+        wchar_t name[80];
+        const int length = ::GetClassNameW(current, name, 80);
+        if (length > 0 &&
+            (::lstrcmpW(name, L"NotifyIconOverflowWindow") == 0 ||
+             ::lstrcmpW(name, L"TopLevelWindowForOverflowXamlIsland") == 0)) {
+            return true;
+        }
+        current = ::GetParent(current);
+    }
+    return false;
+}
+
 } // namespace
 
 MainWindow::MainWindow(
@@ -648,25 +679,46 @@ bool MainWindow::IsOurWindow(HWND window) const {
 
 MainWindow* MainWindow::s_dismissHookOwner = nullptr;
 
-bool MainWindow::IsPopupActive() const {
-    if (!m_popupVisible || m_hWnd == nullptr || !IsWindowVisible()) {
+bool MainWindow::GetTrayIconRect(RECT &rect) const {
+    RECT current{};
+    if (m_trayIcon.IsAdded() && m_trayIcon.GetRect(current) &&
+        current.right > current.left && current.bottom > current.top) {
+        m_cachedTrayRect = current;
+        m_hasCachedTrayRect = true;
+    }
+    if (!m_hasCachedTrayRect) {
         return false;
     }
-    return IsOurWindow(::GetForegroundWindow()) || IsOurWindow(::GetActiveWindow());
+    rect = m_cachedTrayRect;
+    return true;
+}
+
+bool MainWindow::IsTrayPoint(POINT screen_point, int dip_pad) const {
+    RECT tray{};
+    if (!GetTrayIconRect(tray)) {
+        return false;
+    }
+    return PointInInflatedRect(tray, screen_point, ScaleDip(m_hWnd, dip_pad));
 }
 
 bool MainWindow::IsPointInPopupUi(POINT screen_point) const {
-    HWND hit = ::WindowFromPoint(screen_point);
-    if (IsOurWindow(hit)) {
+    // WH_MOUSE_LL points are physical pixels. WindowFromPhysicalPoint matches
+    // them; WindowFromPoint does not once a monitor is not at system DPI.
+    const HWND hit = ::WindowFromPhysicalPoint(screen_point);
+    if (IsOurWindow(hit) || IsOverflowTrayWindow(hit)) {
         return true;
     }
-    // Tray clicks are handled by the icon callback (toggle), not as "outside".
-    RECT tray_rect{};
-    if (m_trayIcon.IsAdded() && m_trayIcon.GetRect(tray_rect) &&
-        ::PtInRect(&tray_rect, screen_point)) {
-        return true;
-    }
-    return false;
+    return IsTrayPoint(screen_point, kTrayHitPadDip);
+}
+
+bool MainWindow::ConsumeDuplicateTrayOpen(WPARAM click_anchor) {
+    const POINT anchor{GET_X_LPARAM(click_anchor), GET_Y_LPARAM(click_anchor)};
+    const bool same_gesture = m_outsideDismissTick != 0 && !m_popupVisible &&
+        ::GetTickCount() - m_outsideDismissTick <= kTrayReshowWindowMs &&
+        IsTrayPoint(m_outsideDismissPoint, kTrayReshowPadDip) &&
+        IsTrayPoint(anchor, kTrayReshowPadDip);
+    m_outsideDismissTick = 0;
+    return same_gesture;
 }
 
 void MainWindow::FocusPopupForTyping() {
@@ -680,8 +732,7 @@ void MainWindow::FocusPopupForTyping() {
 }
 
 void MainWindow::TogglePopup(PopupPosition popup_position) {
-    // Focused → close; unfocused → open (or re-focus if visible but inactive).
-    if (IsPopupActive()) {
+    if (m_popupVisible) {
         HideMainWindow();
         return;
     }
@@ -690,37 +741,27 @@ void MainWindow::TogglePopup(PopupPosition popup_position) {
 
 void MainWindow::RequestPopupDismiss() {
     if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_activatingPopup || m_hWnd == nullptr) {
+        m_hWnd == nullptr) {
         return;
     }
     PostMessage(AppConstants::kPopupDismissMessage, 0, 0);
 }
 
 void MainWindow::InstallPopupDismissHooks() {
+    if (m_popupMouseHook != nullptr) {
+        return;
+    }
     if (s_dismissHookOwner != nullptr && s_dismissHookOwner != this) {
         return;
     }
     s_dismissHookOwner = this;
+    m_popupMouseHook = ::SetWindowsHookExW(
+        WH_MOUSE_LL,
+        PopupMouseHookProc,
+        ::GetModuleHandleW(nullptr),
+        0
+    );
     if (m_popupMouseHook == nullptr) {
-        m_popupMouseHook = ::SetWindowsHookExW(
-            WH_MOUSE_LL,
-            PopupMouseHookProc,
-            ::GetModuleHandleW(nullptr),
-            0
-        );
-    }
-    if (m_foregroundHook == nullptr) {
-        m_foregroundHook = ::SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND,
-            EVENT_SYSTEM_FOREGROUND,
-            nullptr,
-            ForegroundEventProc,
-            0,
-            0,
-            WINEVENT_OUTOFCONTEXT
-        );
-    }
-    if (m_popupMouseHook == nullptr && m_foregroundHook == nullptr) {
         s_dismissHookOwner = nullptr;
     }
 }
@@ -729,10 +770,6 @@ void MainWindow::UninstallPopupDismissHooks() {
     if (m_popupMouseHook != nullptr) {
         ::UnhookWindowsHookEx(m_popupMouseHook);
         m_popupMouseHook = nullptr;
-    }
-    if (m_foregroundHook != nullptr) {
-        ::UnhookWinEvent(m_foregroundHook);
-        m_foregroundHook = nullptr;
     }
     if (s_dismissHookOwner == this) {
         s_dismissHookOwner = nullptr;
@@ -748,46 +785,23 @@ LRESULT CALLBACK MainWindow::PopupMouseHookProc(int code, WPARAM wParam, LPARAM 
             wParam == WM_NCRBUTTONDOWN || wParam == WM_NCMBUTTONDOWN;
         if (button_down) {
             const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
-            // TOPMOST tool windows often keep FG when the desktop is clicked;
-            // mouse-outside is the reliable dismiss path for that case.
-            if (info != nullptr && owner->m_popupVisible && !owner->m_activatingPopup &&
+            if (info != nullptr && owner->m_popupVisible &&
                 !owner->IsPointInPopupUi(info->pt)) {
+                // Padding around the icon can miss Shell_NotifyIconGetRect and
+                // still activate it. Remember that click so NIN_SELECT does not
+                // reopen the popup this down is about to close.
+                if (owner->IsTrayPoint(info->pt, kTrayReshowPadDip)) {
+                    owner->m_outsideDismissPoint = info->pt;
+                    owner->m_outsideDismissTick = ::GetTickCount();
+                } else {
+                    owner->m_outsideDismissTick = 0;
+                }
                 owner->RequestPopupDismiss();
             }
         }
     }
     return ::CallNextHookEx(owner != nullptr ? owner->m_popupMouseHook : nullptr,
                             code, wParam, lParam);
-}
-
-void CALLBACK MainWindow::ForegroundEventProc(
-    HWINEVENTHOOK, DWORD event, HWND hwnd, LONG id_object, LONG, DWORD, DWORD
-) {
-    if (event != EVENT_SYSTEM_FOREGROUND || id_object != OBJID_WINDOW) {
-        return;
-    }
-    MainWindow* owner = s_dismissHookOwner;
-    if (owner == nullptr || !owner->m_popupVisible || owner->m_activatingPopup) {
-        return;
-    }
-    if (owner->IsOurWindow(hwnd)) {
-        return;
-    }
-    owner->RequestPopupDismiss();
-}
-
-void MainWindow::HandlePopupActivation(HWND activating_window) {
-    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_activatingPopup) {
-        return;
-    }
-    if (IsOurWindow(activating_window)) {
-        return;
-    }
-    if (activating_window != nullptr) {
-        m_pasteController.CaptureTargetWindow(activating_window);
-    }
-    HideMainWindow();
 }
 
 int MainWindow::PopupWidth(UINT dpi) const {
@@ -1821,7 +1835,6 @@ void MainWindow::HideMainWindow() {
     UninstallPopupDismissHooks();
     SaveWindowGeometry();
     m_popupVisible = false;
-    m_activatingPopup = false;
     HidePreview();
     ShowWindow(SW_HIDE);
 }
@@ -2306,33 +2319,9 @@ LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     return 0;
 }
 
-LRESULT MainWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
-    if (LOWORD(wParam) == WA_INACTIVE) {
-        HandlePopupActivation(reinterpret_cast<HWND>(lParam));
-    }
-    return 0;
-}
-
-LRESULT MainWindow::OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
-    handled = FALSE;
-    if (wParam == FALSE) {
-        HandlePopupActivation(nullptr);
-    }
-    return 0;
-}
-
-LRESULT MainWindow::OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
-    handled = TRUE;
-    if (LOWORD(wParam) == WA_INACTIVE) {
-        HandlePopupActivation(reinterpret_cast<HWND>(lParam));
-    }
-    return 0;
-}
-
 LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_activatingPopup) {
+    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing) {
         return 0;
     }
     HideMainWindow();
@@ -2541,16 +2530,17 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
     switch (event) {
     case NIN_SELECT:
     case NIN_KEYSELECT:
-    case WM_LBUTTONUP:
-    case WM_LBUTTONDBLCLK:
-        if (GetKeyState(VK_MENU) & 0x8000) {
+        // VERSION_4 also posts WM_LBUTTONUP / WM_LBUTTONDBLCLK for the same
+        // click. Handling those as well toggles twice (show then hide).
+        if ((::GetKeyState(VK_MENU) & 0x8000) != 0) {
             ToggleIgnoreEvents();
+        } else if (event == NIN_SELECT && ConsumeDuplicateTrayOpen(wParam)) {
+            // The outside-click hook already closed this gesture.
         } else {
             TogglePopup(PopupPosition::StatusItem);
         }
         break;
     case WM_CONTEXTMENU:
-    case WM_RBUTTONUP:
         m_pasteController.CaptureTargetWindow();
         ShowTrayMenu();
         break;
@@ -2607,7 +2597,7 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
-    m_activatingPopup = false;
+    m_outsideDismissTick = 0;
     UninstallPopupDismissHooks();
     m_applicationController.StopUpdateChecks();
     KillTimer(AppConstants::Timer::kSearchResultCommit);
@@ -2654,8 +2644,7 @@ void MainWindow::ShowMainWindow() {
 }
 
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
-    // Ignore only the synchronous WA_INACTIVE that show/SetForeground can emit.
-    m_activatingPopup = true;
+    m_outsideDismissTick = 0;
     m_activePopupPosition = popup_position;
     m_resetHistoryListOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
@@ -2673,7 +2662,9 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_historyListControls.ResetScrollPositions();
     ForceForeground(m_hWnd);
     FocusPopupForTyping();
-    m_activatingPopup = false;
+    // The opening click's button-down already passed the hook chain (tray
+    // notify runs after that down). Listen immediately so a desktop click
+    // does not have to wait out the button release.
     InstallPopupDismissHooks();
 
     UpdateWindow();
