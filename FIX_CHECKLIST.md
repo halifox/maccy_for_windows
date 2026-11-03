@@ -20,7 +20,7 @@
 |------|------|---------|-------------|------|----------|---------|
 | P0 | 关机 / 预览线程亲和 | 0 | 0 | 4 | 0 | 0 |
 | P1 | 剪贴板回声去重 | 0 | 0 | 4 | 0 | 0 |
-| P2 | 粘贴可靠性 | 7 | 0 | 0 | 0 | 0 |
+| P2 | 粘贴可靠性 | 0 | 0 | 7 | 0 | 0 |
 | P3 | UI / 设置一致性 | 6 | 0 | 0 | 0 | 0 |
 | P4 | 捕获正确性 | 4 | 0 | 0 | 0 | 0 |
 | P5 | 性能与卡顿 | 3 | 0 | 0 | 0 | 0 |
@@ -75,13 +75,13 @@
 
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
-| H-04 | pending | 前台失败静默且剪贴板已改 | [H-04](AUDIT_LOGIC_REPORT.md#H-04) | |
-| H-09 | pending | 先写剪贴板后抢焦点时间窗 | [H-09](AUDIT_LOGIC_REPORT.md#H-09) | |
-| M-13 | pending | 修饰键等待 3s 超时放弃粘贴 | [M-13](AUDIT_LOGIC_REPORT.md#M-13) | |
-| M-14 | pending | SendInput 不检查返回值 | [M-14](AUDIT_LOGIC_REPORT.md#M-14) | |
-| M-16 | pending | 粘贴目标 HWND 过期/未捕获 | [M-16](AUDIT_LOGIC_REPORT.md#M-16) | |
-| M-23 | pending | m_pasteInProgress 过早清除 | [M-23](AUDIT_LOGIC_REPORT.md#M-23) | |
-| M-24 | pending | Shift 被当成阻塞修饰键 | [M-24](AUDIT_LOGIC_REPORT.md#M-24) | |
+| H-04 | done | 前台失败静默且剪贴板已改 | [H-04](AUDIT_LOGIC_REPORT.md#H-04) | PasteResult::Failed 时提示错误 |
+| H-09 | done | 先写剪贴板后抢焦点时间窗 | [H-09](AUDIT_LOGIC_REPORT.md#H-09) | 先抢焦点再 WriteClipboard，再 SendInput |
+| M-13 | done | 修饰键等待 3s 超时放弃粘贴 | [M-13](AUDIT_LOGIC_REPORT.md#M-13) | 超时仍强制发送一次 Ctrl+V |
+| M-14 | done | SendInput 不检查返回值 | [M-14](AUDIT_LOGIC_REPORT.md#M-14) | 校验 SendInput 计数 |
+| M-16 | done | 粘贴目标 HWND 过期/未捕获 | [M-16](AUDIT_LOGIC_REPORT.md#M-16) | 粘贴前校验/重捕获；无效则报错 |
+| M-23 | done | m_pasteInProgress 过早清除 | [M-23](AUDIT_LOGIC_REPORT.md#M-23) | Deferred 粘贴结束前保持；定时器结束清除 |
+| M-24 | done | Shift 被当成阻塞修饰键 | [M-24](AUDIT_LOGIC_REPORT.md#M-24) | 仅 Alt 触发等待定时器 |
 
 ## P3 — UI / 设置一致性
 

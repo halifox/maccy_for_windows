@@ -1182,8 +1182,22 @@ void MainWindow::PasteItem(int index) {
         index < 0 || static_cast<size_t>(index) >= m_items.size()) {
         return;
     }
-    const HWND target = m_pasteController.GetTargetWindow();
-    const HWND target_focus = m_pasteController.GetTargetFocusWindow();
+    HWND target = m_pasteController.GetTargetWindow();
+    HWND target_focus = m_pasteController.GetTargetFocusWindow();
+    if (!::IsWindow(target)) {
+        m_pasteController.CaptureTargetWindow();
+        target = m_pasteController.GetTargetWindow();
+        target_focus = m_pasteController.GetTargetFocusWindow();
+    }
+    if (!::IsWindow(target)) {
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_PASTE_ERROR_TITLE,
+            IDS_MAIN_PASTE_ERROR
+        );
+        return;
+    }
     const sqlite3_int64 id = m_items[static_cast<size_t>(index)].id;
     const auto [paste, plain] = ResolvePasteAction(
         m_settings.paste_by_default,
@@ -1201,30 +1215,13 @@ void MainWindow::PasteItem(int index) {
                 std::optional<ClipboardItem> item,
                 std::string error
             ) mutable {
-                m_pasteInProgress = false;
                 if (m_exiting || m_hWnd == nullptr || !IsWindow()) {
+                    m_pasteInProgress = false;
                     return;
                 }
                 bool success = error.empty() && item.has_value();
-                if (!success && error.empty()) {
-                    error.clear();
-                }
-                if (success && !m_applicationController.WriteClipboardItem(*item, plain)) {
-                    success = false;
-                    error.clear();
-                }
-                if (success) {
-                    try {
-                        m_storage.MarkCopied(id);
-                    } catch (const std::exception &exception) {
-                        success = false;
-                        error = exception.what();
-                    } catch (...) {
-                        success = false;
-                        error.clear();
-                    }
-                }
                 if (!success) {
+                    m_pasteInProgress = false;
                     ShowRuntimeError(
                         m_hWnd,
                         error,
@@ -1233,8 +1230,81 @@ void MainWindow::PasteItem(int index) {
                     );
                     return;
                 }
+                try {
+                    m_storage.MarkCopied(id);
+                } catch (const std::exception &exception) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        exception.what(),
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    return;
+                } catch (...) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    return;
+                }
+
+                // Focus the target before mutating the clipboard (H-09), then paste.
                 HideMainWindow();
-                m_pasteController.RestoreTargetFocusAndPaste(target, target_focus, paste);
+                const auto focus_result = m_pasteController.RestoreTargetFocusAndPaste(
+                    target,
+                    target_focus,
+                    false
+                );
+                if (paste && focus_result == PasteController::PasteResult::Failed) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                if (!m_applicationController.WriteClipboardItem(*item, plain)) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                if (!paste) {
+                    m_pasteInProgress = false;
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                const auto paste_result = m_pasteController.RestoreTargetFocusAndPaste(
+                    target,
+                    target_focus,
+                    true
+                );
+                if (paste_result == PasteController::PasteResult::Failed) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                if (paste_result != PasteController::PasteResult::Deferred) {
+                    m_pasteInProgress = false;
+                }
                 RequestUiUpdate(AppConstants::UiUpdate::kHistory);
             }
         );
@@ -2224,6 +2294,9 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     if (wParam == AppConstants::Timer::kPaste) {
         handled = TRUE;
         m_pasteController.OnPasteTimer();
+        if (!m_pasteController.IsPastePending()) {
+            m_pasteInProgress = false;
+        }
         return 0;
     }
     if (wParam == AppConstants::Timer::kPopupDismissGuard) {
