@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1](https://github.com/halifox/maccy_for_windows/compare/v1.4.0...v1.4.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **popup:** prevent flash-close on hotkey open ([80b4bd5](https://github.com/halifox/maccy_for_windows/commit/80b4bd5efaddd0b004e57127aa15d8ba12f647e2))
+* **popup:** prevent flash-close on hotkey open ([28432d7](https://github.com/halifox/maccy_for_windows/commit/28432d70c473689bac216b5496c3eff1489c3440))
+
 ## [1.4.0](https://github.com/halifox/maccy_for_windows/compare/v1.3.3...v1.4.0) (2026-10-15)
 
 
