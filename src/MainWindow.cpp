@@ -733,7 +733,7 @@ void MainWindow::FocusPopupForTyping() {
 
 void MainWindow::TogglePopup(PopupPosition popup_position) {
     if (m_popupVisible) {
-        HideMainWindow();
+        DismissPopup();
         return;
     }
     ShowMainWindow(popup_position);
@@ -1839,6 +1839,25 @@ void MainWindow::HideMainWindow() {
     ShowWindow(SW_HIDE);
 }
 
+void MainWindow::DismissPopup() {
+    if (!m_popupVisible) {
+        return;
+    }
+    // Hiding a topmost popup lets Windows activate that thread's previous
+    // window, which can be an older one than the window in front when we opened.
+    const HWND target = m_pasteController.GetTargetWindow();
+    const HWND focus = m_pasteController.GetTargetFocusWindow();
+    const bool restore = ::IsWindow(target) != FALSE;
+    if (restore) {
+        m_pasteController.RestoreTargetFocusAndPaste(target, focus, false);
+    }
+    HideMainWindow();
+    if (restore && ::GetForegroundWindow() != target &&
+        ::GetAncestor(::GetForegroundWindow(), GA_ROOT) != target) {
+        m_pasteController.RestoreTargetFocusAndPaste(target, focus, false);
+    }
+}
+
 int MainWindow::SelectedHistoryIndex() const {
     return m_keyboardHandler.GetActiveFooter() < 0 ? m_keyboardHandler.GetActiveItemIndex() : -1;
 }
@@ -2109,7 +2128,7 @@ bool MainWindow::InitializeHistoryControls() {
         .clear_history = [this](bool all) { ClearHistory(all); },
         .open_settings = [this]() { OpenSettings(); },
         .exit = [this]() { ExitApplication(); },
-        .hide_window = [this]() { HideMainWindow(); },
+        .hide_window = [this]() { DismissPopup(); },
     });
 
     if (!m_isolated) {
@@ -2324,7 +2343,14 @@ LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
     if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing) {
         return 0;
     }
-    HideMainWindow();
+    // A click that already activated another window should keep that window.
+    // Otherwise Windows would surface an older window from the same thread.
+    const HWND foreground = ::GetForegroundWindow();
+    if (foreground == nullptr || foreground == m_hWnd || IsOurWindow(foreground)) {
+        DismissPopup();
+    } else {
+        HideMainWindow();
+    }
     return 0;
 }
 
@@ -2332,7 +2358,7 @@ LRESULT MainWindow::OnClose(UINT, WPARAM, LPARAM, BOOL&) {
     if (m_exiting) {
         DestroyWindow();
     } else {
-        HideMainWindow();
+        DismissPopup();
     }
     return 0;
 }
@@ -2477,11 +2503,12 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
 }
 
 LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
-    // Paste target from chord-match time (before we take focus).
-    if (lParam != 0) {
+    handled = TRUE;
+    // A second press only hides. Recapturing here would replace the window
+    // that was in front when we opened.
+    if (!m_popupVisible && lParam != 0) {
         m_pasteController.CaptureTargetWindow(reinterpret_cast<HWND>(lParam));
     }
-    handled = TRUE;
     TogglePopup(m_settings.popup_position);
     return 0;
 }

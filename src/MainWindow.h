@@ -202,6 +202,7 @@ private:
     void ScheduleSearchFromCurrentEdit();
     void SaveWindowGeometry(bool resized = false);
     void HideMainWindow();
+    void DismissPopup();
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
     bool GetTrayIconRect(RECT &rect) const;
