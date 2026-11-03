@@ -64,6 +64,7 @@ public:
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
         MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
+        MESSAGE_HANDLER(AppConstants::kConfirmPopupDismissMessage, OnConfirmPopupDismiss)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
@@ -201,7 +202,10 @@ private:
     void HideMainWindow();
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
+    void BeginPopupDismissGuard();
+    void EndPopupDismissGuard();
     void HandlePopupActivation(HWND activating_window);
+    void ConfirmPopupDismiss();
 
     // Tray icon
     void UpdateTrayIcon();
@@ -236,6 +240,7 @@ private:
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
     LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
+    LRESULT OnConfirmPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
@@ -320,6 +325,7 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
+    bool m_suppressPopupDismiss = false;
     bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;

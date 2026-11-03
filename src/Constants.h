@@ -30,6 +30,7 @@ namespace AppConstants {
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
     constexpr UINT kPopupActivationMessage = kCustomMessageBase + 1;
+    constexpr UINT kConfirmPopupDismissMessage = kCustomMessageBase + 2;
 
     // ========================================================================
     // 定时器ID
@@ -38,6 +39,12 @@ namespace AppConstants {
         constexpr UINT_PTR kSearchResultCommit = 1;
         constexpr UINT_PTR kPreview = 2;
         constexpr UINT_PTR kPaste = 3;
+        constexpr UINT_PTR kPopupDismissGuard = 4;
+    }
+
+    namespace Popup {
+        // Ignore transient WA_INACTIVE while ShowWindow/SetForegroundWindow settle.
+        constexpr UINT kDismissGuardMs = 250;
     }
 
     // Bitmask carried by kUiUpdateMessage. Producers only describe what
