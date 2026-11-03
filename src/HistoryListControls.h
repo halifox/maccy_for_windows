@@ -67,6 +67,7 @@ public:
         MESSAGE_HANDLER(WM_LBUTTONUP, OnHistoryListButtonUp)
         MESSAGE_HANDLER(WM_MOUSEWHEEL, OnHistoryListScroll)
         MESSAGE_HANDLER(WM_VSCROLL, OnHistoryListScroll)
+        MESSAGE_HANDLER(WM_TIMER, OnHistoryListTimer)
         REFLECTED_COMMAND_HANDLER(IDC_HISTORY_LIST, LBN_SELCHANGE, OnHistoryListSelectionChanged)
         REFLECTED_COMMAND_HANDLER(IDC_HISTORY_PINS, LBN_SELCHANGE, OnHistoryListSelectionChanged)
         MESSAGE_HANDLER(OCM_MEASUREITEM, OnMeasureItem)
@@ -87,6 +88,7 @@ private:
     LRESULT OnHistoryListChar(UINT, WPARAM character, LPARAM, BOOL &handled);
     LRESULT OnHistoryListButtonUp(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam, BOOL &handled);
+    LRESULT OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOOL &handled);
     LRESULT OnHistoryListSelectionChanged(WORD, WORD id, HWND, BOOL &handled);
     LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);

@@ -678,6 +678,7 @@ bool MainWindow::IsOurWindow(HWND window) const {
 }
 
 MainWindow* MainWindow::s_dismissHookOwner = nullptr;
+HHOOK MainWindow::s_popupMouseHook = nullptr;
 
 bool MainWindow::GetTrayIconRect(RECT &rect) const {
     RECT current{};
@@ -739,69 +740,105 @@ void MainWindow::TogglePopup(PopupPosition popup_position) {
     ShowMainWindow(popup_position);
 }
 
-void MainWindow::RequestPopupDismiss() {
-    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_hWnd == nullptr) {
-        return;
-    }
-    PostMessage(AppConstants::kPopupDismissMessage, 0, 0);
-}
-
 void MainWindow::InstallPopupDismissHooks() {
-    if (m_popupMouseHook != nullptr) {
+    if (m_dismissHookThread != nullptr) {
         return;
     }
     if (s_dismissHookOwner != nullptr && s_dismissHookOwner != this) {
         return;
     }
     s_dismissHookOwner = this;
-    m_popupMouseHook = ::SetWindowsHookExW(
-        WH_MOUSE_LL,
-        PopupMouseHookProc,
-        ::GetModuleHandleW(nullptr),
-        0
-    );
-    if (m_popupMouseHook == nullptr) {
+    m_dismissHookReady = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (m_dismissHookReady == nullptr) {
         s_dismissHookOwner = nullptr;
+        return;
+    }
+    m_dismissHookThread = ::CreateThread(nullptr, 0, PopupMouseHookThread, this, 0, nullptr);
+    if (m_dismissHookThread == nullptr) {
+        ::CloseHandle(m_dismissHookReady);
+        m_dismissHookReady = nullptr;
+        s_dismissHookOwner = nullptr;
+        return;
+    }
+    ::WaitForSingleObject(m_dismissHookReady, 3000);
+    ::CloseHandle(m_dismissHookReady);
+    m_dismissHookReady = nullptr;
+    if (s_popupMouseHook == nullptr) {
+        ::WaitForSingleObject(m_dismissHookThread, 1000);
+        ::CloseHandle(m_dismissHookThread);
+        m_dismissHookThread = nullptr;
+        m_dismissHookThreadId = 0;
+        if (s_dismissHookOwner == this) {
+            s_dismissHookOwner = nullptr;
+        }
     }
 }
 
 void MainWindow::UninstallPopupDismissHooks() {
-    if (m_popupMouseHook != nullptr) {
-        ::UnhookWindowsHookEx(m_popupMouseHook);
-        m_popupMouseHook = nullptr;
+    const DWORD thread_id = m_dismissHookThreadId;
+    const HANDLE thread = m_dismissHookThread;
+    m_dismissHookThread = nullptr;
+    m_dismissHookThreadId = 0;
+    if (thread_id != 0) {
+        ::PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
     }
+    if (thread != nullptr) {
+        ::WaitForSingleObject(thread, 3000);
+        ::CloseHandle(thread);
+    }
+    s_popupMouseHook = nullptr;
     if (s_dismissHookOwner == this) {
         s_dismissHookOwner = nullptr;
     }
 }
 
+DWORD WINAPI MainWindow::PopupMouseHookThread(LPVOID parameter) {
+    auto *window = static_cast<MainWindow *>(parameter);
+    MSG pending{};
+    ::PeekMessageW(&pending, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+    window->m_dismissHookThreadId = ::GetCurrentThreadId();
+    s_popupMouseHook = ::SetWindowsHookExW(
+        WH_MOUSE_LL,
+        PopupMouseHookProc,
+        ::GetModuleHandleW(nullptr),
+        0
+    );
+    if (window->m_dismissHookReady != nullptr) {
+        ::SetEvent(window->m_dismissHookReady);
+    }
+    if (s_popupMouseHook == nullptr) {
+        return 0;
+    }
+    MSG message{};
+    while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
+        ::TranslateMessage(&message);
+        ::DispatchMessageW(&message);
+    }
+    ::UnhookWindowsHookEx(s_popupMouseHook);
+    s_popupMouseHook = nullptr;
+    return 0;
+}
+
 LRESULT CALLBACK MainWindow::PopupMouseHookProc(int code, WPARAM wParam, LPARAM lParam) {
-    MainWindow* owner = s_dismissHookOwner;
-    if (code == HC_ACTION && owner != nullptr) {
+    if (code == HC_ACTION) {
         const bool button_down =
             wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN ||
             wParam == WM_MBUTTONDOWN || wParam == WM_NCLBUTTONDOWN ||
             wParam == WM_NCRBUTTONDOWN || wParam == WM_NCMBUTTONDOWN;
         if (button_down) {
-            const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
-            if (info != nullptr && owner->m_popupVisible &&
-                !owner->IsPointInPopupUi(info->pt)) {
-                // Padding around the icon can miss Shell_NotifyIconGetRect and
-                // still activate it. Remember that click so NIN_SELECT does not
-                // reopen the popup this down is about to close.
-                if (owner->IsTrayPoint(info->pt, kTrayReshowPadDip)) {
-                    owner->m_outsideDismissPoint = info->pt;
-                    owner->m_outsideDismissTick = ::GetTickCount();
-                } else {
-                    owner->m_outsideDismissTick = 0;
-                }
-                owner->RequestPopupDismiss();
+            MainWindow *owner = s_dismissHookOwner;
+            const auto *info = reinterpret_cast<const MSLLHOOKSTRUCT *>(lParam);
+            if (owner != nullptr && owner->m_hWnd != nullptr && info != nullptr) {
+                ::PostMessageW(
+                    owner->m_hWnd,
+                    AppConstants::kPopupDismissMessage,
+                    static_cast<WPARAM>(static_cast<LONG_PTR>(info->pt.x)),
+                    static_cast<LPARAM>(info->pt.y)
+                );
             }
         }
     }
-    return ::CallNextHookEx(owner != nullptr ? owner->m_popupMouseHook : nullptr,
-                            code, wParam, lParam);
+    return ::CallNextHookEx(s_popupMouseHook, code, wParam, lParam);
 }
 
 int MainWindow::PopupWidth(UINT dpi) const {
@@ -2338,10 +2375,24 @@ LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     return 0;
 }
 
-LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
+LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
     handled = TRUE;
     if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing) {
         return 0;
+    }
+    const POINT point{
+        static_cast<LONG>(static_cast<LONG_PTR>(wParam)),
+        static_cast<LONG>(static_cast<LONG_PTR>(lParam))
+    };
+    if (IsPointInPopupUi(point)) {
+        return 0;
+    }
+    // Padding around the icon can miss Shell_NotifyIconGetRect and still activate it.
+    if (IsTrayPoint(point, kTrayReshowPadDip)) {
+        m_outsideDismissPoint = point;
+        m_outsideDismissTick = ::GetTickCount();
+    } else {
+        m_outsideDismissTick = 0;
     }
     // A click that already activated another window should keep that window.
     // Otherwise Windows would surface an older window from the same thread.
@@ -2351,6 +2402,16 @@ LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
     } else {
         HideMainWindow();
     }
+    return 0;
+}
+
+LRESULT MainWindow::OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    if (!m_historyRenderer.ApplyLoadedIcons() || !m_popupVisible) {
+        return 0;
+    }
+    m_historyListControls.HistoryListWindow().Invalidate(FALSE);
+    m_historyListControls.PinsListWindow().Invalidate(FALSE);
     return 0;
 }
 

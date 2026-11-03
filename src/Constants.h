@@ -34,7 +34,10 @@ namespace AppConstants {
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
     // Posted by the click-outside mouse hook to hide on the UI thread.
+    // wParam/lParam are the physical screen point of the button down.
     constexpr UINT kPopupDismissMessage = kCustomMessageBase + 2;
+    // Posted by the icon loader when a shell icon is ready to draw.
+    constexpr UINT kHistoryIconMessage = kCustomMessageBase + 4;
 
     // ========================================================================
     // 定时器ID
@@ -43,6 +46,7 @@ namespace AppConstants {
         constexpr UINT_PTR kSearchResultCommit = 1;
         constexpr UINT_PTR kPreview = 2;
         constexpr UINT_PTR kPaste = 3;
+        constexpr UINT_PTR kHistoryHover = 4;
     }
 
     // Bitmask carried by kUiUpdateMessage. Producers only describe what

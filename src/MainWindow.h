@@ -64,6 +64,7 @@ public:
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(AppConstants::kPopupDismissMessage, OnPopupDismiss)
+        MESSAGE_HANDLER(AppConstants::kHistoryIconMessage, OnHistoryIcons)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
@@ -211,10 +212,10 @@ private:
     bool ConsumeDuplicateTrayOpen(WPARAM click_anchor);
     void TogglePopup(PopupPosition popup_position);
     void FocusPopupForTyping();
-    void RequestPopupDismiss();
     void InstallPopupDismissHooks();
     void UninstallPopupDismissHooks();
     static LRESULT CALLBACK PopupMouseHookProc(int code, WPARAM wParam, LPARAM lParam);
+    static DWORD WINAPI PopupMouseHookThread(LPVOID parameter);
 
     // Tray icon
     void UpdateTrayIcon();
@@ -251,6 +252,7 @@ private:
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
@@ -329,7 +331,11 @@ private:
     POINT m_outsideDismissPoint{};
     mutable RECT m_cachedTrayRect{};
     mutable bool m_hasCachedTrayRect = false;
-    HHOOK m_popupMouseHook = nullptr;
+    // Click-outside hook runs on its own thread so a slow paint cannot stall the cursor.
+    HANDLE m_dismissHookThread = nullptr;
+    DWORD m_dismissHookThreadId = 0;
+    HANDLE m_dismissHookReady = nullptr;
+    static HHOOK s_popupMouseHook;
     static MainWindow* s_dismissHookOwner;
     bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;

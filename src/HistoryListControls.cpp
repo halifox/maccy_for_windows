@@ -136,6 +136,11 @@ void HistoryListControls::SetImageMaxHeight(int image_max_height) noexcept {
 }
 
 void HistoryListControls::Shutdown() noexcept {
+    for (CListBox *list : {&m_historyList, &m_pinsList}) {
+        if (list->m_hWnd != nullptr) {
+            list->KillTimer(AppConstants::Timer::kHistoryHover);
+        }
+    }
     m_pendingMeasureItems.clear();
     m_keyboardHandler = nullptr;
     m_renderer = nullptr;
@@ -258,6 +263,24 @@ LRESULT HistoryListControls::OnHistoryListScroll(
         m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
     const LRESULT result = listWindow.DefWindowProc(message, wParam, lParam);
     if (IsConfigured()) {
+        // The row under a stationary cursor changes while the list moves.
+        // Update it once the wheel settles instead of on every notch.
+        listWindow.SetTimer(AppConstants::Timer::kHistoryHover, 50, nullptr);
+    }
+    handled = TRUE;
+    return result;
+}
+
+LRESULT HistoryListControls::OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+    if (wParam != AppConstants::Timer::kHistoryHover) {
+        handled = FALSE;
+        return 0;
+    }
+    handled = TRUE;
+    CContainedWindowT<CListBox> &listWindow =
+        m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
+    listWindow.KillTimer(AppConstants::Timer::kHistoryHover);
+    if (IsConfigured()) {
         m_keyboardHandler->UpdateHistoryHoverFromCursor(
             *m_items,
             m_historyList,
@@ -265,8 +288,7 @@ LRESULT HistoryListControls::OnHistoryListScroll(
             *m_popupVisible
         );
     }
-    handled = TRUE;
-    return result;
+    return 0;
 }
 
 LRESULT HistoryListControls::OnHistoryListSelectionChanged(
