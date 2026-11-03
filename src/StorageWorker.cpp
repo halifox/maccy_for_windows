@@ -145,6 +145,22 @@ void StorageWorker::SaveSettings(const AppSettings &settings) {
     });
 }
 
+void StorageWorker::SaveSettingsAsync(AppSettings settings) {
+    Enqueue([settings = std::move(settings)](Database &database, std::stop_token stop_token) {
+        if (stop_token.stop_requested()) {
+            return;
+        }
+        try {
+            settings.Save(database);
+        } catch (const std::exception &error) {
+            ::OutputDebugStringA(error.what());
+            ::OutputDebugStringA("\n");
+        } catch (...) {
+            ::OutputDebugStringA("Unable to save settings asynchronously\n");
+        }
+    });
+}
+
 bool StorageWorker::LoadSuppressClearAlert() {
     return Invoke([](Database &database) {
         return database.GetSetting(L"behavior.suppressClearAlert").value_or(L"0") == L"1";
@@ -305,14 +321,39 @@ std::vector<ClipboardItem> StorageWorker::GetPinnedItems(PayloadMode mode) {
 }
 
 void StorageWorker::MarkCopied(sqlite3_int64 id) {
-    Invoke([id](Database &database) { database.MarkCopied(id); });
+    // Fire-and-forget: UI must not block on storage (M-04). Same worker queue
+    // preserves ordering ahead of a subsequent SearchHistoryAsync.
+    Enqueue([id](Database &database, std::stop_token stop_token) {
+        if (stop_token.stop_requested()) {
+            return;
+        }
+        try {
+            database.MarkCopied(id);
+        } catch (const std::exception &error) {
+            ::OutputDebugStringA(error.what());
+            ::OutputDebugStringA("\n");
+        } catch (...) {
+        }
+    });
 }
 
 void StorageWorker::DeleteItem(sqlite3_int64 id) {
-    Invoke([id](Database &database) { database.DeleteItem(id); });
+    Enqueue([id](Database &database, std::stop_token stop_token) {
+        if (stop_token.stop_requested()) {
+            return;
+        }
+        try {
+            database.DeleteItem(id);
+        } catch (const std::exception &error) {
+            ::OutputDebugStringA(error.what());
+            ::OutputDebugStringA("\n");
+        } catch (...) {
+        }
+    });
 }
 
 void StorageWorker::DeleteUnpinned() {
+    // Sync: exit clear-on-quit and modal clear must finish before Stop drops jobs.
     Invoke([](Database &database) { database.DeleteUnpinned(); });
 }
 
@@ -322,8 +363,17 @@ void StorageWorker::DeleteAll() {
 
 void StorageWorker::TogglePin(sqlite3_int64 id, std::wstring_view pin_key, bool pinned) {
     const std::wstring key(pin_key);
-    Invoke([id, key = std::move(key), pinned](Database &database) {
-        database.TogglePin(id, key, pinned);
+    Enqueue([id, key = std::move(key), pinned](Database &database, std::stop_token stop_token) {
+        if (stop_token.stop_requested()) {
+            return;
+        }
+        try {
+            database.TogglePin(id, key, pinned);
+        } catch (const std::exception &error) {
+            ::OutputDebugStringA(error.what());
+            ::OutputDebugStringA("\n");
+        } catch (...) {
+        }
     });
 }
 

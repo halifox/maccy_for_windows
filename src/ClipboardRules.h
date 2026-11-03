@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <regex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,7 +19,13 @@ namespace Limits {
     constexpr size_t kMaximumClipboardBytes = 32 * 1024 * 1024;
     constexpr std::uint64_t kMaximumImagePixels = 64ULL * 1024ULL * 1024ULL;
     constexpr size_t kMaximumPreviewTextCharacters = 4ULL * 1024ULL * 1024ULL;
+    // Bound std::wregex haystacks to limit ReDoS / scan cost (M-10 / M-11).
+    constexpr size_t kMaximumRegexHaystackCharacters = 64 * 1024;
+    constexpr size_t kMaximumSearchListPreviewCharacters = 4096;
 }
+
+bool RegexSearchBounded(const std::wregex &expression, std::wstring_view text);
+std::wstring_view BoundedRegexHaystack(std::wstring_view text);
 
 const std::vector<std::wstring> &DefaultIgnoredFormats();
 

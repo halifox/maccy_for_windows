@@ -243,7 +243,7 @@ bool ClipboardMonitor::ShouldIgnoreFormat(UINT format, std::wstring_view name) c
 
 bool ClipboardMonitor::ShouldIgnoreText(std::wstring_view text) const {
     for (const std::wregex& expression : m_ignoredRegexpPatterns) {
-        if (std::regex_search(text.begin(), text.end(), expression)) {
+        if (ClipboardRules::RegexSearchBounded(expression, text)) {
             return true;
         }
     }

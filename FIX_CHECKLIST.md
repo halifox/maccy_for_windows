@@ -23,7 +23,7 @@
 | P2 | 粘贴可靠性 | 0 | 0 | 7 | 0 | 0 |
 | P3 | UI / 设置一致性 | 0 | 0 | 6 | 0 | 0 |
 | P4 | 捕获正确性 | 0 | 0 | 4 | 0 | 0 |
-| P5 | 性能与卡顿 | 3 | 0 | 0 | 0 | 0 |
+| P5 | 性能与卡顿 | 0 | 0 | 3 | 0 | 0 |
 | P6 | 其余 Medium | 16 | 0 | 0 | 0 | 0 |
 | P7 | Low / 工程债 | 22 | 0 | 0 | 0 | 0 |
 
@@ -107,9 +107,9 @@
 
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
-| M-04 | pending | UI 线程同步 Invoke 阻塞 | [M-04](AUDIT_LOGIC_REPORT.md#M-04) | |
-| M-10 | pending | SearchHistory 全表装入内存 | [M-10](AUDIT_LOGIC_REPORT.md#M-10) | |
-| M-11 | pending | 用户/搜索正则 ReDoS | [M-11](AUDIT_LOGIC_REPORT.md#M-11) | |
+| M-04 | done | UI 线程同步 Invoke 阻塞 | [M-04](AUDIT_LOGIC_REPORT.md#M-04) | Persist/MarkCopied/Delete/Pin 热路径异步；清历史仍同步 |
+| M-10 | done | SearchHistory 全表装入内存 | [M-10](AUDIT_LOGIC_REPORT.md#M-10) | 列表 preview/search body substr 截断 |
+| M-11 | done | 用户/搜索正则 ReDoS | [M-11](AUDIT_LOGIC_REPORT.md#M-11) | RegexSearchBounded 64K haystack |
 
 ## P6 — 其余 Medium
 

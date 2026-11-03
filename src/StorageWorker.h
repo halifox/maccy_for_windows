@@ -57,6 +57,7 @@ public:
 
     AppSettings LoadSettings();
     void SaveSettings(const AppSettings &settings);
+    void SaveSettingsAsync(AppSettings settings);
     bool LoadSuppressClearAlert();
     void SaveSuppressClearAlert(bool enabled);
     IgnoreLists LoadIgnoreLists();

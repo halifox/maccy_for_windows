@@ -296,7 +296,8 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
         if (!m_highlightRegex) {
             return;
         }
-        const std::wstring value(text);
+        const std::wstring_view haystack = ClipboardRules::BoundedRegexHaystack(text);
+        const std::wstring value(haystack);
         for (std::wsregex_iterator it(value.begin(), value.end(), *m_highlightRegex), end;
              it != end; ++it) {
             const auto match = *it;

@@ -1841,7 +1841,7 @@ std::uint32_t MainWindow::ApplySettings(
 }
 
 void MainWindow::PersistSettings() {
-    m_storage.SaveSettings(m_settings);
+    m_storage.SaveSettingsAsync(m_settings);
 }
 
 void MainWindow::SyncOpenSettingsWindow() {

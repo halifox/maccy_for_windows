@@ -598,7 +598,8 @@ void Database::ForEachSearchDocument(
 ) const {
     Statement statement(
         m_db,
-        "SELECT item_id, body, paths FROM history_search_documents ORDER BY item_id DESC;"
+        "SELECT item_id, substr(body, 1, 65536), substr(paths, 1, 65536) "
+        "FROM history_search_documents ORDER BY item_id DESC;"
     );
     while (true) {
         if (is_cancelled && is_cancelled()) {
@@ -877,9 +878,10 @@ std::vector<ClipboardItem> Database::SearchHistory(
         return {};
     }
 
+    // Truncate preview for list/search metadata to cut memory and regex cost (M-10).
     Statement statement(
         m_db,
-        "SELECT id, title, preview, application, COALESCE(pin, ''), pinned, "
+        "SELECT id, title, substr(preview, 1, 4096), application, COALESCE(pin, ''), pinned, "
         "first_copied_at, copied_at, copy_count, has_text, has_image, has_files "
         "FROM history_items ORDER BY id DESC;"
     );
@@ -923,7 +925,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         if (!regex) {
             return false;
         }
-        return std::regex_search(text.begin(), text.end(), *regex);
+        return ClipboardRules::RegexSearchBounded(*regex, text);
     };
 
     const auto itemIndexForId = [&all](sqlite3_int64 id) -> std::optional<size_t> {

@@ -5,6 +5,7 @@
 #include <cwctype>
 #include <cstring>
 #include <limits>
+#include <regex>
 
 #include <shellapi.h>
 #include <shlobj.h>
@@ -20,6 +21,18 @@ struct SearchAccumulator {
 };
 
 } // namespace
+
+std::wstring_view BoundedRegexHaystack(std::wstring_view text) {
+    if (text.size() > Limits::kMaximumRegexHaystackCharacters) {
+        return text.substr(0, Limits::kMaximumRegexHaystackCharacters);
+    }
+    return text;
+}
+
+bool RegexSearchBounded(const std::wregex &expression, std::wstring_view text) {
+    const std::wstring_view haystack = BoundedRegexHaystack(text);
+    return std::regex_search(haystack.begin(), haystack.end(), expression);
+}
 
 const std::vector<std::wstring> &DefaultIgnoredFormats() {
     // Registered name is "Clipboard Viewer Ignore"; keep the CF_* alias for older DBs.
