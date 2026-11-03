@@ -9,6 +9,7 @@
 
 #include <shellapi.h>
 #include <shellscalingapi.h>
+#include <imm.h>
 #include <atltypes.h>
 
 #include <algorithm>
@@ -90,8 +91,26 @@ bool HasPendingKeyboardInput(HWND window) {
     if (window == nullptr || !::IsWindow(window)) {
         return false;
     }
+    // Treat active IME composition as pending input (L-14).
+    if (const HIMC context = ::ImmGetContext(window); context != nullptr) {
+        const LONG composing =
+            ::ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+        ::ImmReleaseContext(window, context);
+        if (composing > 0) {
+            return true;
+        }
+    }
     MSG message{};
-    return ::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE;
+    if (::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE) {
+        return true;
+    }
+    return ::PeekMessageW(
+               &message,
+               window,
+               WM_IME_STARTCOMPOSITION,
+               WM_IME_KEYLAST,
+               PM_NOREMOVE
+           ) != FALSE;
 }
 
 // Resolve paste action based on modifier keys

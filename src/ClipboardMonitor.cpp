@@ -111,6 +111,12 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
         return std::nullopt;
     }
 
+    CWindowDC screen_dc(nullptr);
+    if (screen_dc.m_hDC == nullptr) {
+        return std::nullopt;
+    }
+
+    // Prefer GetDIBits conversion to 32bpp BI_RGB so palette/1-8bpp sources expand (L-09).
     BITMAPINFO info{};
     info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth = static_cast<LONG>(width);
@@ -122,13 +128,8 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
 
     std::vector<unsigned char> result(static_cast<size_t>(total_bytes));
     std::memcpy(result.data(), &info.bmiHeader, sizeof(info.bmiHeader));
-
-    CWindowDC dc(nullptr);
-    if (dc.m_hDC == nullptr) {
-        return std::nullopt;
-    }
-    const int copied = ::GetDIBits(
-        dc.m_hDC,
+    int copied = ::GetDIBits(
+        screen_dc.m_hDC,
         bitmap,
         0,
         static_cast<UINT>(height),
@@ -136,35 +137,105 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
         &info,
         DIB_RGB_COLORS
     );
-    if (copied != static_cast<int>(height)) {
+    if (copied == static_cast<int>(height)) {
+        return result;
+    }
+
+    // Fallback: BitBlt through a 32bpp DIB section (handles odd device bitmaps).
+    void *bits = nullptr;
+    BITMAPINFO section_info{};
+    section_info.bmiHeader = info.bmiHeader;
+    const HBITMAP section = ::CreateDIBSection(
+        screen_dc.m_hDC,
+        &section_info,
+        DIB_RGB_COLORS,
+        &bits,
+        nullptr,
+        0
+    );
+    if (section == nullptr || bits == nullptr) {
+        if (section != nullptr) {
+            ::DeleteObject(section);
+        }
         return std::nullopt;
     }
+
+    HDC memory_dc = ::CreateCompatibleDC(screen_dc.m_hDC);
+    HDC source_dc = ::CreateCompatibleDC(screen_dc.m_hDC);
+    if (memory_dc == nullptr || source_dc == nullptr) {
+        if (memory_dc != nullptr) {
+            ::DeleteDC(memory_dc);
+        }
+        if (source_dc != nullptr) {
+            ::DeleteDC(source_dc);
+        }
+        ::DeleteObject(section);
+        return std::nullopt;
+    }
+
+    const HGDIOBJ previous_section = ::SelectObject(memory_dc, section);
+    const HGDIOBJ previous_source = ::SelectObject(source_dc, bitmap);
+    const BOOL blit_ok = ::BitBlt(
+        memory_dc,
+        0,
+        0,
+        static_cast<int>(width),
+        static_cast<int>(height),
+        source_dc,
+        0,
+        0,
+        SRCCOPY
+    );
+    ::SelectObject(memory_dc, previous_section);
+    ::SelectObject(source_dc, previous_source);
+    ::DeleteDC(memory_dc);
+    ::DeleteDC(source_dc);
+    if (blit_ok == FALSE) {
+        ::DeleteObject(section);
+        return std::nullopt;
+    }
+
+    std::memcpy(result.data() + sizeof(BITMAPINFOHEADER), bits, static_cast<size_t>(pixel_bytes));
+    ::DeleteObject(section);
     return result;
 }
 
 class ClipboardFingerprint {
 public:
+    void AddMeta(std::uint64_t format_count, std::uint64_t total_bytes) noexcept {
+        AddBytes(reinterpret_cast<const unsigned char *>(&format_count), sizeof(format_count));
+        AddBytes(reinterpret_cast<const unsigned char *>(&total_bytes), sizeof(total_bytes));
+    }
+
     void Add(const std::wstring& name, UINT format, const unsigned char* bytes, size_t count) noexcept {
         AddBytes(reinterpret_cast<const unsigned char*>(name.data()), name.size() * sizeof(wchar_t));
         AddBytes(reinterpret_cast<const unsigned char*>(&format), sizeof(format));
+        const std::uint64_t size = static_cast<std::uint64_t>(count);
+        AddBytes(reinterpret_cast<const unsigned char *>(&size), sizeof(size));
         AddBytes(bytes, count);
     }
 
     std::wstring Finish() const {
+        // Dual independent FNV-1a streams → 128-bit hex fingerprint (L-08).
         std::wstringstream stream;
-        stream << std::hex << std::setw(16) << std::setfill(L'0') << m_hash;
+        stream << std::hex << std::setfill(L'0')
+               << std::setw(16) << m_hash_a
+               << std::setw(16) << m_hash_b;
         return stream.str();
     }
 
 private:
     void AddBytes(const unsigned char* bytes, size_t count) noexcept {
         for (size_t index = 0; index < count; ++index) {
-            m_hash ^= bytes[index];
-            m_hash *= 1099511628211ULL;
+            m_hash_a ^= bytes[index];
+            m_hash_a *= 1099511628211ULL;
+            m_hash_b ^= static_cast<std::uint64_t>(bytes[index]) + 0x9e3779b97f4a7c15ULL;
+            m_hash_b *= 1099511628211ULL;
         }
     }
 
-    std::uint64_t m_hash = 1469598103934665603ULL;
+    std::uint64_t m_hash_a = 1469598103934665603ULL;
+    std::uint64_t m_hash_b = 0xcbf29ce484222325ULL;
 };
 
 bool IsRedundantBitmapFormat(UINT format, bool has_dib, bool has_dibv5) noexcept {
@@ -389,6 +460,11 @@ std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData
     });
 
     ClipboardFingerprint fingerprint;
+    std::uint64_t total_bytes = 0;
+    for (const ClipboardFormatData *item : ordered) {
+        total_bytes += item->bytes.size();
+    }
+    fingerprint.AddMeta(ordered.size(), total_bytes);
     for (const ClipboardFormatData *item : ordered) {
         fingerprint.Add(item->name, item->format, item->bytes.data(), item->bytes.size());
     }

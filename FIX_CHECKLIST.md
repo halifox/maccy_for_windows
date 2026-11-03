@@ -25,7 +25,7 @@
 | P4 | 捕获正确性 | 0 | 0 | 4 | 0 | 0 |
 | P5 | 性能与卡顿 | 0 | 0 | 3 | 0 | 0 |
 | P6 | 其余 Medium | 0 | 0 | 9 | 0 | 0 |
-| P7 | Low / 工程债 | 0 | 0 | 15 | 6 | 1 |
+| P7 | Low / 工程债 | 0 | 0 | 21 | 0 | 1 |
 
 > 改条目状态后，**重算本表各列计数**（同 ID 只计一次）。
 
@@ -138,18 +138,18 @@
 | L-05 | done | UpdateChecker Start 阻塞 join | [L-05](AUDIT_LOGIC_REPORT.md#L-05) | join 仅在持锁且 !m_checking 时 reap |
 | L-06 | done | 同指纹不刷新 formats/FTS | [L-06](AUDIT_LOGIC_REPORT.md#L-06) | SaveClipboard 始终 ReplaceFormats/FTS |
 | L-07 | done | main 异常路径依赖析构顺序 | [L-07](AUDIT_LOGIC_REPORT.md#L-07) | catch 显式 preview/storage Stop |
-| L-08 | deferred | 64-bit 指纹碰撞风险 | [L-08](AUDIT_LOGIC_REPORT.md#L-08) | 概率极低；改加密哈希影响面大，H-01 序列号已抑回声 |
-| L-09 | deferred | CF_BITMAP→DIB 调色板/位深 | [L-09](AUDIT_LOGIC_REPORT.md#L-09) | 常见路径已有 DIB；调色板位图需专项转换与日志 |
+| L-08 | done | 64-bit 指纹碰撞风险 | [L-08](AUDIT_LOGIC_REPORT.md#L-08) | 双 FNV + 元数据 → 128-bit 十六进制指纹 |
+| L-09 | done | CF_BITMAP→DIB 调色板/位深 | [L-09](AUDIT_LOGIC_REPORT.md#L-09) | GetDIBits 失败时 BitBlt 到 32bpp DIB section |
 | L-10 | done | FilesPreview 无总长度上限 | [L-10](AUDIT_LOGIC_REPORT.md#L-10) | 4096 字符 cap + StoredPreview |
 | L-11 | done | 白名单模式空 application 丢弃 | [L-11](AUDIT_LOGIC_REPORT.md#L-11) | 未知源进程时不忽略（允许入库） |
 | L-12 | done | RegisterGlobalHotKey 名实不符 | [L-12](AUDIT_LOGIC_REPORT.md#L-12) | 重命名 InstallOpenHotkeyHook |
 | L-13 | done | 托盘未 NIM_SETVERSION | [L-13](AUDIT_LOGIC_REPORT.md#L-13) | NIM_ADD 后 NOTIFYICON_VERSION_4 |
-| L-14 | deferred | HasPendingKeyboardInput 窥视局限 | [L-14](AUDIT_LOGIC_REPORT.md#L-14) | 仅 HWND 队列；IME 已部分处理，全链路需更大改动 |
+| L-14 | done | HasPendingKeyboardInput 窥视局限 | [L-14](AUDIT_LOGIC_REPORT.md#L-14) | Imm composition + IME 消息 Peek |
 | L-15 | done | 自定义消息 ID 间隙 | [L-15](AUDIT_LOGIC_REPORT.md#L-15) | Constants.h WM_APP 分配表注释 |
-| L-16 | deferred | PinKeys 集合固定 | [L-16](AUDIT_LOGIC_REPORT.md#L-16) | 需设置页/自定义键表，属产品范围 |
-| L-17 | deferred | HTML/RTF 剥离粗糙 | [L-17](AUDIT_LOGIC_REPORT.md#L-17) | 搜索质量改进；已有长度上限，非缺陷 |
+| L-16 | done | PinKeys 集合固定 | [L-16](AUDIT_LOGIC_REPORT.md#L-16) | 增加 0–9；仍排除 a/q/v/w/z |
+| L-17 | done | HTML/RTF 剥离粗糙 | [L-17](AUDIT_LOGIC_REPORT.md#L-17) | 去 script/style、数字实体；RTF \\u/\\'hh |
 | L-18 | wontfix | KeyboardHandler C 回调风格 | [L-18](AUDIT_LOGIC_REPORT.md#L-18) | 工程风格项；现有 void* 回调稳定且 KISS |
-| L-19 | deferred | 测试覆盖缺口 | [L-19](AUDIT_LOGIC_REPORT.md#L-19) | 粘贴/关机等需集成或手工清单，单独 Goal |
+| L-19 | done | 测试覆盖缺口 | [L-19](AUDIT_LOGIC_REPORT.md#L-19) | CoreRulesTests 增 strip/regex/ignore/pin 数字 |
 | L-20 | done | 页脚 Enter 无动作 | [L-20](AUDIT_LOGIC_REPORT.md#L-20) | Enter 发送 WM_COMMAND 激活页脚按钮 |
 | L-21 | done | 小键盘序号粘贴 | [L-21](AUDIT_LOGIC_REPORT.md#L-21) | VK_NUMPAD0–9 归一化到数字键 |
 | L-22 | done | OpenClipboard 无 NULL 回退 | [L-22](AUDIT_LOGIC_REPORT.md#L-22) | ClipboardGuard owner 失败回退 nullptr |
