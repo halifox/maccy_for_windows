@@ -6,6 +6,7 @@
 #include "PreviewDecoder.h"
 
 #include <windows.h>
+#include <objbase.h>
 
 #include <stdexcept>
 #include <utility>

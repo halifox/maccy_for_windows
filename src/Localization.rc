@@ -56,7 +56,6 @@ BEGIN
     IDS_MAIN_INIT_CLIPBOARD_ERROR "Unable to register clipboard listener."
     IDS_MAIN_PREVIEW_LOAD_ERROR "Unable to load preview."
     IDS_MAIN_HOTKEY_HOOK_ERROR "Unable to install the global keyboard hook. Open the popup from the tray icon, or check antivirus / accessibility permissions."
-    IDS_MAIN_HOTKEY_HOOK_ERROR "Unable to install the global keyboard hook. Open the popup from the tray icon, or check antivirus / accessibility permissions."
 
     IDS_UPDATE_NETWORK_ERROR "Unable to fetch the GitHub release: {0}"
     IDS_UPDATE_HTTP_ERROR "GitHub returned HTTP {0}: {1}"
