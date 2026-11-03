@@ -637,9 +637,17 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
         }
         for (size_t i = 0; i < items.size(); ++i) {
             const auto& item = items[i];
-            const bool matches = item.pinned
-                ? item.pin.size() == 1 && towupper(item.pin[0]) == key
-                : (++number <= 9 && digit_key == static_cast<WPARAM>('0' + number));
+            bool matches = false;
+            if (item.pinned) {
+                if (item.pin.size() == 1) {
+                    const wchar_t pin = static_cast<wchar_t>(towupper(item.pin[0]));
+                    // Digit pins must accept both main-row and numpad keys (L-16 + L-21).
+                    matches = pin == static_cast<wchar_t>(key) ||
+                        (pin >= L'0' && pin <= L'9' && pin == static_cast<wchar_t>(digit_key));
+                }
+            } else {
+                matches = (++number <= 9 && digit_key == static_cast<WPARAM>('0' + number));
+            }
             if (matches) {
                 SetActiveHistoryItem(static_cast<int>(i), items, m_historyList, m_pinsList);
                 if (m_callbacks.paste) {
