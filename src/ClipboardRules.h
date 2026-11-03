@@ -33,6 +33,8 @@ std::wstring StoredPreview(std::wstring value);
 std::wstring PreviewText(std::wstring_view value);
 
 std::wstring FormatName(UINT format);
+bool IsClipboardViewerIgnoreFormat(UINT format, std::wstring_view name);
+bool MatchesIgnoredFormatName(std::wstring_view actual, std::wstring_view configured);
 bool IsUnicodeTextFormat(const ClipboardFormatData &data);
 bool IsAnsiTextFormat(const ClipboardFormatData &data);
 bool IsRichTextFormat(const ClipboardFormatData &data);

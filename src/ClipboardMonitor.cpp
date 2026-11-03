@@ -84,12 +84,15 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
 
     BITMAP source{};
     if (::GetObjectW(bitmap, sizeof(source), &source) != sizeof(source) ||
-        source.bmWidth <= 0 || source.bmHeight <= 0) {
+        source.bmWidth <= 0 || source.bmHeight == 0) {
         return std::nullopt;
     }
 
+    // Top-down DIBs report a negative bmHeight; size math needs the absolute value (M-19).
+    const LONG absolute_height =
+        source.bmHeight < 0 ? -source.bmHeight : source.bmHeight;
     const std::uint64_t width = static_cast<std::uint64_t>(source.bmWidth);
-    const std::uint64_t height = static_cast<std::uint64_t>(source.bmHeight);
+    const std::uint64_t height = static_cast<std::uint64_t>(absolute_height);
     const std::uint64_t pixel_count = width * height;
     const std::uint64_t pixel_bytes = width * sizeof(DWORD) * height;
     const std::uint64_t total_bytes = sizeof(BITMAPINFOHEADER) + pixel_bytes;
@@ -224,12 +227,16 @@ bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) co
     );
 }
 
-bool ClipboardMonitor::ShouldIgnoreFormat(std::wstring_view format) const {
+bool ClipboardMonitor::ShouldIgnoreFormat(UINT format, std::wstring_view name) const {
     return std::any_of(
         m_ignoredFormats.begin(),
         m_ignoredFormats.end(),
-        [&format](const std::wstring& configured) {
-            return ClipboardRules::EqualInsensitive(format, configured);
+        [format, name](const std::wstring &configured) {
+            if (ClipboardRules::IsClipboardViewerIgnoreFormat(format, name) &&
+                ClipboardRules::IsClipboardViewerIgnoreFormat(0, configured)) {
+                return true;
+            }
+            return ClipboardRules::MatchesIgnoredFormatName(name, configured);
         }
     );
 }
@@ -388,57 +395,38 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
         return std::nullopt;
     }
 
-    std::wstring text;
-    std::vector<std::wstring> format_names;
-    for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
-        format_names.push_back(ClipboardRules::FormatName(format));
-    }
-    if (std::any_of(
-        format_names.begin(),
-        format_names.end(),
-        [this](const std::wstring& name) { return ShouldIgnoreFormat(name); }
-    )) {
-        return std::nullopt;
-    }
-
-    if (m_settings.save_text && IsClipboardFormatAvailable(CF_UNICODETEXT)) {
-        text = ExtractClipboardText();
-        if (text.empty() && IsClipboardFormatAvailable(CF_TEXT)) {
-            text = ExtractClipboardAnsiText();
-        }
-    } else if (IsClipboardFormatAvailable(CF_UNICODETEXT) ||
-               IsClipboardFormatAvailable(CF_TEXT)) {
-        // Regex ignore rules still apply when text storage is disabled.
-        text = IsClipboardFormatAvailable(CF_UNICODETEXT)
-            ? ExtractClipboardText()
-            : ExtractClipboardAnsiText();
-    }
-    if (!text.empty() && ShouldIgnoreText(text)) {
-        return std::nullopt;
-    }
-
     ClipboardSnapshot capture;
     capture.application = application;
     capture.has_text = false;
     capture.has_image = false;
     capture.has_files = false;
     std::wstring file_preview;
+    std::vector<ClipboardFormatData> ignore_probe;
     const bool has_dib = IsClipboardFormatAvailable(CF_DIB) != FALSE;
     const bool has_dibv5 = IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
         const std::wstring name = ClipboardRules::FormatName(format);
+        if (ShouldIgnoreFormat(format, name)) {
+            // Clipboard Viewer Ignore means "skip this entire update" by convention.
+            if (ClipboardRules::IsClipboardViewerIgnoreFormat(format, name)) {
+                return std::nullopt;
+            }
+            // Other ignored formats: omit that format only (M-20).
+            continue;
+        }
+
         const bool is_text = ClipboardRules::IsTextFormat(format, name);
         const bool is_image = ClipboardRules::IsImageFormat(format, name);
         const bool is_files = format == CF_HDROP;
         const bool enabled = (is_text && m_settings.save_text) ||
             (is_image && m_settings.save_images) ||
             (is_files && m_settings.save_files);
-        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
-            continue;
-        }
 
         ClipboardFormatData data;
         if (format == CF_BITMAP) {
+            if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
+                continue;
+            }
             const auto dib = CaptureBitmapAsDib(static_cast<HBITMAP>(GetClipboardData(format)));
             if (!dib.has_value()) {
                 continue;
@@ -464,6 +452,17 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             data.format = format;
             data.bytes.assign(source, source + bytes);
         }
+
+        // Always probe text-like formats for regex ignore, even when save_text is off (M-25).
+        if (is_text || ClipboardRules::IsRichTextFormat(data) ||
+            ClipboardRules::IsUnicodeTextFormat(data) ||
+            ClipboardRules::IsAnsiTextFormat(data)) {
+            ignore_probe.push_back(data);
+        }
+
+        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
+            continue;
+        }
         if (is_text) {
             capture.has_text = true;
         }
@@ -476,6 +475,13 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
         }
         capture.data.push_back(std::move(data));
     }
+
+    const ClipboardRules::SearchParts ignore_parts =
+        ClipboardRules::SearchPartsFromFormats(ignore_probe);
+    if (!ignore_parts.body.empty() && ShouldIgnoreText(ignore_parts.body)) {
+        return std::nullopt;
+    }
+    const std::wstring text = ignore_parts.body;
 
     if (capture.data.empty()) {
         return std::nullopt;

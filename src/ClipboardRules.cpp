@@ -22,8 +22,9 @@ struct SearchAccumulator {
 } // namespace
 
 const std::vector<std::wstring> &DefaultIgnoredFormats() {
+    // Registered name is "Clipboard Viewer Ignore"; keep the CF_* alias for older DBs.
     static const std::vector<std::wstring> values = {
-        L"CF_CLIPBOARD_VIEWER_IGNORE",
+        L"Clipboard Viewer Ignore",
     };
     return values;
 }
@@ -161,6 +162,24 @@ std::wstring FormatName(UINT format) {
         return std::wstring(name.data(), static_cast<size_t>(length));
     }
     return L"FORMAT_" + std::to_wstring(format);
+}
+
+bool IsClipboardViewerIgnoreFormat(UINT format, std::wstring_view name) {
+    static const UINT registered = ::RegisterClipboardFormatW(L"Clipboard Viewer Ignore");
+    if (registered != 0 && format == registered) {
+        return true;
+    }
+    return EqualInsensitive(name, L"Clipboard Viewer Ignore") ||
+        EqualInsensitive(name, L"CF_CLIPBOARD_VIEWER_IGNORE");
+}
+
+bool MatchesIgnoredFormatName(std::wstring_view actual, std::wstring_view configured) {
+    if (EqualInsensitive(actual, configured)) {
+        return true;
+    }
+    // Alias CF_CLIPBOARD_VIEWER_IGNORE <-> Clipboard Viewer Ignore (M-26).
+    return IsClipboardViewerIgnoreFormat(0, actual) &&
+        IsClipboardViewerIgnoreFormat(0, configured);
 }
 
 bool IsUnicodeTextFormat(const ClipboardFormatData &data) {

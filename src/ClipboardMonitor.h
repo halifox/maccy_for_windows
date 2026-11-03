@@ -51,7 +51,7 @@ private:
 
     // Ignore rules
     bool ShouldIgnoreApplication(std::wstring_view application) const;
-    bool ShouldIgnoreFormat(std::wstring_view format) const;
+    bool ShouldIgnoreFormat(UINT format, std::wstring_view name) const;
     bool ShouldIgnoreText(std::wstring_view text) const;
 
     // Clipboard data extraction

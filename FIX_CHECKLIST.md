@@ -22,7 +22,7 @@
 | P1 | 剪贴板回声去重 | 0 | 0 | 4 | 0 | 0 |
 | P2 | 粘贴可靠性 | 0 | 0 | 7 | 0 | 0 |
 | P3 | UI / 设置一致性 | 0 | 0 | 6 | 0 | 0 |
-| P4 | 捕获正确性 | 4 | 0 | 0 | 0 | 0 |
+| P4 | 捕获正确性 | 0 | 0 | 4 | 0 | 0 |
 | P5 | 性能与卡顿 | 3 | 0 | 0 | 0 | 0 |
 | P6 | 其余 Medium | 16 | 0 | 0 | 0 | 0 |
 | P7 | Low / 工程债 | 22 | 0 | 0 | 0 | 0 |
@@ -98,10 +98,10 @@
 
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
-| M-19 | pending | CaptureBitmapAsDib 拒负高度 | [M-19](AUDIT_LOGIC_REPORT.md#M-19) | |
-| M-20 | pending | 单格式忽略导致整次丢弃 | [M-20](AUDIT_LOGIC_REPORT.md#M-20) | |
-| M-25 | pending | save_text 关时正则不看 HTML/RTF | [M-25](AUDIT_LOGIC_REPORT.md#M-25) | |
-| M-26 | pending | 默认忽略格式名可能匹配失败 | [M-26](AUDIT_LOGIC_REPORT.md#M-26) | |
+| M-19 | done | CaptureBitmapAsDib 拒负高度 | [M-19](AUDIT_LOGIC_REPORT.md#M-19) | abs(bmHeight) 计算尺寸 |
+| M-20 | done | 单格式忽略导致整次丢弃 | [M-20](AUDIT_LOGIC_REPORT.md#M-20) | 非 ViewerIgnore 格式仅跳过该格式 |
+| M-25 | done | save_text 关时正则不看 HTML/RTF | [M-25](AUDIT_LOGIC_REPORT.md#M-25) | ignore 探针 + SearchPartsFromFormats |
+| M-26 | done | 默认忽略格式名可能匹配失败 | [M-26](AUDIT_LOGIC_REPORT.md#M-26) | 注册名/别名/format ID 匹配 |
 
 ## P5 — 性能与卡顿
 
