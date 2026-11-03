@@ -24,6 +24,7 @@
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
+#include "PreviewWindow.h"
 #include "ThumbnailWorker.h"
 #include "PreviewDecoder.h"
 #include "SearchHeaderLayout.h"
@@ -175,13 +176,16 @@ private:
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
 
-    // Preview window
+    // Preview window (HWND owned by UI thread; payload loaded by PreviewWorker)
+    bool EnsurePreviewWindow();
+    void RepositionPreviewWindow();
     void SchedulePreviewForItem(sqlite3_int64 item_id);
     void ShowPreviewForItem(sqlite3_int64 item_id);
     void ShowPreviewForCandidate();
     void ShowPreviewForSelection();
     void HidePreview();
     void TogglePreview();
+    bool IsPreviewVisible() const noexcept;
 
     // Actions
     void ShowMainWindow(PopupPosition popup_position);
@@ -348,6 +352,7 @@ private:
     int m_footerSeparatorY = -1;
 
     // Preview state
+    PreviewWindow m_previewWindow;
     std::wstring m_previewTip;
     std::uint64_t m_previewGeneration = 0;
     bool m_pasteInProgress = false;

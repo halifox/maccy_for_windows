@@ -424,7 +424,7 @@ bool MainWindow::BindControls() {
         },
         [this](int index) { PasteItem(index); },
         [this](sqlite3_int64 item_id) {
-            if (m_previewWorker.IsVisible()) {
+            if (IsPreviewVisible()) {
                 ShowPreviewForItem(item_id);
             } else {
                 SchedulePreviewForItem(item_id);
@@ -593,7 +593,10 @@ bool MainWindow::IsOurWindow(HWND window) const {
     if (window == nullptr) return false;
     return window == m_hWnd || window == m_search.m_hWnd ||
         window == m_historyListControls.HistoryListWindow().m_hWnd ||
-        ::IsChild(m_hWnd, window) || m_previewWorker.ContainsWindow(window) ||
+        ::IsChild(m_hWnd, window) ||
+        (m_previewWindow.m_hWnd != nullptr &&
+         (window == m_previewWindow.m_hWnd ||
+          ::GetAncestor(window, GA_ROOT) == m_previewWindow.m_hWnd)) ||
         (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
 }
 
@@ -922,7 +925,7 @@ void MainWindow::ApplyHistoryItems(
         const sqlite3_int64 previous = sameQuery && !m_resetHistoryListOnOpen
             ? m_keyboardHandler.GetActiveItemId() : 0;
         const int previousIndex = m_keyboardHandler.GetActiveItemIndex();
-        const bool previewOpen = m_previewWorker.IsVisible();
+        const bool previewOpen = IsPreviewVisible();
         const std::wstring ownedQuery = query;
         m_items = std::move(items);
         m_historyRenderer.PrepareHistory(m_items);
@@ -1034,7 +1037,7 @@ void MainWindow::ApplyHistoryItems(
 }
 
 void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id) {
-    const bool preview_requested = m_previewWorker.IsVisible() || m_previewCandidateId != 0;
+    const bool preview_requested = IsPreviewVisible() || m_previewCandidateId != 0;
     KillTimer(AppConstants::Timer::kPreview);
     if (!m_popupVisible || m_previewSuppressed || item_id == 0) {
         m_previewCandidateId = 0;
@@ -1053,20 +1056,47 @@ void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id) {
     ::SetTimer(m_hWnd, AppConstants::Timer::kPreview, static_cast<UINT>(m_settings.preview_delay), nullptr);
 }
 
+bool MainWindow::EnsurePreviewWindow() {
+    if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
+        return true;
+    }
+    return m_previewWindow.Initialize(m_hWnd);
+}
+
+bool MainWindow::IsPreviewVisible() const noexcept {
+    return m_previewWindow.IsVisible();
+}
+
+void MainWindow::RepositionPreviewWindow() {
+    if (IsPreviewVisible()) {
+        m_previewWindow.PositionNextToOwner(m_hWnd, false);
+    }
+}
+
 void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
     if (item_id <= 0) {
         HidePreview();
         return;
     }
+    if (!EnsurePreviewWindow()) {
+        HidePreview();
+        return;
+    }
     KillTimer(AppConstants::Timer::kPreview);
     const std::uint64_t generation = ++m_previewGeneration;
-    const bool preview_was_visible = m_previewWorker.IsVisible();
+    const bool preview_was_visible = IsPreviewVisible();
     m_previewCandidateId = item_id;
+    UINT maximum_width = 0;
+    UINT maximum_height = 0;
+    m_previewWindow.GetImageSize(maximum_width, maximum_height);
     if (!m_previewWorker.Request(
             item_id,
             generation,
+            maximum_width,
+            maximum_height,
             [this](std::shared_ptr<PreviewResult> result) {
-                if (result == nullptr || result->generation != m_previewGeneration ||
+                if (m_exiting || result == nullptr ||
+                    result->generation != m_previewGeneration ||
                     result->item_id != m_keyboardHandler.GetActiveItemId() ||
                     !m_popupVisible || m_previewSuppressed) {
                     return;
@@ -1081,10 +1111,20 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
                     HidePreview();
                     return;
                 }
-                if (!result->displayed) {
+                if (!result->displayed || !result->item.has_value()) {
                     HidePreview();
                     return;
                 }
+                if (!EnsurePreviewWindow()) {
+                    HidePreview();
+                    return;
+                }
+                m_previewWindow.SetItem(
+                    *result->item,
+                    std::move(result->text),
+                    std::move(result->bitmap)
+                );
+                m_previewWindow.PositionNextToOwner(m_hWnd, true);
                 m_previewItemId = result->item_id;
                 m_previewCandidateId = 0;
             }
@@ -1123,11 +1163,11 @@ void MainWindow::HidePreview() {
     ++m_previewGeneration;
     m_previewCandidateId = 0;
     m_previewItemId = 0;
-    m_previewWorker.Hide();
+    m_previewWindow.Hide();
 }
 
 void MainWindow::TogglePreview() {
-    if (m_previewWorker.IsVisible()) {
+    if (IsPreviewVisible()) {
         m_previewSuppressed = true;
         HidePreview();
     } else {
@@ -1482,7 +1522,10 @@ void MainWindow::ExitApplication(ExitReason reason) {
     if (m_settingsWindow != nullptr) {
         m_settingsWindow->DestroyForOwner();
     }
-    // Stop the preview worker before destroying the owner HWND (C-01 / M-17).
+    // Destroy UI-thread preview HWND, then stop the loader thread (C-01 / C-02 / M-17).
+    if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
+        m_previewWindow.DestroyWindow();
+    }
     m_previewWorker.Stop();
     DestroyWindow();
 }
@@ -1862,9 +1905,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
 LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     LayoutHistoryControls();
-    if (m_previewWorker.IsVisible()) {
-        m_previewWorker.Reposition();
-    }
+    RepositionPreviewWindow();
     return 0;
 }
 
@@ -1888,18 +1929,14 @@ LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handl
 
 LRESULT MainWindow::OnMove(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    if (m_previewWorker.IsVisible()) {
-        m_previewWorker.Reposition();
-    }
+    RepositionPreviewWindow();
     return 0;
 }
 
 LRESULT MainWindow::OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     SaveWindowGeometry(true);
-    if (m_previewWorker.IsVisible()) {
-        m_previewWorker.Reposition();
-    }
+    RepositionPreviewWindow();
     return 0;
 }
 
@@ -2338,6 +2375,9 @@ LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_deferredHistoryResult.reset();
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
+    if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
+        m_previewWindow.DestroyWindow();
+    }
     m_historyListControls.Shutdown();
     m_keyboardHandler.Shutdown();
     m_applicationController.Shutdown();

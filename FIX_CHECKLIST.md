@@ -18,7 +18,7 @@
 
 | 批次 | 主题 | pending | in_progress | done | deferred | wontfix |
 |------|------|---------|-------------|------|----------|---------|
-| P0 | 关机 / 预览线程亲和 | 2 | 0 | 2 | 0 | 0 |
+| P0 | 关机 / 预览线程亲和 | 1 | 0 | 3 | 0 | 0 |
 | P1 | 剪贴板回声去重 | 4 | 0 | 0 | 0 | 0 |
 | P2 | 粘贴可靠性 | 7 | 0 | 0 | 0 | 0 |
 | P3 | UI / 设置一致性 | 6 | 0 | 0 | 0 | 0 |
@@ -58,7 +58,7 @@
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
 | C-01 | done | 主窗销毁前未停 PreviewWorker | [C-01](AUDIT_LOGIC_REPORT.md#C-01) | ExitApplication 在 DestroyWindow 前 Stop preview |
-| C-02 | pending | 预览 UI 跑在非 UI 线程 | [C-02](AUDIT_LOGIC_REPORT.md#C-02) | |
+| C-02 | done | 预览 UI 跑在非 UI 线程 | [C-02](AUDIT_LOGIC_REPORT.md#C-02) | PreviewWindow 归 UI 线程；PreviewWorker 仅加载/解码 |
 | M-17 | done | Shutdown 不停 preview（放大 C-01） | [M-17](AUDIT_LOGIC_REPORT.md#M-17) | ApplicationController::Shutdown 调用 PreviewWorker::Stop |
 | H-05 | pending | 异步 `[this]` 回调 vs 退出 | [H-05](AUDIT_LOGIC_REPORT.md#H-05) | |
 

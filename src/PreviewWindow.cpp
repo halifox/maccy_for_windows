@@ -128,6 +128,62 @@ void PreviewWindow::SetItem(const ClipboardItem &item, std::wstring text, Previe
     m_image.InvalidateRect(nullptr, TRUE);
 }
 
+void PreviewWindow::PositionNextToOwner(HWND owner, bool show) {
+    if (owner == nullptr || m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+        return;
+    }
+
+    RECT main_rect{};
+    RECT preview_rect{};
+    if (!::GetWindowRect(owner, &main_rect) ||
+        !::GetWindowRect(m_hWnd, &preview_rect)) {
+        return;
+    }
+
+    const int width = preview_rect.right - preview_rect.left;
+    const int height = preview_rect.bottom - preview_rect.top;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    HMONITOR monitor = ::MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{sizeof(monitor_info)};
+    if (monitor == nullptr || !::GetMonitorInfoW(monitor, &monitor_info)) {
+        return;
+    }
+
+    const RECT &work_area = monitor_info.rcWork;
+    constexpr int gap = 0;
+    int x = main_rect.right + gap;
+    int y = main_rect.top;
+    const bool fits_right = main_rect.right + gap + width <= work_area.right;
+    const bool fits_left = main_rect.left - gap - width >= work_area.left;
+    if (fits_right) {
+        x = main_rect.right + gap;
+    } else if (fits_left) {
+        x = main_rect.left - width - gap;
+    } else {
+        const bool fits_above = main_rect.top - gap - height >= work_area.top;
+        const bool fits_below = main_rect.bottom + gap + height <= work_area.bottom;
+        x = std::clamp(
+            static_cast<int>(main_rect.left),
+            static_cast<int>(work_area.left),
+            std::max<int>(work_area.left, work_area.right - width)
+        );
+        if (fits_above) {
+            y = main_rect.top - height - gap;
+        } else if (fits_below) {
+            y = main_rect.bottom + gap;
+        }
+    }
+    const int max_x = std::max<int>(work_area.left, work_area.right - width);
+    const int max_y = std::max<int>(work_area.top, work_area.bottom - height);
+    x = std::clamp(x, static_cast<int>(work_area.left), max_x);
+    y = std::clamp(y, static_cast<int>(work_area.top), max_y);
+
+    const UINT flags = SWP_NOSIZE | SWP_NOACTIVATE | (show ? SWP_SHOWWINDOW : 0);
+    ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, 0, 0, flags);
+}
+
 void PreviewWindow::Hide() {
     if (m_hWnd != nullptr) {
         ClearBitmap();

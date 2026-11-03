@@ -34,6 +34,7 @@ public:
     bool Initialize(HWND owner);
     void SetItem(const ClipboardItem &item, std::wstring text, PreviewBitmap bitmap = {});
     void GetImageSize(UINT &width, UINT &height) const noexcept;
+    void PositionNextToOwner(HWND owner, bool show);
     void Hide();
     bool IsVisible() const noexcept;
     HWND Window() const noexcept { return m_hWnd; }
