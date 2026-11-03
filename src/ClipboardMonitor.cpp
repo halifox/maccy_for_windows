@@ -28,7 +28,13 @@ constexpr wchar_t kCanIncludeInClipboardHistory[] = L"CanIncludeInClipboardHisto
 
 class ClipboardGuard {
 public:
-    explicit ClipboardGuard(HWND owner) : m_open(::OpenClipboard(owner) != FALSE) {}
+    explicit ClipboardGuard(HWND owner) {
+        if (::OpenClipboard(owner) != FALSE) {
+            m_open = true;
+            return;
+        }
+        m_open = ::OpenClipboard(nullptr) != FALSE;
+    }
 
     ~ClipboardGuard() {
         if (m_open) {
@@ -208,7 +214,7 @@ void ClipboardMonitor::ReloadIgnoreLists(IgnoreLists ignored_lists) {
 bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) const {
     if (m_settings.ignore_all_apps_except_listed) {
         if (application.empty()) {
-            return true;
+            return false;
         }
         return std::none_of(
             m_ignoredApps.begin(),
@@ -356,12 +362,17 @@ std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
         std::wstring path(static_cast<size_t>(length) + 1, L'\0');
         DragQueryFileW(drop, index, path.data(), length + 1);
         path.resize(length);
+        constexpr size_t kStoredPreviewCharacters = 4096;
+        const size_t separator = result.empty() ? 0 : 2;
+        if (result.size() + separator + path.size() > kStoredPreviewCharacters) {
+            break;
+        }
         if (!result.empty()) {
             result += L"; ";
         }
         result += path;
     }
-    return result;
+    return ClipboardRules::StoredPreview(std::move(result));
 }
 
 std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {

@@ -14,7 +14,11 @@ namespace AppConstants {
     inline constexpr const wchar_t* kAppVersion = AppVersion::kString;
 
     // ========================================================================
-    // Windows 自定义消息常量
+    // Windows 自定义消息常量 (WM_APP + N)
+    // +1 tray, +2 ui update, +3 preview worker, +4 preview command,
+    // +5 storage worker, +6 update checker, +7 reserved,
+    // +8 installer shutdown, +9 open hotkey, +10 capture hotkey, +11 thumbnail worker.
+    // Do not renumber shipped IDs; use kCustomMessageBase for new messages.
     // ========================================================================
     constexpr UINT kTrayIconMessage = WM_APP + 1;
     constexpr UINT kUiUpdateMessage = WM_APP + 2;

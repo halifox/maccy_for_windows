@@ -91,10 +91,7 @@ void PreviewWorker::Stop() {
     m_requestCondition.notify_all();
     m_thread.join();
     m_workerFailed.store(false, std::memory_order_release);
-    {
-        std::lock_guard lock(m_resultMutex);
-        m_uiCallbacks.clear();
-    }
+    DrainUiCallbacks();
     m_uiWindow.store(nullptr, std::memory_order_release);
 }
 

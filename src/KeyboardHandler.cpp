@@ -59,7 +59,7 @@ void KeyboardHandler::Shutdown() {
     SetHotkeyCaptureActive(false);
 }
 
-bool KeyboardHandler::RegisterGlobalHotKey(UINT) {
+bool KeyboardHandler::InstallOpenHotkeyHook(UINT) {
     if (s_hookOwner != nullptr && s_hookOwner != this) {
         return false;
     }
@@ -73,7 +73,7 @@ bool KeyboardHandler::RegisterGlobalHotKey(UINT) {
     return m_hotkeyRegistered;
 }
 
-void KeyboardHandler::UnregisterGlobalHotKey(UINT) {
+void KeyboardHandler::UninstallOpenHotkeyHook(UINT) {
     if (m_keyboardHook != nullptr) {
         UnhookWindowsHookEx(m_keyboardHook);
         m_keyboardHook = nullptr;
@@ -534,8 +534,18 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std:
         return true;
     }
     if (key == VK_RETURN) {
-        if (m_activeFooter >= 0) {
-            // Handle footer button
+        if (m_activeFooter >= 0 &&
+            m_activeFooter < static_cast<int>(m_footerButtons.size())) {
+            CButton &button = m_footerButtons[static_cast<size_t>(m_activeFooter)];
+            if (button.m_hWnd != nullptr && m_owner.m_hWnd != nullptr) {
+                const int control_id = button.GetDlgCtrlID();
+                ::SendMessageW(
+                    m_owner.m_hWnd,
+                    WM_COMMAND,
+                    MAKEWPARAM(static_cast<WORD>(control_id), BN_CLICKED),
+                    reinterpret_cast<LPARAM>(button.m_hWnd)
+                );
+            }
         } else if (m_pasteCallback && m_callbackContext) {
             m_pasteCallback(m_callbackContext, m_activeItemIndex);
         }
@@ -619,11 +629,15 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
 
     if ((ctrl != alt) && !(GetKeyState(VK_LWIN) & 0x8000) && !(GetKeyState(VK_RWIN) & 0x8000)) {
         int number = 0;
+        WPARAM digit_key = key;
+        if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) {
+            digit_key = static_cast<WPARAM>('0' + (key - VK_NUMPAD0));
+        }
         for (size_t i = 0; i < items.size(); ++i) {
             const auto& item = items[i];
             const bool matches = item.pinned
                 ? item.pin.size() == 1 && towupper(item.pin[0]) == key
-                : (++number <= 9 && key == static_cast<WPARAM>('0' + number));
+                : (++number <= 9 && digit_key == static_cast<WPARAM>('0' + number));
             if (matches) {
                 SetActiveHistoryItem(static_cast<int>(i), items, m_historyList, m_pinsList);
                 if (m_pasteCallback && m_callbackContext) {

@@ -53,10 +53,7 @@ void StorageWorker::Stop() {
         m_jobs.clear();
         m_started = false;
     }
-    {
-        std::lock_guard lock(m_callbackMutex);
-        m_uiCallbacks.clear();
-    }
+    DrainUiCallbacks();
 }
 
 void StorageWorker::SetUiWindow(HWND window) noexcept {

@@ -745,24 +745,8 @@ void Database::SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned)
         if (result != SQLITE_ROW && result != SQLITE_DONE) {
             throw MakeSqliteError(m_db, "Unable to find clipboard history");
         }
-        bool formats_present = false;
         if (existing) {
             item_id = sqlite3_column_int64(find.get(), 0);
-            Statement format_check(
-                m_db,
-                "SELECT 1 FROM clipboard_formats WHERE item_id = ?1 LIMIT 1;"
-            );
-            CheckSqliteResult(
-                m_db,
-                sqlite3_bind_int64(format_check.get(), 1, item_id),
-                "Unable to bind clipboard format item id"
-            );
-            const int format_result = sqlite3_step(format_check.get());
-            if (format_result == SQLITE_ROW) {
-                formats_present = true;
-            } else if (format_result != SQLITE_DONE) {
-                throw MakeSqliteError(m_db, "Unable to inspect clipboard formats");
-            }
             Statement update(
                 m_db,
                 "UPDATE history_items SET "
@@ -804,10 +788,8 @@ void Database::SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned)
             item_id = sqlite3_last_insert_rowid(m_db);
         }
 
-        if (!existing || !formats_present) {
-            ReplaceFormats(item_id, capture.data);
-            ReplaceSearchIndex(item_id, search.body, search.paths);
-        }
+        ReplaceFormats(item_id, capture.data);
+        ReplaceSearchIndex(item_id, search.body, search.paths);
         transaction.Commit();
     }
     TrimUnpinned(bounded_size);

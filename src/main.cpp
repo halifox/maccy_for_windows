@@ -301,16 +301,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         return 1;
     }
 
+    StorageWorker storage(GetDatabasePath());
+    PreviewWorker preview(storage.Path());
+    ThumbnailWorker thumbnails;
     try {
-        StorageWorker storage(GetDatabasePath());
         storage.Start();
         AppSettings settings = storage.LoadSettings();
         if (!SetLaunchAtLogin(settings.launch_at_login)) {
             ::OutputDebugStringW(L"Unable to synchronize the Maccy logon startup entry.\n");
         }
         StorageWorker::IgnoreLists ignored_lists = storage.LoadIgnoreLists();
-        PreviewWorker preview(storage.Path());
-        ThumbnailWorker thumbnails;
         MainWindow window(storage, preview, thumbnails, std::move(settings), std::move(ignored_lists));
         if (!window.Create(nullptr)) {
             const DWORD error = GetLastError();
@@ -367,10 +367,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         return exitCode;
     } catch (const std::exception &error) {
         g_mainWindow = nullptr;
+        preview.Stop();
+        storage.Stop();
         const std::wstring message = Localization::FromUtf8(error.what());
         const std::wstring title = Localization::Text(IDS_INIT_INSTANCE_TITLE);
         MessageBoxW(nullptr, message.c_str(), title.c_str(), MB_OK | MB_ICONERROR);
         activation_window.Destroy();
+        instance_mutex.Release();
         _Module.Term();
         CoUninitialize();
         return 1;

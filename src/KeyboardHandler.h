@@ -29,9 +29,9 @@ public:
                     const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons);
     void Shutdown();
 
-    // Hotkey management
-    bool RegisterGlobalHotKey(UINT hotkeyId);
-    void UnregisterGlobalHotKey(UINT hotkeyId);
+    // Low-level keyboard hook for the open-popup chord (not RegisterHotKey).
+    bool InstallOpenHotkeyHook(UINT hotkeyId);
+    void UninstallOpenHotkeyHook(UINT hotkeyId);
     bool IsHotkeyRegistered() const { return m_hotkeyRegistered; }
     static void SetHotkeyCaptureActive(bool active) noexcept;
     static bool IsHotkeyCaptureActive() noexcept;

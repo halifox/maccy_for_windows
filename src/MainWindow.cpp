@@ -1814,8 +1814,8 @@ std::uint32_t MainWindow::ApplySettings(
     }
     if (!m_isolated && (!SameHotKey(previous.open_hotkey, m_settings.open_hotkey) ||
         previous.show_in_status_bar != m_settings.show_in_status_bar)) {
-        m_keyboardHandler.UnregisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
-        m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
+        m_keyboardHandler.UninstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup);
+        m_keyboardHandler.InstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup);
     }
 
     const bool historyChanged =
@@ -1999,7 +1999,7 @@ bool MainWindow::InitializeHistoryControls() {
     );
 
     if (!m_isolated) {
-        if (!m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup)) {
+        if (!m_keyboardHandler.InstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup)) {
             ::MessageBoxW(
                 m_hWnd,
                 Localization::Text(IDS_MAIN_HOTKEY_HOOK_ERROR).c_str(),
@@ -2102,10 +2102,11 @@ LRESULT MainWindow::OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
         return HTCLIENT;
     }
 
-    const bool left = point.x < rect.left + kResizeBorder;
-    const bool right = point.x >= rect.right - kResizeBorder;
-    const bool top = point.y < rect.top + kResizeBorder;
-    const bool bottom = point.y >= rect.bottom - kResizeBorder;
+    const int resize_border = MulDiv(kResizeBorder, UiFont::DpiForWindow(m_hWnd), 96);
+    const bool left = point.x < rect.left + resize_border;
+    const bool right = point.x >= rect.right - resize_border;
+    const bool top = point.y < rect.top + resize_border;
+    const bool bottom = point.y >= rect.bottom - resize_border;
 
     handled = TRUE;
     if (top && left) return HTTOPLEFT;
