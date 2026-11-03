@@ -56,8 +56,6 @@ void KeyboardHandler::Shutdown() {
     m_pendingWinFlags = 0;
     m_winKeyPassedThrough = false;
     m_suppressingWinKey = false;
-    m_pendingOpenPopup = false;
-    m_pendingOpenTarget = nullptr;
     m_hotkeyRegistered = false;
     SetHotkeyCaptureActive(false);
     m_callbacks = {};
@@ -216,14 +214,6 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
                     handler->m_capturedKey = 0;
                     handler->m_capturedKeyReleased = false;
                 }
-                // Open only after Win-up so activation is not stolen mid-chord.
-                if (handler->m_pendingOpenPopup && handler->m_owner.m_hWnd != nullptr) {
-                    const HWND target = handler->m_pendingOpenTarget;
-                    handler->m_pendingOpenPopup = false;
-                    handler->m_pendingOpenTarget = nullptr;
-                    PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
-                                 reinterpret_cast<LPARAM>(target));
-                }
                 return 1;
             }
             if (handler->m_pendingWinKey == key->vkCode) {
@@ -256,18 +246,21 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         return CallNextHookEx(hook, code, message, data);
     }
 
-    if (!capturingHotkey && keyDown && handler->m_pendingWinKey != 0 &&
+    if (!capturingHotkey && !handler->m_suppressingOpenKey && keyDown &&
+        handler->m_pendingWinKey != 0 &&
         key->vkCode == handler->m_settings.open_hotkey.virtual_key) {
         UINT pressed = 0;
         if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) pressed |= MOD_ALT;
         if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) pressed |= MOD_CONTROL;
         if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) pressed |= MOD_SHIFT;
         pressed |= MOD_WIN;
-        if (pressed == configuredModifiers) {
+        if (pressed == configuredModifiers && handler->m_owner.m_hWnd != nullptr) {
+            // Toggle on key-down. m_suppressingOpenKey swallows auto-repeat until
+            // this V is released, so a second press while Win is held toggles again.
             handler->m_suppressingOpenKey = true;
             handler->m_suppressingWinKey = true;
-            handler->m_pendingOpenPopup = true;
-            handler->m_pendingOpenTarget = GetForegroundWindow();
+            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
+                         reinterpret_cast<LPARAM>(GetForegroundWindow()));
             return 1;
         }
     }
