@@ -21,7 +21,7 @@
 | P0 | 关机 / 预览线程亲和 | 0 | 0 | 4 | 0 | 0 |
 | P1 | 剪贴板回声去重 | 0 | 0 | 4 | 0 | 0 |
 | P2 | 粘贴可靠性 | 0 | 0 | 7 | 0 | 0 |
-| P3 | UI / 设置一致性 | 6 | 0 | 0 | 0 | 0 |
+| P3 | UI / 设置一致性 | 0 | 0 | 6 | 0 | 0 |
 | P4 | 捕获正确性 | 4 | 0 | 0 | 0 | 0 |
 | P5 | 性能与卡顿 | 3 | 0 | 0 | 0 | 0 |
 | P6 | 其余 Medium | 16 | 0 | 0 | 0 | 0 |
@@ -87,12 +87,12 @@
 
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
-| M-01 | pending | Alt+托盘暂停不持久化 | [M-01](AUDIT_LOGIC_REPORT.md#M-01) | |
-| M-02 | pending | 设置窗副本覆盖托盘变更 | [M-02](AUDIT_LOGIC_REPORT.md#M-02) | |
-| M-03 | pending | m_loadingList 卡住挡粘贴 | [M-03](AUDIT_LOGIC_REPORT.md#M-03) | |
-| M-12 | pending | ignore 状态机分散 | [M-12](AUDIT_LOGIC_REPORT.md#M-12) | |
-| M-21 | pending | ignore_next 无 RC 控件 | [M-21](AUDIT_LOGIC_REPORT.md#M-21) | |
-| M-22 | pending | ignore_next 依赖 ignore_events | [M-22](AUDIT_LOGIC_REPORT.md#M-22) | |
+| M-01 | done | Alt+托盘暂停不持久化 | [M-01](AUDIT_LOGIC_REPORT.md#M-01) | ToggleIgnoreEvents→SetIgnorePolicy 统一持久化/刷新 |
+| M-02 | done | 设置窗副本覆盖托盘变更 | [M-02](AUDIT_LOGIC_REPORT.md#M-02) | SyncOpenSettingsWindow 在 ignore 变更后同步快照 |
+| M-03 | done | m_loadingList 卡住挡粘贴 | [M-03](AUDIT_LOGIC_REPORT.md#M-03) | 仅最新 generation 清 loading；拒收最新结果时清 loading |
+| M-12 | done | ignore 状态机分散 | [M-12](AUDIT_LOGIC_REPORT.md#M-12) | SetIgnorePolicy 单一入口；连带 M-01/M-02 |
+| M-21 | done | ignore_next 无 RC 控件 | [M-21](AUDIT_LOGIC_REPORT.md#M-21) | Advanced 页补 IDC_X_IGNORE_NEXT + 本地化 |
+| M-22 | done | ignore_next 依赖 ignore_events | [M-22](AUDIT_LOGIC_REPORT.md#M-22) | OnClipboardUpdate 独立 one-shot 跳过 |
 
 ## P4 — 捕获正确性
 

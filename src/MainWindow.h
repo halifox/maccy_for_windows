@@ -219,6 +219,9 @@ private:
     // Settings
     std::uint32_t ApplySettings(const AppSettings &settings, std::uint32_t requestedUpdates);
     void PersistSettings();
+    void SetIgnorePolicy(bool ignore_events, bool ignore_only_next);
+    void ToggleIgnoreEvents();
+    void SyncOpenSettingsWindow();
     void RequestUiUpdate(std::uint32_t updateMask);
     void ApplyPendingState();
     void OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates);

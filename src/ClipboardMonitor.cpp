@@ -618,11 +618,12 @@ bool ClipboardMonitor::ClearClipboard() {
 }
 
 void ClipboardMonitor::OnClipboardUpdate() {
+    // One-shot skip is independent of continuous pause (ignore_events).
+    if (m_settings.ignore_only_next_event) {
+        m_settings.ignore_only_next_event = false;
+        return;
+    }
     if (m_settings.ignore_events) {
-        if (m_settings.ignore_only_next_event) {
-            m_settings.ignore_events = false;
-            m_settings.ignore_only_next_event = false;
-        }
         return;
     }
     ReadClipboardAndSave();

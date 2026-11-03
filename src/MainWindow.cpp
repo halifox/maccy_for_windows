@@ -809,9 +809,13 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
         [this, owned_query](std::uint64_t result_generation,
                             std::vector<ClipboardItem> items,
                             std::string error) mutable {
-            if (m_exiting || result_generation != m_historyGeneration ||
-                m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
+            // Only the latest generation owns m_loadingList; stale results must not clear it.
+            if (result_generation != m_historyGeneration) {
+                return;
+            }
+            if (m_exiting || m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
                 owned_query != ReadWindowText(m_search)) {
+                m_loadingList = false;
                 return;
             }
             if (!error.empty()) {
@@ -1840,6 +1844,27 @@ void MainWindow::PersistSettings() {
     m_storage.SaveSettings(m_settings);
 }
 
+void MainWindow::SyncOpenSettingsWindow() {
+    if (m_settingsWindow != nullptr &&
+        m_settingsWindow->m_hWnd != nullptr &&
+        m_settingsWindow->IsWindow()) {
+        m_settingsWindow->SetSettingsSnapshot(m_settings);
+    }
+}
+
+void MainWindow::SetIgnorePolicy(bool ignore_events, bool ignore_only_next) {
+    m_settings.ignore_events = ignore_events;
+    m_settings.ignore_only_next_event = ignore_only_next;
+    PersistSettings();
+    SyncOpenSettingsWindow();
+    RequestUiUpdate(AppConstants::UiUpdate::kFooter | AppConstants::UiUpdate::kTray);
+}
+
+void MainWindow::ToggleIgnoreEvents() {
+    const bool ignore = !m_settings.ignore_events;
+    SetIgnorePolicy(ignore, ignore ? m_settings.ignore_only_next_event : false);
+}
+
 void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates) {
     const std::uint32_t updates = ApplySettings(settings, requestedUpdates);
     if ((requestedUpdates & AppConstants::UiUpdate::kIgnoreRules) != 0) {
@@ -2275,12 +2300,7 @@ LRESULT MainWindow::OnTrayClearCommand(WORD, WORD, HWND, BOOL& handled) {
 
 LRESULT MainWindow::OnTrayIgnoreCommand(WORD, WORD, HWND, BOOL& handled) {
     handled = TRUE;
-    m_settings.ignore_events = !m_settings.ignore_events;
-    if (!m_settings.ignore_events) {
-        m_settings.ignore_only_next_event = false;
-    }
-    PersistSettings();
-    RequestUiUpdate(AppConstants::UiUpdate::kFooter);
+    ToggleIgnoreEvents();
     return 0;
 }
 
@@ -2387,9 +2407,7 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
         if (GetKeyState(VK_MENU) & 0x8000) {
-            m_settings.ignore_events = !m_settings.ignore_events;
-            m_settings.ignore_only_next_event = false;
-            PersistSettings();
+            ToggleIgnoreEvents();
         } else {
             ShowMainWindow(PopupPosition::StatusItem);
         }
@@ -2414,7 +2432,13 @@ LRESULT MainWindow::OnUiUpdate(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
 
 LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    const bool previous_ignore_events = m_settings.ignore_events;
+    const bool previous_ignore_only = m_settings.ignore_only_next_event;
     m_applicationController.HandleClipboardUpdate();
+    if (previous_ignore_events != m_settings.ignore_events ||
+        previous_ignore_only != m_settings.ignore_only_next_event) {
+        SyncOpenSettingsWindow();
+    }
     return 0;
 }
 
