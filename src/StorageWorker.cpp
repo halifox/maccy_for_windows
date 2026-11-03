@@ -61,6 +61,10 @@ void StorageWorker::Stop() {
 
 void StorageWorker::SetUiWindow(HWND window) noexcept {
     m_uiWindow.store(window, std::memory_order_release);
+    if (window == nullptr) {
+        std::lock_guard lock(m_callbackMutex);
+        m_uiCallbacks.clear();
+    }
 }
 
 void StorageWorker::DrainUiCallbacks() {

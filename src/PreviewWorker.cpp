@@ -98,6 +98,10 @@ void PreviewWorker::Stop() {
 
 void PreviewWorker::SetUiWindow(HWND window) noexcept {
     m_uiWindow.store(window, std::memory_order_release);
+    if (window == nullptr) {
+        std::lock_guard lock(m_resultMutex);
+        m_uiCallbacks.clear();
+    }
 }
 
 bool PreviewWorker::Request(

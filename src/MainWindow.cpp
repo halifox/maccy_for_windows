@@ -809,7 +809,7 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
         [this, owned_query](std::uint64_t result_generation,
                             std::vector<ClipboardItem> items,
                             std::string error) mutable {
-            if (result_generation != m_historyGeneration ||
+            if (m_exiting || result_generation != m_historyGeneration ||
                 m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
                 owned_query != ReadWindowText(m_search)) {
                 return;
@@ -870,7 +870,7 @@ void MainWindow::LoadImageThumbnails() {
             [this, id, request, generation](std::optional<ClipboardItem> loaded, std::string) {
                 const auto current = [this, id, request, generation]() {
                     const auto it = m_thumbnailRequests.find(id);
-                    return generation == m_thumbnailGeneration &&
+                    return !m_exiting && generation == m_thumbnailGeneration &&
                         it != m_thumbnailRequests.end() && it->second == request &&
                         m_hWnd != nullptr && IsWindow();
                 };
@@ -892,7 +892,8 @@ void MainWindow::LoadImageThumbnails() {
                     [this, id, request](sqlite3_int64 result_id, std::uint64_t result_generation,
                                         std::optional<PreviewBitmap> bitmap) {
                         const auto it = m_thumbnailRequests.find(result_id);
-                        if (result_id != id || result_generation != m_thumbnailGeneration ||
+                        if (m_exiting || result_id != id ||
+                            result_generation != m_thumbnailGeneration ||
                             it == m_thumbnailRequests.end() || it->second != request ||
                             m_hWnd == nullptr || !IsWindow() || !bitmap.has_value()) {
                             return;
@@ -1201,6 +1202,9 @@ void MainWindow::PasteItem(int index) {
                 std::string error
             ) mutable {
                 m_pasteInProgress = false;
+                if (m_exiting || m_hWnd == nullptr || !IsWindow()) {
+                    return;
+                }
                 bool success = error.empty() && item.has_value();
                 if (!success && error.empty()) {
                     error.clear();
@@ -1522,11 +1526,11 @@ void MainWindow::ExitApplication(ExitReason reason) {
     if (m_settingsWindow != nullptr) {
         m_settingsWindow->DestroyForOwner();
     }
-    // Destroy UI-thread preview HWND, then stop the loader thread (C-01 / C-02 / M-17).
+    // Drop async UI work, destroy preview HWND, then destroy the owner (H-05 / C-01).
     if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
         m_previewWindow.DestroyWindow();
     }
-    m_previewWorker.Stop();
+    m_applicationController.Shutdown();
     DestroyWindow();
 }
 
