@@ -1482,6 +1482,8 @@ void MainWindow::ExitApplication(ExitReason reason) {
     if (m_settingsWindow != nullptr) {
         m_settingsWindow->DestroyForOwner();
     }
+    // Stop the preview worker before destroying the owner HWND (C-01 / M-17).
+    m_previewWorker.Stop();
     DestroyWindow();
 }
 

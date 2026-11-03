@@ -64,7 +64,8 @@ void ApplicationController::Shutdown() noexcept {
     m_shutdown = true;
 
     StopUpdateChecks();
-    m_previewWorker.SetUiWindow(nullptr);
+    // Tear down the preview thread/window before the owner HWND goes away.
+    m_previewWorker.Stop();
     m_thumbnailWorker.SetUiWindow(nullptr);
     m_thumbnailWorker.Stop();
     m_clipboard.Shutdown();
