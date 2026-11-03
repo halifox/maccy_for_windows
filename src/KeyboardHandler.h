@@ -9,6 +9,7 @@
 #include <atlapp.h>
 #include <atlctrls.h>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -88,29 +89,32 @@ public:
     void InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
                               CListBox historyList, CListBox pinsList);
 
-    // Callbacks
-    using PreviewCallback = void (*)(void* context, sqlite3_int64 itemId, bool keyboard);
-    using PasteCallback = void (*)(void* context, int index);
-    using SearchCallback = void (*)(void* context);
-    using TogglePinCallback = void (*)(void* context);
-    using DeleteItemCallback = void (*)(void* context);
-    using TogglePreviewCallback = void (*)(void* context);
-    using ClearHistoryCallback = void (*)(void* context, bool all);
-    using OpenSettingsCallback = void (*)(void* context);
-    using ExitCallback = void (*)(void* context);
-    using HideWindowCallback = void (*)(void* context);
+    // Owner actions (std::function — L-18; no void* trampolines).
+    using PreviewCallback = std::function<void(sqlite3_int64 itemId, bool keyboard)>;
+    using PasteCallback = std::function<void(int index)>;
+    using SearchCallback = std::function<void()>;
+    using TogglePinCallback = std::function<void()>;
+    using DeleteItemCallback = std::function<void()>;
+    using TogglePreviewCallback = std::function<void()>;
+    using ClearHistoryCallback = std::function<void(bool all)>;
+    using OpenSettingsCallback = std::function<void()>;
+    using ExitCallback = std::function<void()>;
+    using HideWindowCallback = std::function<void()>;
 
-    void SetCallbacks(void* context,
-                     PreviewCallback previewCb,
-                     PasteCallback pasteCb,
-                     SearchCallback searchCb,
-                     TogglePinCallback togglePinCb,
-                     DeleteItemCallback deleteItemCb,
-                     TogglePreviewCallback togglePreviewCb,
-                     ClearHistoryCallback clearHistoryCb,
-                     OpenSettingsCallback openSettingsCb,
-                     ExitCallback exitCb,
-                     HideWindowCallback hideWindowCb);
+    struct Callbacks {
+        PreviewCallback preview;
+        PasteCallback paste;
+        SearchCallback search;
+        TogglePinCallback toggle_pin;
+        DeleteItemCallback delete_item;
+        TogglePreviewCallback toggle_preview;
+        ClearHistoryCallback clear_history;
+        OpenSettingsCallback open_settings;
+        ExitCallback exit;
+        HideWindowCallback hide_window;
+    };
+
+    void SetCallbacks(Callbacks callbacks);
 
 private:
     // Helper methods
@@ -159,16 +163,5 @@ private:
 
     CListBox m_hoverList;
 
-    // Callbacks
-    void* m_callbackContext = nullptr;
-    PreviewCallback m_previewCallback = nullptr;
-    PasteCallback m_pasteCallback = nullptr;
-    SearchCallback m_searchCallback = nullptr;
-    TogglePinCallback m_togglePinCallback = nullptr;
-    DeleteItemCallback m_deleteItemCallback = nullptr;
-    TogglePreviewCallback m_togglePreviewCallback = nullptr;
-    ClearHistoryCallback m_clearHistoryCallback = nullptr;
-    OpenSettingsCallback m_openSettingsCallback = nullptr;
-    ExitCallback m_exitCallback = nullptr;
-    HideWindowCallback m_hideWindowCallback = nullptr;
+    Callbacks m_callbacks;
 };

@@ -25,7 +25,7 @@
 | P4 | 捕获正确性 | 0 | 0 | 4 | 0 | 0 |
 | P5 | 性能与卡顿 | 0 | 0 | 3 | 0 | 0 |
 | P6 | 其余 Medium | 0 | 0 | 9 | 0 | 0 |
-| P7 | Low / 工程债 | 0 | 0 | 21 | 0 | 1 |
+| P7 | Low / 工程债 | 0 | 0 | 22 | 0 | 0 |
 
 > 改条目状态后，**重算本表各列计数**（同 ID 只计一次）。
 
@@ -148,7 +148,7 @@
 | L-15 | done | 自定义消息 ID 间隙 | [L-15](AUDIT_LOGIC_REPORT.md#L-15) | Constants.h WM_APP 分配表注释 |
 | L-16 | done | PinKeys 集合固定 | [L-16](AUDIT_LOGIC_REPORT.md#L-16) | 增加 0–9；仍排除 a/q/v/w/z |
 | L-17 | done | HTML/RTF 剥离粗糙 | [L-17](AUDIT_LOGIC_REPORT.md#L-17) | 去 script/style、数字实体；RTF \\u/\\'hh |
-| L-18 | wontfix | KeyboardHandler C 回调风格 | [L-18](AUDIT_LOGIC_REPORT.md#L-18) | 工程风格项；现有 void* 回调稳定且 KISS |
+| L-18 | done | KeyboardHandler C 回调风格 | [L-18](AUDIT_LOGIC_REPORT.md#L-18) | std::function Callbacks；去掉 void* 静态跳板 |
 | L-19 | done | 测试覆盖缺口 | [L-19](AUDIT_LOGIC_REPORT.md#L-19) | CoreRulesTests 增 strip/regex/ignore/pin 数字 |
 | L-20 | done | 页脚 Enter 无动作 | [L-20](AUDIT_LOGIC_REPORT.md#L-20) | Enter 发送 WM_COMMAND 激活页脚按钮 |
 | L-21 | done | 小键盘序号粘贴 | [L-21](AUDIT_LOGIC_REPORT.md#L-21) | VK_NUMPAD0–9 归一化到数字键 |

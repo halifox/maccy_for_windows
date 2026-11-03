@@ -289,18 +289,6 @@ private:
     LRESULT OnMenuButtonKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnMenuButtonChar(UINT, WPARAM, LPARAM, BOOL& handled);
 
-    // Callback handlers for KeyboardHandler
-    static void OnPreviewCallback(void* context, sqlite3_int64 itemId, bool keyboard);
-    static void OnPasteCallback(void* context, int index);
-    static void OnScheduleSearchCallback(void* context);
-    static void OnTogglePinCallback(void* context);
-    static void OnDeleteItemCallback(void* context);
-    static void OnTogglePreviewCallback(void* context);
-    static void OnClearHistoryCallback(void* context, bool all);
-    static void OnOpenSettingsCallback(void* context);
-    static void OnExitCallback(void* context);
-    static void OnHideWindowCallback(void* context);
-
     StorageWorker &m_storage;
     ThumbnailWorker &m_thumbnailWorker;
     AppSettings m_settings;

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <imm.h>
+#include <utility>
 #include <windowsx.h>
 
 KeyboardHandler* KeyboardHandler::s_hookOwner = nullptr;
@@ -57,6 +58,7 @@ void KeyboardHandler::Shutdown() {
     m_suppressingWinKey = false;
     m_hotkeyRegistered = false;
     SetHotkeyCaptureActive(false);
+    m_callbacks = {};
 }
 
 bool KeyboardHandler::InstallOpenHotkeyHook(UINT) {
@@ -440,8 +442,8 @@ void KeyboardHandler::OnHistoryMouseMove(CListBox window, POINT point,
     if (index == m_hoveredItemIndex && item_id == m_hoveredItemId) {
         if (m_activeFooter >= 0 || m_activeItemIndex != index) {
             SetActiveHistoryItem(index, items, historyList, pinsList, false);
-            if (m_previewCallback && m_callbackContext) {
-                m_previewCallback(m_callbackContext, item_id, false);
+            if (m_callbacks.preview) {
+                m_callbacks.preview(item_id, false);
             }
         }
         return;
@@ -455,9 +457,9 @@ void KeyboardHandler::OnHistoryMouseMove(CListBox window, POINT point,
     InvalidateHistoryItem(previous_index, items, historyList, pinsList);
     InvalidateHistoryItem(index, items, historyList, pinsList);
 
-    if (m_previewCallback && m_callbackContext) {
-        m_previewCallback(m_callbackContext, item_id, false);
-    }
+    if (m_callbacks.preview) {
+                m_callbacks.preview(item_id, false);
+            }
 }
 
 void KeyboardHandler::OnHistoryMouseLeave() {
@@ -511,25 +513,25 @@ void KeyboardHandler::NavigateHistoryFromSearch(bool forward,
         SetActiveFooter(target - count, items);
     } else {
         SetActiveHistoryItem(target, items, historyList, pinsList);
-        if (m_previewCallback && m_callbackContext) {
-            m_previewCallback(m_callbackContext, m_activeItemId, true);
-        }
+        if (m_callbacks.preview) {
+                m_callbacks.preview(m_activeItemId, true);
+            }
     }
 }
 
 bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items) {
-    if (m_searchCallback && search.m_hWnd != nullptr &&
+    if (m_callbacks.search && search.m_hWnd != nullptr &&
         (key == VK_RETURN || key == VK_UP || key == VK_DOWN || key == VK_PRIOR || key == VK_NEXT ||
          (GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000))) {
-        m_searchCallback(m_callbackContext);
+        m_callbacks.search();
     }
 
     if (HandlePopupShortcut(key, items)) return true;
 
     const bool ctrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
     if (key == VK_ESCAPE) {
-        if (m_hideWindowCallback && m_callbackContext) {
-            m_hideWindowCallback(m_callbackContext);
+        if (m_callbacks.hide_window) {
+            m_callbacks.hide_window();
         }
         return true;
     }
@@ -546,8 +548,8 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std:
                     reinterpret_cast<LPARAM>(button.m_hWnd)
                 );
             }
-        } else if (m_pasteCallback && m_callbackContext) {
-            m_pasteCallback(m_callbackContext, m_activeItemIndex);
+        } else if (m_callbacks.paste) {
+            m_callbacks.paste(m_activeItemIndex);
         }
         return true;
     }
@@ -564,8 +566,8 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std:
         if (!items.empty()) {
             const int target = (key == VK_HOME || key == VK_PRIOR) ? 0 : static_cast<int>(items.size()) - 1;
             SetActiveHistoryItem(target, items, m_historyList, m_pinsList);
-            if (m_previewCallback && m_callbackContext) {
-                m_previewCallback(m_callbackContext, m_activeItemId, true);
+            if (m_callbacks.preview) {
+                m_callbacks.preview(m_activeItemId, true);
             }
         }
         return true;
@@ -581,20 +583,20 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std:
 
 bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<ClipboardItem>& items) {
     if (IsHotKeyPressed(m_settings.pin_hotkey, key)) {
-        if (m_togglePinCallback && m_callbackContext) {
-            m_togglePinCallback(m_callbackContext);
+        if (m_callbacks.toggle_pin) {
+            m_callbacks.toggle_pin();
         }
         return true;
     }
     if (IsHotKeyPressed(m_settings.delete_hotkey, key)) {
-        if (m_deleteItemCallback && m_callbackContext) {
-            m_deleteItemCallback(m_callbackContext);
+        if (m_callbacks.delete_item) {
+            m_callbacks.delete_item();
         }
         return true;
     }
     if (IsHotKeyPressed(m_settings.preview_hotkey, key)) {
-        if (m_togglePreviewCallback && m_callbackContext) {
-            m_togglePreviewCallback(m_callbackContext);
+        if (m_callbacks.toggle_preview) {
+            m_callbacks.toggle_preview();
         }
         return true;
     }
@@ -604,20 +606,20 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
     const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
     if (ctrl && alt && key == VK_BACK) {
-        if (m_clearHistoryCallback && m_callbackContext) {
-            m_clearHistoryCallback(m_callbackContext, shift);
+        if (m_callbacks.clear_history) {
+            m_callbacks.clear_history(shift);
         }
         return true;
     }
     if (ctrl && !alt && key == VK_OEM_COMMA) {
-        if (m_openSettingsCallback && m_callbackContext) {
-            m_openSettingsCallback(m_callbackContext);
+        if (m_callbacks.open_settings) {
+            m_callbacks.open_settings();
         }
         return true;
     }
     if (ctrl && !alt && key == 'Q') {
-        if (m_exitCallback && m_callbackContext) {
-            m_exitCallback(m_callbackContext);
+        if (m_callbacks.exit) {
+            m_callbacks.exit();
         }
         return true;
     }
@@ -640,8 +642,8 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
                 : (++number <= 9 && digit_key == static_cast<WPARAM>('0' + number));
             if (matches) {
                 SetActiveHistoryItem(static_cast<int>(i), items, m_historyList, m_pinsList);
-                if (m_pasteCallback && m_callbackContext) {
-                    m_pasteCallback(m_callbackContext, static_cast<int>(i));
+                if (m_callbacks.paste) {
+                    m_callbacks.paste(static_cast<int>(i));
                 }
                 return true;
             }
@@ -654,26 +656,6 @@ bool KeyboardHandler::OnChar(WPARAM character) {
     return m_settings.show_search && character >= 0x20 && character != 0x7f;
 }
 
-void KeyboardHandler::SetCallbacks(void* context,
-                                  PreviewCallback previewCb,
-                                  PasteCallback pasteCb,
-                                  SearchCallback searchCb,
-                                  TogglePinCallback togglePinCb,
-                                  DeleteItemCallback deleteItemCb,
-                                  TogglePreviewCallback togglePreviewCb,
-                                  ClearHistoryCallback clearHistoryCb,
-                                  OpenSettingsCallback openSettingsCb,
-                                  ExitCallback exitCb,
-                                  HideWindowCallback hideWindowCb) {
-    m_callbackContext = context;
-    m_previewCallback = previewCb;
-    m_pasteCallback = pasteCb;
-    m_searchCallback = searchCb;
-    m_togglePinCallback = togglePinCb;
-    m_deleteItemCallback = deleteItemCb;
-    m_togglePreviewCallback = togglePreviewCb;
-    m_clearHistoryCallback = clearHistoryCb;
-    m_openSettingsCallback = openSettingsCb;
-    m_exitCallback = exitCb;
-    m_hideWindowCallback = hideWindowCb;
+void KeyboardHandler::SetCallbacks(Callbacks callbacks) {
+    m_callbacks = std::move(callbacks);
 }

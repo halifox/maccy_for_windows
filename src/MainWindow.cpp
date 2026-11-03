@@ -1913,60 +1913,6 @@ void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t re
     RequestUiUpdate(updates);
 }
 
-// Callback implementations for KeyboardHandler
-void MainWindow::OnPreviewCallback(void* context, sqlite3_int64 itemId, bool) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->SchedulePreviewForItem(itemId);
-}
-
-void MainWindow::OnPasteCallback(void* context, int index) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->PasteItem(index);
-}
-
-void MainWindow::OnScheduleSearchCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    const auto query = ReadWindowText(window->m_search);
-    if (query != window->m_searchQuery) {
-        window->RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-    }
-}
-
-void MainWindow::OnTogglePinCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->ToggleSelectedPin();
-}
-
-void MainWindow::OnDeleteItemCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->DeleteSelectedItem();
-}
-
-void MainWindow::OnTogglePreviewCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->TogglePreview();
-}
-
-void MainWindow::OnClearHistoryCallback(void* context, bool all) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->ClearHistory(all);
-}
-
-void MainWindow::OnOpenSettingsCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->OpenSettings();
-}
-
-void MainWindow::OnExitCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->ExitApplication();
-}
-
-void MainWindow::OnHideWindowCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->HideMainWindow();
-}
-
 // Message handlers
 bool MainWindow::InitializeHistoryControls() {
     m_applicationController.AttachWindow(m_hWnd);
@@ -2003,19 +1949,25 @@ bool MainWindow::InitializeHistoryControls() {
         m_historyListControls.PinsListWindow(),
         FooterButtons()
     );
-    m_keyboardHandler.SetCallbacks(
-        this,
-        OnPreviewCallback,
-        OnPasteCallback,
-        OnScheduleSearchCallback,
-        OnTogglePinCallback,
-        OnDeleteItemCallback,
-        OnTogglePreviewCallback,
-        OnClearHistoryCallback,
-        OnOpenSettingsCallback,
-        OnExitCallback,
-        OnHideWindowCallback
-    );
+    m_keyboardHandler.SetCallbacks({
+        .preview = [this](sqlite3_int64 item_id, bool) {
+            SchedulePreviewForItem(item_id);
+        },
+        .paste = [this](int index) { PasteItem(index); },
+        .search = [this]() {
+            const auto query = ReadWindowText(m_search);
+            if (query != m_searchQuery) {
+                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+            }
+        },
+        .toggle_pin = [this]() { ToggleSelectedPin(); },
+        .delete_item = [this]() { DeleteSelectedItem(); },
+        .toggle_preview = [this]() { TogglePreview(); },
+        .clear_history = [this](bool all) { ClearHistory(all); },
+        .open_settings = [this]() { OpenSettings(); },
+        .exit = [this]() { ExitApplication(); },
+        .hide_window = [this]() { HideMainWindow(); },
+    });
 
     if (!m_isolated) {
         if (!m_keyboardHandler.InstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup)) {
