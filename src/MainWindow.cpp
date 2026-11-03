@@ -2396,10 +2396,18 @@ LRESULT MainWindow::OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled) {
 }
 
 LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
-    if (wParam != kTrayIconId) {
+    // NOTIFYICON_VERSION_4 packs icon id in HIWORD(lParam) and the event in
+    // LOWORD(lParam); pre-v4 used wParam=id and lParam=mouse message (L-13).
+    const UINT event = LOWORD(lParam);
+    const UINT icon_id = HIWORD(lParam) != 0
+        ? HIWORD(lParam)
+        : static_cast<UINT>(wParam);
+    if (icon_id != kTrayIconId && wParam != kTrayIconId) {
         return 0;
     }
-    switch (static_cast<UINT>(lParam)) {
+    switch (event) {
+    case NIN_SELECT:
+    case NIN_KEYSELECT:
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
         if (GetKeyState(VK_MENU) & 0x8000) {
@@ -2408,8 +2416,8 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
             ShowMainWindow(PopupPosition::StatusItem);
         }
         break;
-    case WM_RBUTTONUP:
     case WM_CONTEXTMENU:
+    case WM_RBUTTONUP:
         m_pasteController.CaptureTargetWindow();
         ShowTrayMenu();
         break;

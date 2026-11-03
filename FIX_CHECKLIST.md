@@ -143,7 +143,7 @@
 | L-10 | done | FilesPreview 无总长度上限 | [L-10](AUDIT_LOGIC_REPORT.md#L-10) | 4096 字符 cap + StoredPreview |
 | L-11 | done | 白名单模式空 application 丢弃 | [L-11](AUDIT_LOGIC_REPORT.md#L-11) | 未知源进程时不忽略（允许入库） |
 | L-12 | done | RegisterGlobalHotKey 名实不符 | [L-12](AUDIT_LOGIC_REPORT.md#L-12) | 重命名 InstallOpenHotkeyHook |
-| L-13 | done | 托盘未 NIM_SETVERSION | [L-13](AUDIT_LOGIC_REPORT.md#L-13) | NIM_ADD 后 NOTIFYICON_VERSION_4 |
+| L-13 | done | 托盘未 NIM_SETVERSION | [L-13](AUDIT_LOGIC_REPORT.md#L-13) | NIM_SETVERSION_4 + OnTrayIcon 按 NIN_SELECT/HIWORD 解析 |
 | L-14 | done | HasPendingKeyboardInput 窥视局限 | [L-14](AUDIT_LOGIC_REPORT.md#L-14) | Imm composition + IME 消息 Peek |
 | L-15 | done | 自定义消息 ID 间隙 | [L-15](AUDIT_LOGIC_REPORT.md#L-15) | Constants.h WM_APP 分配表注释 |
 | L-16 | done | PinKeys 集合固定 | [L-16](AUDIT_LOGIC_REPORT.md#L-16) | 增加 0–9；仍排除 a/q/v/w/z |
