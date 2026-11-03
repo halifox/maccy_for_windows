@@ -246,7 +246,7 @@ Database::Database(const std::filesystem::path &path)
         Exec("PRAGMA journal_mode = WAL;");
         Exec("PRAGMA synchronous = NORMAL;");
         Exec("PRAGMA temp_store = MEMORY;");
-        Exec("PRAGMA busy_timeout = 1000;");
+        Exec("PRAGMA busy_timeout = 5000;");
         Exec(
             "CREATE TABLE IF NOT EXISTS app_state ("
             "key TEXT PRIMARY KEY,"

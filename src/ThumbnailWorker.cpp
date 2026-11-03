@@ -52,6 +52,10 @@ void ThumbnailWorker::Submit(Request request, ResultCallback callback) {
     if (request.item_id <= 0 || !callback || !m_thread.joinable()) {
         return;
     }
+    if (!m_comAvailable.load(std::memory_order_acquire)) {
+        PostResult(request.item_id, request.generation, std::nullopt, std::move(callback));
+        return;
+    }
     {
         std::lock_guard lock(m_jobMutex);
         if (m_stopping) {
@@ -78,10 +82,45 @@ void ThumbnailWorker::DrainUiCallbacks() {
 void ThumbnailWorker::ThreadMain(std::stop_token stop_token) {
     const HRESULT com_result = ::CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(com_result) && com_result != RPC_E_CHANGED_MODE) {
+        m_comAvailable.store(false, std::memory_order_release);
+        ::OutputDebugStringA("Thumbnail worker COM initialization failed\n");
+        std::deque<Job> pending;
+        {
+            std::lock_guard lock(m_jobMutex);
+            pending.swap(m_jobs);
+        }
+        for (auto &job : pending) {
+            PostResult(
+                job.request.item_id,
+                job.request.generation,
+                std::nullopt,
+                std::move(job.callback)
+            );
+        }
+        while (!stop_token.stop_requested()) {
+            Job job;
+            {
+                std::unique_lock lock(m_jobMutex);
+                m_jobCondition.wait(lock, [&] {
+                    return stop_token.stop_requested() || !m_jobs.empty();
+                });
+                if (stop_token.stop_requested()) {
+                    break;
+                }
+                job = std::move(m_jobs.front());
+                m_jobs.pop_front();
+            }
+            PostResult(
+                job.request.item_id,
+                job.request.generation,
+                std::nullopt,
+                std::move(job.callback)
+            );
+        }
         return;
     }
+    m_comAvailable.store(true, std::memory_order_release);
     const bool com_initialized = SUCCEEDED(com_result);
-    const bool com_available = com_initialized || com_result == RPC_E_CHANGED_MODE;
     while (!stop_token.stop_requested()) {
         Job job;
         {
@@ -95,8 +134,8 @@ void ThumbnailWorker::ThreadMain(std::stop_token stop_token) {
             job = std::move(m_jobs.front());
             m_jobs.pop_front();
         }
-        if (!com_available || stop_token.stop_requested()) {
-            continue;
+        if (stop_token.stop_requested()) {
+            break;
         }
         auto bitmap = DecodePreviewBitmap(
             job.request.item,

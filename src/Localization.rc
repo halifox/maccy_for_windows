@@ -55,6 +55,8 @@ BEGIN
     IDS_MAIN_INIT_CONTROL_ERROR "Unable to initialize main window controls."
     IDS_MAIN_INIT_CLIPBOARD_ERROR "Unable to register clipboard listener."
     IDS_MAIN_PREVIEW_LOAD_ERROR "Unable to load preview."
+    IDS_MAIN_HOTKEY_HOOK_ERROR "Unable to install the global keyboard hook. Open the popup from the tray icon, or check antivirus / accessibility permissions."
+    IDS_MAIN_HOTKEY_HOOK_ERROR "Unable to install the global keyboard hook. Open the popup from the tray icon, or check antivirus / accessibility permissions."
 
     IDS_UPDATE_NETWORK_ERROR "Unable to fetch the GitHub release: {0}"
     IDS_UPDATE_HTTP_ERROR "GitHub returned HTTP {0}: {1}"
@@ -267,6 +269,7 @@ BEGIN
     IDS_MAIN_INIT_CONTROL_ERROR "无法初始化主窗口控件。"
     IDS_MAIN_INIT_CLIPBOARD_ERROR "无法注册剪贴板监听。"
     IDS_MAIN_PREVIEW_LOAD_ERROR "无法加载预览。"
+    IDS_MAIN_HOTKEY_HOOK_ERROR "无法安装全局键盘钩子。请从托盘图标打开弹窗，或检查杀毒软件 / 辅助功能权限。"
 
     IDS_UPDATE_NETWORK_ERROR "无法获取 GitHub Release：{0}"
     IDS_UPDATE_HTTP_ERROR "GitHub 返回 HTTP {0}：{1}"

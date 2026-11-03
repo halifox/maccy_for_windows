@@ -2,6 +2,7 @@
 #include "AutoSizeText.h"
 #include "Constants.h"
 #include "ClipboardRules.h"
+#include "KeyboardHandler.h"
 #include "Localization.h"
 
 #include <windows.h>
@@ -539,12 +540,14 @@ LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modi
 }
 
 LRESULT HotkeyCaptureEdit::OnSetFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    KeyboardHandler::SetHotkeyCaptureActive(true);
     SetWindowText(Localization::Text(IDS_HOTKEY_PRESS).c_str());
     handled = FALSE;
     return 0;
 }
 
 LRESULT HotkeyCaptureEdit::OnKillFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    KeyboardHandler::SetHotkeyCaptureActive(false);
     UpdateText();
     handled = FALSE;
     return 0;

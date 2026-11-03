@@ -4,6 +4,7 @@
 #include "Constants.h"
 
 #include <array>
+#include <atomic>
 #include <atlbase.h>
 #include <atlapp.h>
 #include <atlctrls.h>
@@ -32,6 +33,8 @@ public:
     bool RegisterGlobalHotKey(UINT hotkeyId);
     void UnregisterGlobalHotKey(UINT hotkeyId);
     bool IsHotkeyRegistered() const { return m_hotkeyRegistered; }
+    static void SetHotkeyCaptureActive(bool active) noexcept;
+    static bool IsHotkeyCaptureActive() noexcept;
 
     // Input handling
     bool HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items);
@@ -135,11 +138,14 @@ private:
     UINT m_capturedModifiers = 0;
     bool m_capturedKeyReleased = false;
     UINT m_pendingWinKey = 0;
+    DWORD m_pendingWinScan = 0;
+    DWORD m_pendingWinFlags = 0;
     bool m_winKeyPassedThrough = false;
     bool m_suppressingWinKey = false;
 
     static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM message, LPARAM data);
     static KeyboardHandler* s_hookOwner;
+    static std::atomic<bool> s_hotkeyCaptureActive;
     bool m_keyboardNavigating = false;
     bool m_imeComposing = false;
 

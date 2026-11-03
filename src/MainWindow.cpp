@@ -899,10 +899,27 @@ void MainWindow::LoadImageThumbnails() {
                         if (m_exiting || result_id != id ||
                             result_generation != m_thumbnailGeneration ||
                             it == m_thumbnailRequests.end() || it->second != request ||
-                            m_hWnd == nullptr || !IsWindow() || !bitmap.has_value()) {
+                            m_hWnd == nullptr || !IsWindow() || !bitmap.has_value() ||
+                            bitmap->handle == nullptr) {
                             return;
                         }
-                        m_historyRenderer.SetImageThumbnail(result_id, std::move(*bitmap));
+                        // Rematerialize on the UI thread so GDI ownership matches (M-08).
+                        const int bitmap_width = bitmap->width;
+                        const int bitmap_height = bitmap->height;
+                        const HBITMAP source = bitmap->Release();
+                        const HBITMAP ui_copy = static_cast<HBITMAP>(::CopyImage(
+                            source,
+                            IMAGE_BITMAP,
+                            0,
+                            0,
+                            LR_CREATEDIBSECTION
+                        ));
+                        ::DeleteObject(source);
+                        if (ui_copy == nullptr) {
+                            return;
+                        }
+                        PreviewBitmap ui_bitmap(ui_copy, bitmap_width, bitmap_height);
+                        m_historyRenderer.SetImageThumbnail(result_id, std::move(ui_bitmap));
                         m_historyListControls.UpdateItemHeight(result_id);
                         for (CListBox *list : {
                                  &m_historyListControls.HistoryListWindow(),
@@ -1982,7 +1999,14 @@ bool MainWindow::InitializeHistoryControls() {
     );
 
     if (!m_isolated) {
-        m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
+        if (!m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup)) {
+            ::MessageBoxW(
+                m_hWnd,
+                Localization::Text(IDS_MAIN_HOTKEY_HOOK_ERROR).c_str(),
+                Localization::Text(IDS_MAIN_INIT_CONTROL_ERROR).c_str(),
+                MB_OK | MB_ICONWARNING
+            );
+        }
     }
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout |
                     AppConstants::UiUpdate::kTray);

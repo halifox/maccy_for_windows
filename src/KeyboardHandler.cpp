@@ -8,6 +8,15 @@
 #include <windowsx.h>
 
 KeyboardHandler* KeyboardHandler::s_hookOwner = nullptr;
+std::atomic<bool> KeyboardHandler::s_hotkeyCaptureActive{false};
+
+void KeyboardHandler::SetHotkeyCaptureActive(bool active) noexcept {
+    s_hotkeyCaptureActive.store(active, std::memory_order_release);
+}
+
+bool KeyboardHandler::IsHotkeyCaptureActive() noexcept {
+    return s_hotkeyCaptureActive.load(std::memory_order_acquire);
+}
 
 KeyboardHandler::KeyboardHandler(AppSettings& settings)
     : m_settings(settings) {}
@@ -42,9 +51,12 @@ void KeyboardHandler::Shutdown() {
     m_capturedModifiers = 0;
     m_capturedKeyReleased = false;
     m_pendingWinKey = 0;
+    m_pendingWinScan = 0;
+    m_pendingWinFlags = 0;
     m_winKeyPassedThrough = false;
     m_suppressingWinKey = false;
     m_hotkeyRegistered = false;
+    SetHotkeyCaptureActive(false);
 }
 
 bool KeyboardHandler::RegisterGlobalHotKey(UINT) {
@@ -82,16 +94,16 @@ void KeyboardHandler::UnregisterGlobalHotKey(UINT) {
 }
 
 LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message, LPARAM data) {
-    if (code < 0 || s_hookOwner == nullptr) {
-        return CallNextHookEx(nullptr, code, message, data);
-    }
-
     KeyboardHandler* const handler = s_hookOwner;
+    const HHOOK hook = handler != nullptr ? handler->m_keyboardHook : nullptr;
+    if (code < 0 || handler == nullptr) {
+        return CallNextHookEx(hook, code, message, data);
+    }
     const auto* const key = reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
     const bool keyDown = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
     const bool keyUp = message == WM_KEYUP || message == WM_SYSKEYUP;
     if ((key->flags & LLKHF_INJECTED) != 0) {
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     const bool isWinKey = key->vkCode == VK_LWIN || key->vkCode == VK_RWIN;
@@ -100,11 +112,8 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         key->vkCode == VK_RCONTROL || key->vkCode == VK_MENU || key->vkCode == VK_LMENU ||
         key->vkCode == VK_RMENU;
     const HWND focusedWindow = GetFocus();
-    const int focusedControlId = focusedWindow != nullptr ? GetDlgCtrlID(focusedWindow) : 0;
-    const bool isHotkeyCaptureControl = focusedControlId == IDC_G_OPEN_HOTKEY ||
-        focusedControlId == IDC_G_PIN_HOTKEY || focusedControlId == IDC_G_DELETE_HOTKEY ||
-        focusedControlId == IDC_G_PREVIEW_HOTKEY;
-    const bool capturingHotkey = isHotkeyCaptureControl && IsWindowVisible(focusedWindow);
+    // Prefer an explicit capture flag from the settings hotkey edit (M-15).
+    const bool capturingHotkey = IsHotkeyCaptureActive();
 
     if (handler->m_suppressingCaptureKey == key->vkCode && (keyDown || keyUp)) {
         if (keyUp) {
@@ -132,10 +141,11 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         if (handler->m_pendingWinKey != 0 || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
             (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) modifiers |= MOD_WIN;
         if (modifiers == 0 && key->vkCode != VK_BACK) {
-            return CallNextHookEx(nullptr, code, message, data);
+            return CallNextHookEx(hook, code, message, data);
         }
         handler->m_suppressingCaptureKey = key->vkCode;
-        handler->m_captureTargetWindow = focusedWindow;
+        handler->m_captureTargetWindow =
+            focusedWindow != nullptr ? focusedWindow : GetForegroundWindow();
         handler->m_capturedKey = key->vkCode;
         handler->m_capturedModifiers = modifiers;
         handler->m_capturedKeyReleased = false;
@@ -172,22 +182,26 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
 
     if (isWinKey) {
         if ((configuredModifiers & MOD_WIN) == 0 && !capturingHotkey) {
-            return CallNextHookEx(nullptr, code, message, data);
+            return CallNextHookEx(hook, code, message, data);
         }
         if (keyDown) {
             if (handler->m_suppressingWinKey || handler->m_pendingWinKey == key->vkCode) {
                 return 1;
             }
             if (handler->m_winKeyPassedThrough) {
-                return CallNextHookEx(nullptr, code, message, data);
+                return CallNextHookEx(hook, code, message, data);
             }
             handler->m_pendingWinKey = key->vkCode;
+            handler->m_pendingWinScan = key->scanCode;
+            handler->m_pendingWinFlags = key->flags;
             return 1;
         }
         if (keyUp) {
             if (handler->m_suppressingWinKey) {
                 handler->m_suppressingWinKey = false;
                 handler->m_pendingWinKey = 0;
+                handler->m_pendingWinScan = 0;
+                handler->m_pendingWinFlags = 0;
                 if (handler->m_capturedKeyReleased) {
                     if (IsWindow(handler->m_captureTargetWindow)) {
                         PostMessageW(handler->m_captureTargetWindow, AppConstants::kCaptureHotkeyMessage,
@@ -201,27 +215,33 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
                 return 1;
             }
             if (handler->m_pendingWinKey == key->vkCode) {
-                // Delay the Windows key-down until we know this is not the configured chord.
+                // Replay the delayed Win-down with original scan/extended flags (H-07).
                 INPUT replay{};
                 replay.type = INPUT_KEYBOARD;
                 replay.ki.wVk = static_cast<WORD>(key->vkCode);
+                replay.ki.wScan = static_cast<WORD>(handler->m_pendingWinScan);
+                if ((handler->m_pendingWinFlags & LLKHF_EXTENDED) != 0) {
+                    replay.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+                }
                 SendInput(1, &replay, sizeof(replay));
                 handler->m_pendingWinKey = 0;
-                return CallNextHookEx(nullptr, code, message, data);
+                handler->m_pendingWinScan = 0;
+                handler->m_pendingWinFlags = 0;
+                return CallNextHookEx(hook, code, message, data);
             }
             if (handler->m_winKeyPassedThrough) {
                 handler->m_winKeyPassedThrough = false;
             }
         }
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     if (handler->m_winKeyPassedThrough) {
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     if (handler->m_pendingWinKey != 0 && isModifierKey) {
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     if (!capturingHotkey && keyDown && handler->m_pendingWinKey != 0 &&
@@ -245,12 +265,18 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         INPUT replay{};
         replay.type = INPUT_KEYBOARD;
         replay.ki.wVk = static_cast<WORD>(handler->m_pendingWinKey);
+        replay.ki.wScan = static_cast<WORD>(handler->m_pendingWinScan);
+        if ((handler->m_pendingWinFlags & LLKHF_EXTENDED) != 0) {
+            replay.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+        }
         SendInput(1, &replay, sizeof(replay));
         handler->m_pendingWinKey = 0;
+        handler->m_pendingWinScan = 0;
+        handler->m_pendingWinFlags = 0;
         handler->m_winKeyPassedThrough = true;
     }
 
-    return CallNextHookEx(nullptr, code, message, data);
+    return CallNextHookEx(hook, code, message, data);
 }
 
 bool KeyboardHandler::IsComposing(CWindow window) const {

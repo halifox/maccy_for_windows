@@ -24,7 +24,7 @@
 | P3 | UI / 设置一致性 | 0 | 0 | 6 | 0 | 0 |
 | P4 | 捕获正确性 | 0 | 0 | 4 | 0 | 0 |
 | P5 | 性能与卡顿 | 0 | 0 | 3 | 0 | 0 |
-| P6 | 其余 Medium | 16 | 0 | 0 | 0 | 0 |
+| P6 | 其余 Medium | 0 | 0 | 9 | 0 | 0 |
 | P7 | Low / 工程债 | 22 | 0 | 0 | 0 | 0 |
 
 > 改条目状态后，**重算本表各列计数**（同 ID 只计一次）。
@@ -115,15 +115,15 @@
 
 | ID | Status | Summary | 详情 | Notes |
 |----|--------|---------|------|-------|
-| H-06 | pending | CallNextHookEx(nullptr) | [H-06](AUDIT_LOGIC_REPORT.md#H-06) | |
-| H-07 | pending | Win 键延迟重放时序 | [H-07](AUDIT_LOGIC_REPORT.md#H-07) | |
-| M-05 | pending | Storage+Preview 双 SQLite 连接 | [M-05](AUDIT_LOGIC_REPORT.md#M-05) | |
-| M-06 | pending | 预览取消不回调 UI | [M-06](AUDIT_LOGIC_REPORT.md#M-06) | |
-| M-07 | pending | Thumbnail COM 失败静默 | [M-07](AUDIT_LOGIC_REPORT.md#M-07) | |
-| M-08 | pending | 跨线程 HBITMAP 绘制 | [M-08](AUDIT_LOGIC_REPORT.md#M-08) | |
-| M-09 | pending | Settings Save：DB 与注册表不一致 | [M-09](AUDIT_LOGIC_REPORT.md#M-09) | |
-| M-15 | pending | LL 钩子内 GetFocus 脆 | [M-15](AUDIT_LOGIC_REPORT.md#M-15) | |
-| M-18 | pending | 全局热键安装失败无提示 | [M-18](AUDIT_LOGIC_REPORT.md#M-18) | |
+| H-06 | done | CallNextHookEx(nullptr) | [H-06](AUDIT_LOGIC_REPORT.md#H-06) | 传入 m_keyboardHook |
+| H-07 | done | Win 键延迟重放时序 | [H-07](AUDIT_LOGIC_REPORT.md#H-07) | 重放保留 scan/extended flags |
+| M-05 | done | Storage+Preview 双 SQLite 连接 | [M-05](AUDIT_LOGIC_REPORT.md#M-05) | busy_timeout=5s + GetItem 重试 |
+| M-06 | done | 预览取消不回调 UI | [M-06](AUDIT_LOGIC_REPORT.md#M-06) | 取消/替换路径一律 PostResult |
+| M-07 | done | Thumbnail COM 失败静默 | [M-07](AUDIT_LOGIC_REPORT.md#M-07) | m_comAvailable；失败回空结果 |
+| M-08 | done | 跨线程 HBITMAP 绘制 | [M-08](AUDIT_LOGIC_REPORT.md#M-08) | UI 线程 CopyImage 再绘制 |
+| M-09 | done | Settings Save：DB 与注册表不一致 | [M-09](AUDIT_LOGIC_REPORT.md#M-09) | SetLaunchAtLogin 先于 Commit |
+| M-15 | done | LL 钩子内 GetFocus 脆 | [M-15](AUDIT_LOGIC_REPORT.md#M-15) | SetHotkeyCaptureActive 显式标志 |
+| M-18 | done | 全局热键安装失败无提示 | [M-18](AUDIT_LOGIC_REPORT.md#M-18) | 钩子失败 MessageBox 警告 |
 
 > 说明：H-06/H-07 严重度为 High，但实施批次放在 P6（粘贴/回声之后），避免与 P0–P2 抢焦点；若单独开 Goal 可优先。
 

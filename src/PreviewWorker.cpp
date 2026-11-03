@@ -5,6 +5,8 @@
 #include "Database.h"
 #include "PreviewDecoder.h"
 
+#include <windows.h>
+
 #include <stdexcept>
 #include <utility>
 
@@ -115,6 +117,7 @@ bool PreviewWorker::Request(
         m_workerFailed.load(std::memory_order_acquire)) {
         return false;
     }
+    std::optional<RequestData> superseded;
     {
         std::lock_guard lock(m_requestMutex);
         if (m_stopping || !m_started) {
@@ -122,6 +125,10 @@ bool PreviewWorker::Request(
         }
         m_requestStopSource.request_stop();
         m_requestStopSource = std::stop_source{};
+        if (m_latestRequest.has_value()) {
+            superseded = std::move(*m_latestRequest);
+            m_latestRequest.reset();
+        }
         m_latestRequest = RequestData{
             item_id,
             generation,
@@ -130,6 +137,12 @@ bool PreviewWorker::Request(
             m_requestStopSource.get_token(),
             std::move(callback),
         };
+    }
+    if (superseded.has_value()) {
+        auto cancelled = std::make_shared<PreviewResult>();
+        cancelled->item_id = superseded->item_id;
+        cancelled->generation = superseded->generation;
+        PostResult(std::move(cancelled), std::move(superseded->callback));
     }
     m_requestCondition.notify_one();
     return true;
@@ -200,22 +213,40 @@ void PreviewWorker::ProcessRequest(
     auto result = std::make_shared<PreviewResult>();
     result->item_id = request.item_id;
     result->generation = request.generation;
+    const auto cancelled = [&]() {
+        return worker_stop.stop_requested() || request.request_stop.stop_requested();
+    };
     try {
-        if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+        if (cancelled()) {
+            PostResult(std::move(result), std::move(request.callback));
             return;
         }
 
-        auto item = database.GetItem(request.item_id, PayloadMode::Preview);
-        if (!item.has_value()) {
-            if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+        std::optional<ClipboardItem> item;
+        // Retry briefly when the storage writer holds the DB (M-05).
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            if (cancelled()) {
+                PostResult(std::move(result), std::move(request.callback));
                 return;
             }
+            try {
+                item = database.GetItem(request.item_id, PayloadMode::Preview);
+                break;
+            } catch (const std::exception &) {
+                if (attempt + 1 >= 5) {
+                    throw;
+                }
+                ::Sleep(25 * (attempt + 1));
+            }
+        }
+        if (!item.has_value()) {
             PostResult(std::move(result), std::move(request.callback));
             return;
         }
 
         result->text = FullText(*item);
-        if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+        if (cancelled()) {
+            PostResult(std::move(result), std::move(request.callback));
             return;
         }
 
@@ -227,7 +258,8 @@ void PreviewWorker::ProcessRequest(
             maximum_height,
             request.request_stop
         );
-        if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
+        if (cancelled()) {
+            PostResult(std::move(result), std::move(request.callback));
             return;
         }
 
@@ -242,9 +274,6 @@ void PreviewWorker::ProcessRequest(
         result->error = "Unknown preview worker error";
     }
 
-    if (worker_stop.stop_requested() || request.request_stop.stop_requested()) {
-        return;
-    }
     PostResult(std::move(result), std::move(request.callback));
 }
 
