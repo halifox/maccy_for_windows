@@ -56,6 +56,8 @@ void KeyboardHandler::Shutdown() {
     m_pendingWinFlags = 0;
     m_winKeyPassedThrough = false;
     m_suppressingWinKey = false;
+    m_pendingOpenPopup = false;
+    m_pendingOpenTarget = nullptr;
     m_hotkeyRegistered = false;
     SetHotkeyCaptureActive(false);
     m_callbacks = {};
@@ -214,6 +216,14 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
                     handler->m_capturedKey = 0;
                     handler->m_capturedKeyReleased = false;
                 }
+                // Open only after Win-up so activation is not stolen mid-chord.
+                if (handler->m_pendingOpenPopup && handler->m_owner.m_hWnd != nullptr) {
+                    const HWND target = handler->m_pendingOpenTarget;
+                    handler->m_pendingOpenPopup = false;
+                    handler->m_pendingOpenTarget = nullptr;
+                    PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
+                                 reinterpret_cast<LPARAM>(target));
+                }
                 return 1;
             }
             if (handler->m_pendingWinKey == key->vkCode) {
@@ -256,8 +266,8 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         if (pressed == configuredModifiers) {
             handler->m_suppressingOpenKey = true;
             handler->m_suppressingWinKey = true;
-            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
-                         reinterpret_cast<LPARAM>(GetForegroundWindow()));
+            handler->m_pendingOpenPopup = true;
+            handler->m_pendingOpenTarget = GetForegroundWindow();
             return 1;
         }
     }

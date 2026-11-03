@@ -87,6 +87,33 @@ bool IsShiftKey(WPARAM key) {
     return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
 }
 
+bool ForceForeground(HWND window) {
+    if (window == nullptr) {
+        return false;
+    }
+    if (::GetForegroundWindow() == window) {
+        return true;
+    }
+    const HWND previous = ::GetForegroundWindow();
+    const DWORD previous_thread = previous != nullptr
+        ? ::GetWindowThreadProcessId(previous, nullptr)
+        : 0;
+    const DWORD current_thread = ::GetCurrentThreadId();
+    const bool attached = previous_thread != 0 && previous_thread != current_thread &&
+        ::AttachThreadInput(current_thread, previous_thread, TRUE) != FALSE;
+    ::SetForegroundWindow(window);
+    ::BringWindowToTop(window);
+    const bool foreground = ::GetForegroundWindow() == window;
+    if (attached) {
+        ::AttachThreadInput(current_thread, previous_thread, FALSE);
+    }
+    if (!foreground && previous != nullptr && ::IsWindow(previous) &&
+        ::GetForegroundWindow() != previous) {
+        ::SetForegroundWindow(previous);
+    }
+    return foreground;
+}
+
 bool HasPendingKeyboardInput(HWND window) {
     if (window == nullptr || !::IsWindow(window)) {
         return false;
@@ -619,44 +646,146 @@ bool MainWindow::IsOurWindow(HWND window) const {
         (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
 }
 
-void MainWindow::BeginPopupDismissGuard() {
-    m_suppressPopupDismiss = true;
-    SetTimer(AppConstants::Timer::kPopupDismissGuard, AppConstants::Popup::kDismissGuardMs, nullptr);
+MainWindow* MainWindow::s_dismissHookOwner = nullptr;
+
+bool MainWindow::IsPopupActive() const {
+    if (!m_popupVisible || m_hWnd == nullptr || !IsWindowVisible()) {
+        return false;
+    }
+    return IsOurWindow(::GetForegroundWindow()) || IsOurWindow(::GetActiveWindow());
 }
 
-void MainWindow::EndPopupDismissGuard() {
-    if (m_hWnd != nullptr) {
-        KillTimer(AppConstants::Timer::kPopupDismissGuard);
+bool MainWindow::IsPointInPopupUi(POINT screen_point) const {
+    HWND hit = ::WindowFromPoint(screen_point);
+    if (IsOurWindow(hit)) {
+        return true;
     }
-    m_suppressPopupDismiss = false;
+    // Tray clicks are handled by the icon callback (toggle), not as "outside".
+    RECT tray_rect{};
+    if (m_trayIcon.IsAdded() && m_trayIcon.GetRect(tray_rect) &&
+        ::PtInRect(&tray_rect, screen_point)) {
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::FocusPopupForTyping() {
+    if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
+        SetHistorySearchVisible(true);
+        m_search.SetFocus();
+        m_search.SetSel(0, -1);
+    } else {
+        SetFocus();
+    }
+}
+
+void MainWindow::TogglePopup(PopupPosition popup_position) {
+    // Focused → close; unfocused → open (or re-focus if visible but inactive).
+    if (IsPopupActive()) {
+        HideMainWindow();
+        return;
+    }
+    ShowMainWindow(popup_position);
+}
+
+void MainWindow::RequestPopupDismiss() {
+    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
+        m_activatingPopup || m_hWnd == nullptr) {
+        return;
+    }
+    PostMessage(AppConstants::kPopupDismissMessage, 0, 0);
+}
+
+void MainWindow::InstallPopupDismissHooks() {
+    if (s_dismissHookOwner != nullptr && s_dismissHookOwner != this) {
+        return;
+    }
+    s_dismissHookOwner = this;
+    if (m_popupMouseHook == nullptr) {
+        m_popupMouseHook = ::SetWindowsHookExW(
+            WH_MOUSE_LL,
+            PopupMouseHookProc,
+            ::GetModuleHandleW(nullptr),
+            0
+        );
+    }
+    if (m_foregroundHook == nullptr) {
+        m_foregroundHook = ::SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            nullptr,
+            ForegroundEventProc,
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT
+        );
+    }
+    if (m_popupMouseHook == nullptr && m_foregroundHook == nullptr) {
+        s_dismissHookOwner = nullptr;
+    }
+}
+
+void MainWindow::UninstallPopupDismissHooks() {
+    if (m_popupMouseHook != nullptr) {
+        ::UnhookWindowsHookEx(m_popupMouseHook);
+        m_popupMouseHook = nullptr;
+    }
+    if (m_foregroundHook != nullptr) {
+        ::UnhookWinEvent(m_foregroundHook);
+        m_foregroundHook = nullptr;
+    }
+    if (s_dismissHookOwner == this) {
+        s_dismissHookOwner = nullptr;
+    }
+}
+
+LRESULT CALLBACK MainWindow::PopupMouseHookProc(int code, WPARAM wParam, LPARAM lParam) {
+    MainWindow* owner = s_dismissHookOwner;
+    if (code == HC_ACTION && owner != nullptr) {
+        const bool button_down =
+            wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN ||
+            wParam == WM_MBUTTONDOWN || wParam == WM_NCLBUTTONDOWN ||
+            wParam == WM_NCRBUTTONDOWN || wParam == WM_NCMBUTTONDOWN;
+        if (button_down) {
+            const auto* info = reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
+            // TOPMOST tool windows often keep FG when the desktop is clicked;
+            // mouse-outside is the reliable dismiss path for that case.
+            if (info != nullptr && owner->m_popupVisible && !owner->m_activatingPopup &&
+                !owner->IsPointInPopupUi(info->pt)) {
+                owner->RequestPopupDismiss();
+            }
+        }
+    }
+    return ::CallNextHookEx(owner != nullptr ? owner->m_popupMouseHook : nullptr,
+                            code, wParam, lParam);
+}
+
+void CALLBACK MainWindow::ForegroundEventProc(
+    HWINEVENTHOOK, DWORD event, HWND hwnd, LONG id_object, LONG, DWORD, DWORD
+) {
+    if (event != EVENT_SYSTEM_FOREGROUND || id_object != OBJID_WINDOW) {
+        return;
+    }
+    MainWindow* owner = s_dismissHookOwner;
+    if (owner == nullptr || !owner->m_popupVisible || owner->m_activatingPopup) {
+        return;
+    }
+    if (owner->IsOurWindow(hwnd)) {
+        return;
+    }
+    owner->RequestPopupDismiss();
 }
 
 void MainWindow::HandlePopupActivation(HWND activating_window) {
     if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_suppressPopupDismiss) {
+        m_activatingPopup) {
         return;
     }
-    // Focus moved within our UI (search/list/preview) — keep the popup.
     if (IsOurWindow(activating_window)) {
         return;
     }
-    // Clear handoff to another window: hide immediately (product rule = lose focus → dismiss).
     if (activating_window != nullptr) {
-        HideMainWindow();
-        return;
-    }
-    // WA_INACTIVE with null hwnd is common for click-away and for FG settle noise.
-    // Defer and dismiss unless we still own the foreground.
-    PostMessage(AppConstants::kConfirmPopupDismissMessage, 0, 0);
-}
-
-void MainWindow::ConfirmPopupDismiss() {
-    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_suppressPopupDismiss) {
-        return;
-    }
-    if (IsOurWindow(GetForegroundWindow())) {
-        return;
+        m_pasteController.CaptureTargetWindow(activating_window);
     }
     HideMainWindow();
 }
@@ -1689,9 +1818,10 @@ void MainWindow::HideMainWindow() {
     if (!m_popupVisible) {
         return;
     }
-    EndPopupDismissGuard();
+    UninstallPopupDismissHooks();
     SaveWindowGeometry();
     m_popupVisible = false;
+    m_activatingPopup = false;
     HidePreview();
     ShowWindow(SW_HIDE);
 }
@@ -2183,6 +2313,14 @@ LRESULT MainWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
     return 0;
 }
 
+LRESULT MainWindow::OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    handled = FALSE;
+    if (wParam == FALSE) {
+        HandlePopupActivation(nullptr);
+    }
+    return 0;
+}
+
 LRESULT MainWindow::OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
     handled = TRUE;
     if (LOWORD(wParam) == WA_INACTIVE) {
@@ -2191,9 +2329,13 @@ LRESULT MainWindow::OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& 
     return 0;
 }
 
-LRESULT MainWindow::OnConfirmPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
+LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    ConfirmPopupDismiss();
+    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
+        m_activatingPopup) {
+        return 0;
+    }
+    HideMainWindow();
     return 0;
 }
 
@@ -2278,7 +2420,7 @@ LRESULT MainWindow::OnExitButton(WORD, WORD, HWND, BOOL& handled) {
 
 LRESULT MainWindow::OnTrayShowCommand(WORD, WORD, HWND, BOOL& handled) {
     handled = TRUE;
-    ShowMainWindow(PopupPosition::StatusItem);
+    TogglePopup(PopupPosition::StatusItem);
     return 0;
 }
 
@@ -2315,13 +2457,6 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         }
         return 0;
     }
-    if (wParam == AppConstants::Timer::kPopupDismissGuard) {
-        handled = TRUE;
-        EndPopupDismissGuard();
-        // Focus may have left during the guard; dismiss once settle is done.
-        ConfirmPopupDismiss();
-        return 0;
-    }
     if (wParam == AppConstants::Timer::kSearchResultCommit) {
         handled = TRUE;
         if (HasPendingKeyboardInput(m_search) &&
@@ -2348,20 +2483,18 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         return 0;
     }
     handled = TRUE;
-    if (m_popupVisible) {
-        HideMainWindow();
-    } else {
-        ShowMainWindow();
-    }
+    TogglePopup(m_settings.popup_position);
     return 0;
 }
 
 LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
-    // Capture the foreground from chord-match time before show steals focus.
+    // Paste target from chord-match time (before we take focus).
     if (lParam != 0) {
         m_pasteController.CaptureTargetWindow(reinterpret_cast<HWND>(lParam));
     }
-    return OnHotKey(0, AppConstants::HotKey::kOpenPopup, 0, handled);
+    handled = TRUE;
+    TogglePopup(m_settings.popup_position);
+    return 0;
 }
 
 LRESULT MainWindow::OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
@@ -2413,7 +2546,7 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
         if (GetKeyState(VK_MENU) & 0x8000) {
             ToggleIgnoreEvents();
         } else {
-            ShowMainWindow(PopupPosition::StatusItem);
+            TogglePopup(PopupPosition::StatusItem);
         }
         break;
     case WM_CONTEXTMENU:
@@ -2474,7 +2607,8 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
-    EndPopupDismissGuard();
+    m_activatingPopup = false;
+    UninstallPopupDismissHooks();
     m_applicationController.StopUpdateChecks();
     KillTimer(AppConstants::Timer::kSearchResultCommit);
     m_deferredHistoryResult.reset();
@@ -2520,6 +2654,8 @@ void MainWindow::ShowMainWindow() {
 }
 
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
+    // Ignore only the synchronous WA_INACTIVE that show/SetForeground can emit.
+    m_activatingPopup = true;
     m_activePopupPosition = popup_position;
     m_resetHistoryListOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
@@ -2531,33 +2667,14 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
     PositionPopup(popup_position);
 
-    BeginPopupDismissGuard();
     m_popupVisible = true;
     ShowWindow(SW_SHOW);
     ApplyPendingState();
     m_historyListControls.ResetScrollPositions();
-
-    const HWND foreground = GetForegroundWindow();
-    const DWORD foregroundThread = foreground != nullptr
-        ? GetWindowThreadProcessId(foreground, nullptr)
-        : 0;
-    const DWORD currentThread = GetCurrentThreadId();
-    const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
-        AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
-    SetForegroundWindow(m_hWnd);
-    if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
-        SetHistorySearchVisible(true);
-        m_search.SetFocus();
-        m_search.SetSel(0, -1);
-    } else {
-        SetFocus();
-    }
-    if (attached) {
-        AttachThreadInput(currentThread, foregroundThread, FALSE);
-    }
-    if (GetForegroundWindow() != m_hWnd) {
-        SetForegroundWindow(m_hWnd);
-    }
+    ForceForeground(m_hWnd);
+    FocusPopupForTyping();
+    m_activatingPopup = false;
+    InstallPopupDismissHooks();
 
     UpdateWindow();
     m_keyboardHandler.UpdateHistoryHoverFromCursor(

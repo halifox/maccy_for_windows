@@ -64,8 +64,9 @@ public:
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
         MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
+        MESSAGE_HANDLER(WM_ACTIVATEAPP, OnActivateApp)
         MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
-        MESSAGE_HANDLER(AppConstants::kConfirmPopupDismissMessage, OnConfirmPopupDismiss)
+        MESSAGE_HANDLER(AppConstants::kPopupDismissMessage, OnPopupDismiss)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
@@ -206,10 +207,18 @@ private:
     void HideMainWindow();
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
-    void BeginPopupDismissGuard();
-    void EndPopupDismissGuard();
+    bool IsPopupActive() const;
+    bool IsPointInPopupUi(POINT screen_point) const;
+    void TogglePopup(PopupPosition popup_position);
+    void FocusPopupForTyping();
     void HandlePopupActivation(HWND activating_window);
-    void ConfirmPopupDismiss();
+    void RequestPopupDismiss();
+    void InstallPopupDismissHooks();
+    void UninstallPopupDismissHooks();
+    static LRESULT CALLBACK PopupMouseHookProc(int code, WPARAM wParam, LPARAM lParam);
+    static void CALLBACK ForegroundEventProc(
+        HWINEVENTHOOK hook, DWORD event, HWND hwnd, LONG id_object, LONG id_child,
+        DWORD event_thread, DWORD event_time);
 
     // Tray icon
     void UpdateTrayIcon();
@@ -246,8 +255,9 @@ private:
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
     LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
+    LRESULT OnActivateApp(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
-    LRESULT OnConfirmPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
@@ -320,7 +330,11 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
-    bool m_suppressPopupDismiss = false;
+    // True only while ShowMainWindow runs; ignores the sync WA_INACTIVE it can generate.
+    bool m_activatingPopup = false;
+    HHOOK m_popupMouseHook = nullptr;
+    HWINEVENTHOOK m_foregroundHook = nullptr;
+    static MainWindow* s_dismissHookOwner;
     bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;

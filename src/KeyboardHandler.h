@@ -146,6 +146,9 @@ private:
     DWORD m_pendingWinFlags = 0;
     bool m_winKeyPassedThrough = false;
     bool m_suppressingWinKey = false;
+    // Win+key open: wait for Win-up before posting so show is not fought by the shell.
+    bool m_pendingOpenPopup = false;
+    HWND m_pendingOpenTarget = nullptr;
 
     static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM message, LPARAM data);
     static KeyboardHandler* s_hookOwner;
