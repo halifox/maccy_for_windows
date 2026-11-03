@@ -68,6 +68,8 @@ public:
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
         MESSAGE_HANDLER(AppConstants::kOpenHotkeyMessage, OnOpenHotkeyMessage)
+        MESSAGE_HANDLER(AppConstants::kPopupShowFinishedMessage, OnPopupShowFinished)
+        MESSAGE_HANDLER(AppConstants::kReassertPopupMessage, OnReassertPopup)
         MESSAGE_HANDLER(WM_KEYDOWN, OnKeyDown)
         MESSAGE_HANDLER(WM_CHAR, OnChar)
         MESSAGE_HANDLER(WM_SYSKEYDOWN, OnKeyDown)
@@ -183,7 +185,13 @@ private:
     void TogglePreview();
 
     // Actions
-    void ShowMainWindow(PopupPosition popup_position);
+    void ShowMainWindow(PopupPosition popup_position, HWND paste_target, bool win_chord);
+    void TogglePopupFromHotkey(bool win_chord, bool from_hook);
+    void ScheduleHotkeyGrace(UINT delay_ms);
+    void CapturePasteTarget(HWND candidate);
+    bool IsPopupOrPreview(HWND window) const;
+    void BringPopupForward();
+    void FocusPopupForTyping();
     void PasteItem(int index);
     void PasteSelectedItem();
     void ToggleSelectedPin();
@@ -252,6 +260,8 @@ private:
     LRESULT OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnOpenHotkeyMessage(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnPopupShowFinished(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnReassertPopup(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled);
     LRESULT OnKeyUp(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnChar(UINT, WPARAM wParam, LPARAM, BOOL& handled);
@@ -320,6 +330,11 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
+    // True while ShowMainWindow is on the stack and until the finish message
+    // posted at the end of that call has been dispatched.
+    bool m_suppressDeactivate = false;
+    // Win+V show: ignore click-away until the shell has finished reacting.
+    bool m_hotkeyGrace = false;
     bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;

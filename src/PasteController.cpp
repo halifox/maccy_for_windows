@@ -41,7 +41,12 @@ void SendPasteWithHeldControl() {
 
 void PasteController::CaptureTargetWindow(HWND candidate) {
     HWND foreground = candidate != nullptr ? candidate : GetForegroundWindow();
-    if (foreground == nullptr || m_owner == nullptr) {
+    if (foreground == nullptr || m_owner == nullptr || !::IsWindow(foreground)) {
+        return;
+    }
+    // Showing the popup makes it the foreground window. Never replace the
+    // editor captured before that switch with our own hidden or visible popup.
+    if (GetAncestor(foreground, GA_ROOT) == m_owner) {
         return;
     }
     const HWND root = GetAncestor(foreground, GA_ROOT);
@@ -52,7 +57,8 @@ void PasteController::CaptureTargetWindow(HWND candidate) {
     m_targetWindow = foreground;
     m_targetFocusWindow = foreground;
     const DWORD target_thread = GetWindowThreadProcessId(foreground, nullptr);
-    GUITHREADINFO gui_info{sizeof(gui_info)};
+    GUITHREADINFO gui_info{};
+    gui_info.cbSize = sizeof(gui_info);
     if (target_thread != 0 && GetGUIThreadInfo(target_thread, &gui_info) &&
         gui_info.hwndFocus != nullptr) {
         m_targetFocusWindow = gui_info.hwndFocus;

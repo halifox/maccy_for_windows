@@ -38,3 +38,56 @@
     #define DEBUG_LOG(msg) ((void)0)
     #define DEBUG_LOGF(fmt, ...) ((void)0)
 #endif
+
+#include <cstdarg>
+#include <cstdint>
+#include <cstdio>
+
+// Opt-in trace for the Win+V show/hide race. Release builds stay quiet unless
+// MACCY_DEBUG_HOTKEY=1; watch the messages with DebugView (Capture Global Win32).
+inline unsigned long long HotkeyHwnd(HWND window) {
+    return static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(window));
+}
+
+inline bool HotkeyTraceEnabled() {
+    static int enabled = -1;
+    if (enabled < 0) {
+        wchar_t value[8]{};
+        const DWORD length = ::GetEnvironmentVariableW(L"MACCY_DEBUG_HOTKEY", value, 8);
+        if (length > 0) {
+            enabled = value[0] != L'0' ? 1 : 0;
+        } else {
+#ifdef _DEBUG
+            enabled = 1;
+#else
+            enabled = 0;
+#endif
+        }
+    }
+    return enabled == 1;
+}
+
+inline void HotkeyTrace(const wchar_t* message) {
+    if (!HotkeyTraceEnabled() || message == nullptr) {
+        return;
+    }
+    ::OutputDebugStringW(L"[maccy hotkey] ");
+    ::OutputDebugStringW(message);
+    ::OutputDebugStringW(L"\n");
+}
+
+inline void HotkeyTracef(const wchar_t* format, ...) {
+    if (!HotkeyTraceEnabled() || format == nullptr) {
+        return;
+    }
+    wchar_t buffer[480]{};
+    va_list args;
+    va_start(args, format);
+#if defined(_MSC_VER)
+    _vsnwprintf_s(buffer, 480, _TRUNCATE, format, args);
+#else
+    ::vswprintf(buffer, 480, format, args);
+#endif
+    va_end(args);
+    HotkeyTrace(buffer);
+}

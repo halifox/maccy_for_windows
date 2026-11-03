@@ -86,6 +86,60 @@ bool IsShiftKey(WPARAM key) {
     return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
 }
 
+constexpr UINT kHotkeyGraceRenewMs = 50;
+constexpr UINT kHotkeyGraceTailMs = 200;
+
+bool WinKeyDown() {
+    return (::GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+        (::GetAsyncKeyState(VK_RWIN) & 0x8000) != 0;
+}
+
+bool ForceForeground(HWND window) {
+    if (window == nullptr) {
+        return false;
+    }
+    if (::GetForegroundWindow() == window) {
+        return true;
+    }
+
+    const HWND previous = ::GetForegroundWindow();
+    const DWORD previous_thread = previous != nullptr
+        ? ::GetWindowThreadProcessId(previous, nullptr)
+        : 0;
+    const DWORD current_thread = ::GetCurrentThreadId();
+    const bool attached = previous_thread != 0 && previous_thread != current_thread &&
+        ::AttachThreadInput(current_thread, previous_thread, TRUE) != FALSE;
+    ::SetWindowPos(
+        window,
+        HWND_TOPMOST,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE
+    );
+    const BOOL activated = ::SetForegroundWindow(window);
+    ::BringWindowToTop(window);
+    const bool foreground = ::GetForegroundWindow() == window;
+    if (attached) {
+        ::AttachThreadInput(current_thread, previous_thread, FALSE);
+    }
+    if (!foreground && previous != nullptr && ::IsWindow(previous) &&
+        ::GetForegroundWindow() != previous) {
+        // Activation was rejected after AttachThreadInput moved the caret.
+        // Put it back so a failed show does not leave the editor unfocused.
+        ::SetForegroundWindow(previous);
+    }
+    HotkeyTracef(
+        L"ForceForeground activated=%d foreground=%d previous=%llx now=%llx",
+        activated ? 1 : 0,
+        foreground ? 1 : 0,
+        HotkeyHwnd(previous),
+        HotkeyHwnd(::GetForegroundWindow())
+    );
+    return foreground;
+}
+
 bool HasPendingKeyboardInput(HWND window) {
     if (window == nullptr || !::IsWindow(window)) {
         return false;
@@ -598,17 +652,31 @@ bool MainWindow::IsOurWindow(HWND window) const {
 }
 
 void MainWindow::HandlePopupActivation(HWND activating_window) {
-    if (m_modalShowing) {
+    if (m_modalShowing || m_trayMenuShowing || m_exiting) {
         return;
     }
-
-    const bool outside_popup = !IsOurWindow(activating_window);
-    if (activating_window != nullptr && !m_trayMenuShowing && outside_popup) {
-        m_pasteController.CaptureTargetWindow(activating_window);
+    // ShowWindow(SW_SHOW) used to activate the popup while Win was still down.
+    // Windows answers that with WA_INACTIVE (often a null activator or the
+    // editor we just left). Hiding here made the first Win+V vanish after the
+    // editor had already lost focus.
+    if (m_suppressDeactivate || m_hotkeyGrace) {
+        HotkeyTracef(
+            L"ignore deactivate hwnd=%llx suppress=%d grace=%d",
+            HotkeyHwnd(activating_window),
+            m_suppressDeactivate ? 1 : 0,
+            m_hotkeyGrace ? 1 : 0
+        );
+        return;
     }
-    if (m_popupVisible && !m_exiting && !m_trayMenuShowing && outside_popup) {
-        HideMainWindow();
+    if (activating_window != nullptr && IsOurWindow(activating_window)) {
+        return;
     }
+    const bool visible = m_hWnd != nullptr && IsWindowVisible() != FALSE;
+    if (!m_popupVisible && !visible) {
+        return;
+    }
+    HotkeyTracef(L"hide on deactivate hwnd=%llx", HotkeyHwnd(activating_window));
+    HideMainWindow();
 }
 
 int MainWindow::PopupWidth(UINT dpi) const {
@@ -1499,13 +1567,22 @@ void MainWindow::SaveWindowGeometry(bool resized) {
 }
 
 void MainWindow::HideMainWindow() {
-    if (!m_popupVisible) {
+    const bool visible = m_hWnd != nullptr && IsWindowVisible() != FALSE;
+    if (!m_popupVisible && !visible) {
         return;
     }
-    SaveWindowGeometry();
+    if (m_hWnd != nullptr) {
+        SaveWindowGeometry();
+        KillTimer(AppConstants::Timer::kHotkeyGrace);
+    }
     m_popupVisible = false;
+    m_suppressDeactivate = false;
+    m_hotkeyGrace = false;
     HidePreview();
-    ShowWindow(SW_HIDE);
+    if (m_hWnd != nullptr) {
+        ShowWindow(SW_HIDE);
+    }
+    HotkeyTrace(L"hide popup");
 }
 
 int MainWindow::SelectedHistoryIndex() const {
@@ -2109,7 +2186,7 @@ LRESULT MainWindow::OnExitButton(WORD, WORD, HWND, BOOL& handled) {
 
 LRESULT MainWindow::OnTrayShowCommand(WORD, WORD, HWND, BOOL& handled) {
     handled = TRUE;
-    ShowMainWindow(PopupPosition::StatusItem);
+    ShowMainWindow(PopupPosition::StatusItem, nullptr, false);
     return 0;
 }
 
@@ -2148,6 +2225,20 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         m_pasteController.OnPasteTimer();
         return 0;
     }
+    if (wParam == AppConstants::Timer::kHotkeyGrace) {
+        handled = TRUE;
+        // The shell can steal activation for the whole time Win is physically
+        // down, which is longer than a fixed timer when the chord is held.
+        if (WinKeyDown()) {
+            ::SetTimer(m_hWnd, AppConstants::Timer::kHotkeyGrace, kHotkeyGraceRenewMs, nullptr);
+            return 0;
+        }
+        BringPopupForward();
+        m_hotkeyGrace = false;
+        KillTimer(AppConstants::Timer::kHotkeyGrace);
+        HotkeyTrace(L"hotkey grace ended");
+        return 0;
+    }
     if (wParam == AppConstants::Timer::kSearchResultCommit) {
         handled = TRUE;
         if (HasPendingKeyboardInput(m_search) &&
@@ -2174,16 +2265,37 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         return 0;
     }
     handled = TRUE;
-    if (m_popupVisible) {
-        HideMainWindow();
-    } else {
-        ShowMainWindow();
-    }
+    TogglePopupFromHotkey(false, false);
     return 0;
 }
 
-LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM, BOOL& handled) {
-    return OnHotKey(0, AppConstants::HotKey::kOpenPopup, 0, handled);
+LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    TogglePopupFromHotkey(wParam != 0, true);
+    return 0;
+}
+
+LRESULT MainWindow::OnPopupShowFinished(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    m_suppressDeactivate = false;
+    BringPopupForward();
+    return 0;
+}
+
+LRESULT MainWindow::OnReassertPopup(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    HotkeyTracef(
+        L"win key released visible=%d flag=%d fg=%llx",
+        (m_hWnd != nullptr && IsWindowVisible()) ? 1 : 0,
+        m_popupVisible ? 1 : 0,
+        HotkeyHwnd(::GetForegroundWindow())
+    );
+    if (m_popupVisible || m_hotkeyGrace) {
+        // Cover the shell's reaction to the Win key going up.
+        ScheduleHotkeyGrace(kHotkeyGraceTailMs);
+    }
+    BringPopupForward();
+    return 0;
 }
 
 LRESULT MainWindow::OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
@@ -2229,7 +2341,7 @@ LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
             m_settings.ignore_only_next_event = false;
             PersistSettings();
         } else {
-            ShowMainWindow(PopupPosition::StatusItem);
+            ShowMainWindow(PopupPosition::StatusItem, nullptr, false);
         }
         break;
     case WM_RBUTTONUP:
@@ -2284,6 +2396,9 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
+    m_suppressDeactivate = false;
+    m_hotkeyGrace = false;
+    KillTimer(AppConstants::Timer::kHotkeyGrace);
     m_applicationController.StopUpdateChecks();
     KillTimer(AppConstants::Timer::kSearchResultCommit);
     m_deferredHistoryResult.reset();
@@ -2322,14 +2437,98 @@ bool MainWindow::AddTrayIcon() {
 }
 
 void MainWindow::ShowMainWindow() {
-    ShowMainWindow(m_settings.popup_position);
+    ShowMainWindow(m_settings.popup_position, nullptr, false);
 }
 
-void MainWindow::ShowMainWindow(PopupPosition popup_position) {
+bool MainWindow::IsPopupOrPreview(HWND window) const {
+    if (window == nullptr) {
+        return false;
+    }
+    return window == m_hWnd || ::IsChild(m_hWnd, window) ||
+        m_previewWorker.ContainsWindow(window);
+}
+
+void MainWindow::CapturePasteTarget(HWND candidate) {
+    if (candidate != nullptr && !::IsWindow(candidate)) {
+        candidate = nullptr;
+    }
+    if (candidate == nullptr) {
+        candidate = ::GetForegroundWindow();
+    }
+    if (candidate == nullptr || IsPopupOrPreview(candidate)) {
+        HotkeyTracef(
+            L"keep paste target=%llx focus=%llx candidate=%llx",
+            HotkeyHwnd(m_pasteController.GetTargetWindow()),
+            HotkeyHwnd(m_pasteController.GetTargetFocusWindow()),
+            HotkeyHwnd(candidate)
+        );
+        return;
+    }
+    m_pasteController.CaptureTargetWindow(candidate);
+    HotkeyTracef(
+        L"captured paste target=%llx focus=%llx",
+        HotkeyHwnd(m_pasteController.GetTargetWindow()),
+        HotkeyHwnd(m_pasteController.GetTargetFocusWindow())
+    );
+}
+
+void MainWindow::FocusPopupForTyping() {
+    if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
+        SetHistorySearchVisible(true);
+        m_search.SetFocus();
+        m_search.SetSel(0, -1);
+        return;
+    }
+    SetFocus();
+}
+
+void MainWindow::BringPopupForward() {
+    if (m_exiting || !m_popupVisible || m_hWnd == nullptr || !IsWindowVisible()) {
+        return;
+    }
+    const bool suppress = m_suppressDeactivate;
+    m_suppressDeactivate = true;
+    const bool foreground = ForceForeground(m_hWnd);
+    if (foreground) {
+        FocusPopupForTyping();
+    }
+    m_suppressDeactivate = suppress;
+}
+
+void MainWindow::ScheduleHotkeyGrace(UINT delay_ms) {
+    if (::SetTimer(m_hWnd, AppConstants::Timer::kHotkeyGrace, delay_ms, nullptr) != 0) {
+        m_hotkeyGrace = true;
+    }
+}
+
+void MainWindow::TogglePopupFromHotkey(bool win_chord, bool from_hook) {
+    const bool visible = m_hWnd != nullptr && IsWindowVisible() != FALSE;
+    const HWND hooked_target = from_hook ? m_keyboardHandler.OpenHotkeyTarget() : nullptr;
+    HotkeyTracef(
+        L"toggle visible=%d flag=%d win=%d hookedTarget=%llx fg=%llx",
+        visible ? 1 : 0,
+        m_popupVisible ? 1 : 0,
+        win_chord ? 1 : 0,
+        HotkeyHwnd(hooked_target),
+        HotkeyHwnd(::GetForegroundWindow())
+    );
+    // A hidden window must open, even if m_popupVisible was left true.
+    if (visible) {
+        HideMainWindow();
+        return;
+    }
+    ShowMainWindow(m_settings.popup_position, hooked_target, win_chord);
+}
+
+void MainWindow::ShowMainWindow(PopupPosition popup_position, HWND paste_target, bool win_chord) {
+    // Cover synchronous WM_ACTIVATE sent by the show itself. The matching
+    // finish message is posted last so anything queued during the show is
+    // still ignored.
+    m_suppressDeactivate = true;
     m_activePopupPosition = popup_position;
     m_resetHistoryListOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
-    m_pasteController.CaptureTargetWindow();
+    CapturePasteTarget(paste_target);
     m_previewSuppressed = false;
     m_search.SetWindowText(L"");
     HidePreview();
@@ -2337,27 +2536,34 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     PositionPopup(popup_position);
 
     m_popupVisible = true;
-    ShowWindow(SW_SHOW);
+    // SW_SHOW activates immediately and steals the editor before we know
+    // whether this process is allowed to become foreground.
+    ShowWindow(SW_SHOWNA);
+    SetWindowPos(
+        HWND_TOPMOST,
+        0,
+        0,
+        0,
+        0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+    );
+    if (!IsWindowVisible()) {
+        ShowWindow(SW_SHOW);
+    }
+    if (!IsWindowVisible()) {
+        m_popupVisible = false;
+        m_suppressDeactivate = false;
+        m_hotkeyGrace = false;
+        HotkeyTrace(L"show failed; popup is not visible");
+        return;
+    }
+
     ApplyPendingState();
     m_historyListControls.ResetScrollPositions();
-    if (!SetForegroundWindow(m_hWnd) || GetForegroundWindow() != m_hWnd) {
-        const HWND foreground = GetForegroundWindow();
-        const DWORD foregroundThread = foreground != nullptr
-            ? GetWindowThreadProcessId(foreground, nullptr)
-            : 0;
-        const DWORD currentThread = GetCurrentThreadId();
-        if (foregroundThread != 0 && foregroundThread != currentThread &&
-            AttachThreadInput(currentThread, foregroundThread, TRUE)) {
-            SetForegroundWindow(m_hWnd);
-            AttachThreadInput(currentThread, foregroundThread, FALSE);
+    if (m_popupVisible && IsWindowVisible()) {
+        if (ForceForeground(m_hWnd)) {
+            FocusPopupForTyping();
         }
-    }
-    if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
-        SetHistorySearchVisible(true);
-        m_search.SetFocus();
-        m_search.SetSel(0, -1);
-    } else {
-        SetFocus();
     }
     UpdateWindow();
     m_keyboardHandler.UpdateHistoryHoverFromCursor(
@@ -2366,4 +2572,12 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
         m_historyListControls.PinsListWindow(),
         m_popupVisible
     );
+
+    if (win_chord) {
+        ScheduleHotkeyGrace(WinKeyDown() ? kHotkeyGraceRenewMs : kHotkeyGraceTailMs);
+    }
+    if (PostMessage(AppConstants::kPopupShowFinishedMessage, 0, 0) == FALSE) {
+        m_suppressDeactivate = false;
+        HotkeyTrace(L"failed to post show-finished");
+    }
 }

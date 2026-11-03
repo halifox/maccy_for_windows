@@ -30,6 +30,10 @@ namespace AppConstants {
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
     constexpr UINT kPopupActivationMessage = kCustomMessageBase + 1;
+    // Posted at the end of ShowMainWindow so deactivation queued by that show
+    // is still ignored. Win-key release posts the reassert message.
+    constexpr UINT kPopupShowFinishedMessage = kCustomMessageBase + 2;
+    constexpr UINT kReassertPopupMessage = kCustomMessageBase + 3;
 
     // ========================================================================
     // 定时器ID
@@ -38,6 +42,7 @@ namespace AppConstants {
         constexpr UINT_PTR kSearchResultCommit = 1;
         constexpr UINT_PTR kPreview = 2;
         constexpr UINT_PTR kPaste = 3;
+        constexpr UINT_PTR kHotkeyGrace = 4;
     }
 
     // Bitmask carried by kUiUpdateMessage. Producers only describe what

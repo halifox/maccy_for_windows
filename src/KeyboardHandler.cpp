@@ -44,6 +44,7 @@ void KeyboardHandler::Shutdown() {
     m_pendingWinKey = 0;
     m_winKeyPassedThrough = false;
     m_suppressingWinKey = false;
+    ClearModifierState();
     m_hotkeyRegistered = false;
 }
 
@@ -57,8 +58,9 @@ bool KeyboardHandler::RegisterGlobalHotKey(UINT) {
     m_hotkeyRegistered = m_keyboardHook != nullptr;
     if (!m_hotkeyRegistered) {
         s_hookOwner = nullptr;
+        return false;
     }
-    return m_hotkeyRegistered;
+    return true;
 }
 
 void KeyboardHandler::UnregisterGlobalHotKey(UINT) {
@@ -77,8 +79,75 @@ void KeyboardHandler::UnregisterGlobalHotKey(UINT) {
         m_pendingWinKey = 0;
         m_winKeyPassedThrough = false;
         m_suppressingWinKey = false;
+        ClearModifierState();
     }
     m_hotkeyRegistered = false;
+}
+
+void KeyboardHandler::TrackModifier(DWORD virtual_key, bool down) {
+    switch (virtual_key) {
+    case VK_LSHIFT: m_leftShift = down; break;
+    case VK_RSHIFT: m_rightShift = down; break;
+    case VK_SHIFT: m_leftShift = down; break;
+    case VK_LCONTROL: m_leftControl = down; break;
+    case VK_RCONTROL: m_rightControl = down; break;
+    case VK_CONTROL: m_leftControl = down; break;
+    case VK_LMENU: m_leftAlt = down; break;
+    case VK_RMENU: m_rightAlt = down; break;
+    case VK_MENU: m_leftAlt = down; break;
+    case VK_LWIN: m_leftWin = down; break;
+    case VK_RWIN: m_rightWin = down; break;
+    default: break;
+    }
+}
+
+UINT KeyboardHandler::TrackedModifiers() const {
+    // Record modifiers from the hook itself. GetAsyncKeyState inside a
+    // low-level hook can report a key that never went down and reject Win+V.
+    UINT pressed = 0;
+    if (m_leftShift || m_rightShift) pressed |= MOD_SHIFT;
+    if (m_leftControl || m_rightControl) pressed |= MOD_CONTROL;
+    if (m_leftAlt || m_rightAlt) pressed |= MOD_ALT;
+    if (m_leftWin || m_rightWin || m_pendingWinKey != 0) pressed |= MOD_WIN;
+    return pressed;
+}
+
+void KeyboardHandler::ClearModifierState() {
+    m_reassertAfterWinUp = false;
+    m_openHotkeyTarget = nullptr;
+    m_leftShift = false;
+    m_rightShift = false;
+    m_leftControl = false;
+    m_rightControl = false;
+    m_leftAlt = false;
+    m_rightAlt = false;
+    m_leftWin = false;
+    m_rightWin = false;
+}
+
+void KeyboardHandler::ArmOpenHotkey(bool win_chord) {
+    // The hook runs before the target thread sees the key, so this is the
+    // last moment the editor is still the foreground window.
+    m_openHotkeyTarget = ::GetForegroundWindow();
+    if (win_chord) {
+        m_reassertAfterWinUp = true;
+    }
+    const BOOL allowed = ::AllowSetForegroundWindow(::GetCurrentProcessId());
+    HotkeyTracef(
+        L"arm open hotkey win=%d target=%llx allowForeground=%d",
+        win_chord ? 1 : 0,
+        HotkeyHwnd(m_openHotkeyTarget),
+        allowed ? 1 : 0
+    );
+    if (!m_owner.IsWindow() ||
+        ::PostMessageW(
+            m_owner.m_hWnd,
+            AppConstants::kOpenHotkeyMessage,
+            win_chord ? 1 : 0,
+            0
+        ) == FALSE) {
+        HotkeyTrace(L"failed to post open hotkey");
+    }
 }
 
 LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message, LPARAM data) {
@@ -92,6 +161,9 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
     const bool keyUp = message == WM_KEYUP || message == WM_SYSKEYUP;
     if ((key->flags & LLKHF_INJECTED) != 0) {
         return CallNextHookEx(nullptr, code, message, data);
+    }
+    if (keyDown || keyUp) {
+        handler->TrackModifier(key->vkCode, keyDown);
     }
 
     const bool isWinKey = key->vkCode == VK_LWIN || key->vkCode == VK_RWIN;
@@ -125,12 +197,7 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
     }
 
     if (capturingHotkey && keyDown && !isModifierKey) {
-        UINT modifiers = 0;
-        if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) modifiers |= MOD_ALT;
-        if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) modifiers |= MOD_CONTROL;
-        if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) modifiers |= MOD_SHIFT;
-        if (handler->m_pendingWinKey != 0 || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
-            (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) modifiers |= MOD_WIN;
+        const UINT modifiers = handler->TrackedModifiers();
         if (modifiers == 0 && key->vkCode != VK_BACK) {
             return CallNextHookEx(nullptr, code, message, data);
         }
@@ -150,13 +217,10 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
     if (!capturingHotkey && !handler->m_suppressingOpenKey && keyDown && !isModifierKey &&
         (configuredModifiers & MOD_WIN) == 0 &&
         key->vkCode == handler->m_settings.open_hotkey.virtual_key) {
-        UINT pressed = 0;
-        if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) pressed |= MOD_ALT;
-        if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) pressed |= MOD_CONTROL;
-        if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) pressed |= MOD_SHIFT;
+        const UINT pressed = handler->TrackedModifiers();
         if (pressed == configuredModifiers) {
             handler->m_suppressingOpenKey = true;
-            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0, 0);
+            handler->ArmOpenHotkey(false);
             return 1;
         }
     }
@@ -187,6 +251,8 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
             if (handler->m_suppressingWinKey) {
                 handler->m_suppressingWinKey = false;
                 handler->m_pendingWinKey = 0;
+                const bool reassert = handler->m_reassertAfterWinUp;
+                handler->m_reassertAfterWinUp = false;
                 if (handler->m_capturedKeyReleased) {
                     if (IsWindow(handler->m_captureTargetWindow)) {
                         PostMessageW(handler->m_captureTargetWindow, AppConstants::kCaptureHotkeyMessage,
@@ -196,6 +262,9 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
                     handler->m_captureTargetWindow = nullptr;
                     handler->m_capturedKey = 0;
                     handler->m_capturedKeyReleased = false;
+                }
+                if (reassert && handler->m_owner.IsWindow()) {
+                    PostMessageW(handler->m_owner.m_hWnd, AppConstants::kReassertPopupMessage, 0, 0);
                 }
                 return 1;
             }
@@ -225,17 +294,22 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
 
     if (!capturingHotkey && keyDown && handler->m_pendingWinKey != 0 &&
         key->vkCode == handler->m_settings.open_hotkey.virtual_key) {
-        UINT pressed = 0;
-        if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) pressed |= MOD_ALT;
-        if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) pressed |= MOD_CONTROL;
-        if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) pressed |= MOD_SHIFT;
-        pressed |= MOD_WIN;
+        const UINT pressed = handler->TrackedModifiers();
         if (pressed == configuredModifiers) {
             handler->m_suppressingOpenKey = true;
             handler->m_suppressingWinKey = true;
-            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0, 0);
+            // A later non-chord key must not replay the swallowed Win down and
+            // hand the shell a Win chord while the popup is opening.
+            handler->m_pendingWinKey = 0;
+            handler->ArmOpenHotkey(true);
             return 1;
         }
+        HotkeyTracef(
+            L"Win+open key mismatch pressed=0x%X configured=0x%X vk=0x%X",
+            pressed,
+            configuredModifiers,
+            static_cast<unsigned>(key->vkCode)
+        );
     }
 
     if (keyDown && handler->m_pendingWinKey != 0) {

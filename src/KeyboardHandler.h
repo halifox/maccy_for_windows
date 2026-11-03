@@ -32,6 +32,9 @@ public:
     bool RegisterGlobalHotKey(UINT hotkeyId);
     void UnregisterGlobalHotKey(UINT hotkeyId);
     bool IsHotkeyRegistered() const { return m_hotkeyRegistered; }
+    // Foreground window at the moment the open chord matched, before any
+    // popup activation can replace it.
+    HWND OpenHotkeyTarget() const noexcept { return m_openHotkeyTarget; }
 
     // Input handling
     bool HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items);
@@ -118,6 +121,10 @@ private:
     void SetListSelection(CListBox list, int row) const;
     void InvalidateFooterButtons() const;
     void BeginHistoryMouseTracking();
+    void TrackModifier(DWORD virtual_key, bool down);
+    UINT TrackedModifiers() const;
+    void ClearModifierState();
+    void ArmOpenHotkey(bool win_chord);
 
     AppSettings& m_settings;
     CWindow m_owner;
@@ -137,6 +144,16 @@ private:
     UINT m_pendingWinKey = 0;
     bool m_winKeyPassedThrough = false;
     bool m_suppressingWinKey = false;
+    bool m_reassertAfterWinUp = false;
+    HWND m_openHotkeyTarget = nullptr;
+    bool m_leftShift = false;
+    bool m_rightShift = false;
+    bool m_leftControl = false;
+    bool m_rightControl = false;
+    bool m_leftAlt = false;
+    bool m_rightAlt = false;
+    bool m_leftWin = false;
+    bool m_rightWin = false;
 
     static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM message, LPARAM data);
     static KeyboardHandler* s_hookOwner;
