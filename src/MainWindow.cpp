@@ -597,18 +597,46 @@ bool MainWindow::IsOurWindow(HWND window) const {
         (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
 }
 
+void MainWindow::BeginPopupDismissGuard() {
+    m_suppressPopupDismiss = true;
+    SetTimer(AppConstants::Timer::kPopupDismissGuard, AppConstants::Popup::kDismissGuardMs, nullptr);
+}
+
+void MainWindow::EndPopupDismissGuard() {
+    if (m_hWnd != nullptr) {
+        KillTimer(AppConstants::Timer::kPopupDismissGuard);
+    }
+    m_suppressPopupDismiss = false;
+}
+
 void MainWindow::HandlePopupActivation(HWND activating_window) {
-    if (m_modalShowing) {
+    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
+        m_suppressPopupDismiss) {
         return;
     }
-
-    const bool outside_popup = !IsOurWindow(activating_window);
-    if (activating_window != nullptr && !m_trayMenuShowing && outside_popup) {
-        m_pasteController.CaptureTargetWindow(activating_window);
+    // Focus moved within our UI (search/list/preview) — keep the popup.
+    if (IsOurWindow(activating_window)) {
+        return;
     }
-    if (m_popupVisible && !m_exiting && !m_trayMenuShowing && outside_popup) {
+    // Clear handoff to another window: hide immediately (product rule = lose focus → dismiss).
+    if (activating_window != nullptr) {
         HideMainWindow();
+        return;
     }
+    // WA_INACTIVE with null hwnd is common for click-away and for FG settle noise.
+    // Defer and dismiss unless we still own the foreground.
+    PostMessage(AppConstants::kConfirmPopupDismissMessage, 0, 0);
+}
+
+void MainWindow::ConfirmPopupDismiss() {
+    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
+        m_suppressPopupDismiss) {
+        return;
+    }
+    if (IsOurWindow(GetForegroundWindow())) {
+        return;
+    }
+    HideMainWindow();
 }
 
 int MainWindow::PopupWidth(UINT dpi) const {
@@ -1502,6 +1530,7 @@ void MainWindow::HideMainWindow() {
     if (!m_popupVisible) {
         return;
     }
+    EndPopupDismissGuard();
     SaveWindowGeometry();
     m_popupVisible = false;
     HidePreview();
@@ -2028,6 +2057,12 @@ LRESULT MainWindow::OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& 
     return 0;
 }
 
+LRESULT MainWindow::OnConfirmPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
+    handled = TRUE;
+    ConfirmPopupDismiss();
+    return 0;
+}
+
 LRESULT MainWindow::OnClose(UINT, WPARAM, LPARAM, BOOL&) {
     if (m_exiting) {
         DestroyWindow();
@@ -2148,6 +2183,13 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         m_pasteController.OnPasteTimer();
         return 0;
     }
+    if (wParam == AppConstants::Timer::kPopupDismissGuard) {
+        handled = TRUE;
+        EndPopupDismissGuard();
+        // Focus may have left during the guard; dismiss once settle is done.
+        ConfirmPopupDismiss();
+        return 0;
+    }
     if (wParam == AppConstants::Timer::kSearchResultCommit) {
         handled = TRUE;
         if (HasPendingKeyboardInput(m_search) &&
@@ -2182,7 +2224,11 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     return 0;
 }
 
-LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM, BOOL& handled) {
+LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
+    // Capture the foreground from chord-match time before show steals focus.
+    if (lParam != 0) {
+        m_pasteController.CaptureTargetWindow(reinterpret_cast<HWND>(lParam));
+    }
     return OnHotKey(0, AppConstants::HotKey::kOpenPopup, 0, handled);
 }
 
@@ -2284,6 +2330,7 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
+    EndPopupDismissGuard();
     m_applicationController.StopUpdateChecks();
     KillTimer(AppConstants::Timer::kSearchResultCommit);
     m_deferredHistoryResult.reset();
@@ -2329,6 +2376,7 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     m_activePopupPosition = popup_position;
     m_resetHistoryListOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
+    // Keep a hotkey-time capture if FG already moved to us/shell; otherwise refresh.
     m_pasteController.CaptureTargetWindow();
     m_previewSuppressed = false;
     m_search.SetWindowText(L"");
@@ -2336,22 +2384,20 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
     PositionPopup(popup_position);
 
+    BeginPopupDismissGuard();
     m_popupVisible = true;
     ShowWindow(SW_SHOW);
     ApplyPendingState();
     m_historyListControls.ResetScrollPositions();
-    if (!SetForegroundWindow(m_hWnd) || GetForegroundWindow() != m_hWnd) {
-        const HWND foreground = GetForegroundWindow();
-        const DWORD foregroundThread = foreground != nullptr
-            ? GetWindowThreadProcessId(foreground, nullptr)
-            : 0;
-        const DWORD currentThread = GetCurrentThreadId();
-        if (foregroundThread != 0 && foregroundThread != currentThread &&
-            AttachThreadInput(currentThread, foregroundThread, TRUE)) {
-            SetForegroundWindow(m_hWnd);
-            AttachThreadInput(currentThread, foregroundThread, FALSE);
-        }
-    }
+
+    const HWND foreground = GetForegroundWindow();
+    const DWORD foregroundThread = foreground != nullptr
+        ? GetWindowThreadProcessId(foreground, nullptr)
+        : 0;
+    const DWORD currentThread = GetCurrentThreadId();
+    const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+        AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
+    SetForegroundWindow(m_hWnd);
     if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
         SetHistorySearchVisible(true);
         m_search.SetFocus();
@@ -2359,6 +2405,13 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     } else {
         SetFocus();
     }
+    if (attached) {
+        AttachThreadInput(currentThread, foregroundThread, FALSE);
+    }
+    if (GetForegroundWindow() != m_hWnd) {
+        SetForegroundWindow(m_hWnd);
+    }
+
     UpdateWindow();
     m_keyboardHandler.UpdateHistoryHoverFromCursor(
         m_items,

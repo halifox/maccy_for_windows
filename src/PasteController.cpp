@@ -39,14 +39,31 @@ void SendPasteWithHeldControl() {
 
 } // namespace
 
+bool PasteController::IsOwnWindow(HWND window) const noexcept {
+    if (window == nullptr || m_owner == nullptr) {
+        return false;
+    }
+    if (window == m_owner || ::IsChild(m_owner, window)) {
+        return true;
+    }
+    const HWND root = GetAncestor(window, GA_ROOT);
+    if (root == m_owner) {
+        return true;
+    }
+    return root != nullptr && GetWindow(root, GW_OWNER) == m_owner;
+}
+
 void PasteController::CaptureTargetWindow(HWND candidate) {
     HWND foreground = candidate != nullptr ? candidate : GetForegroundWindow();
-    if (foreground == nullptr || m_owner == nullptr) {
+    if (foreground == nullptr || m_owner == nullptr || IsOwnWindow(foreground)) {
         return;
     }
     const HWND root = GetAncestor(foreground, GA_ROOT);
     if (root != nullptr) {
         foreground = root;
+    }
+    if (IsOwnWindow(foreground)) {
+        return;
     }
 
     m_targetWindow = foreground;

@@ -156,7 +156,8 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) pressed |= MOD_SHIFT;
         if (pressed == configuredModifiers) {
             handler->m_suppressingOpenKey = true;
-            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0, 0);
+            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
+                         reinterpret_cast<LPARAM>(GetForegroundWindow()));
             return 1;
         }
     }
@@ -233,7 +234,8 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         if (pressed == configuredModifiers) {
             handler->m_suppressingOpenKey = true;
             handler->m_suppressingWinKey = true;
-            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0, 0);
+            PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
+                         reinterpret_cast<LPARAM>(GetForegroundWindow()));
             return 1;
         }
     }

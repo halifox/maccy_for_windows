@@ -13,6 +13,8 @@ public:
 
     void SetOwner(HWND owner) noexcept { m_owner = owner; }
 
+    // Captures an external paste target. Own/owned windows and null are ignored
+    // so a previous good target is preserved across popup activation churn.
     void CaptureTargetWindow(HWND candidate = nullptr);
     void RestoreTargetFocusAndPaste(HWND target, HWND target_focus, bool paste);
 
@@ -25,6 +27,7 @@ public:
 
 private:
     static bool PasteModifiersDown();
+    bool IsOwnWindow(HWND window) const noexcept;
 
     HWND m_owner = nullptr;
     HWND m_targetWindow = nullptr;
