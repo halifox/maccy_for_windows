@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.4.2](https://github.com/halifox/maccy_for_windows/compare/v1.4.1...v1.4.2) (2026-11-04)
+
+
+### Bug Fixes
+
+* audit findings, popup, history scroll, and preview shortcut ([597d40f](https://github.com/halifox/maccy_for_windows/commit/597d40f7e4a6d031f9bb1bae5acebc84a8f70c48))
+* **build:** resolve VS18 compile errors for RC and COM headers ([924edd1](https://github.com/halifox/maccy_for_windows/commit/924edd1f0237efaa3f40a1cbf0c781bbe6902805))
+* **clipboard:** capture ignore and top-down bitmap (P4) ([a2b3f23](https://github.com/halifox/maccy_for_windows/commit/a2b3f2378733b9343d6e87a02455ae1180d4e246))
+* **clipboard:** close remaining deferred low-audit items ([87866b5](https://github.com/halifox/maccy_for_windows/commit/87866b5e709eb0d1cb56a0a8df522cb382f1edc4))
+* **clipboard:** suppress self-write echoes by sequence (H-01, H-02, H-03, H-08) ([e12c74f](https://github.com/halifox/maccy_for_windows/commit/e12c74f04239f946b09e6f56b909a916a7cc8bd6))
+* **history:** keep list scrolling from stalling the cursor ([02bd980](https://github.com/halifox/maccy_for_windows/commit/02bd9800d5050a942d46d36342e00457b1ce5e0c))
+* **history:** scroll the wheel like a normal list ([57259cf](https://github.com/halifox/maccy_for_windows/commit/57259cff66c65edb139d1b700065ac3b2d0ddbc7))
+* **hotkey:** harden hook, preview, thumbnail, and settings save (P6) ([bc2de3d](https://github.com/halifox/maccy_for_windows/commit/bc2de3d5a5b659ea8ca35feb96b7e5a6ccf78bcc))
+* **hotkey:** match digit pin shortcuts from the numpad (L-16/L-21) ([7672c45](https://github.com/halifox/maccy_for_windows/commit/7672c454fa6357b7553c41e1fd2497019ad012ae))
+* **hotkey:** toggle the Win chord when the key goes down ([68d7f7b](https://github.com/halifox/maccy_for_windows/commit/68d7f7ba4c5b97cd3297ce0447d377bf24ca7847))
+* **paste:** harden focus restore, SendInput, and paste gating (P2) ([20d150d](https://github.com/halifox/maccy_for_windows/commit/20d150de799070bdb31707538b172ac8ff09da41))
+* **popup:** dismiss on click-outside and focus-based toggle ([4e79327](https://github.com/halifox/maccy_for_windows/commit/4e793272ea16e3cd0eef30e58f908312b48b35f3))
+* **popup:** restore the window that was in front when closing ([47dd3e3](https://github.com/halifox/maccy_for_windows/commit/47dd3e3f4f3128c42d1be51949abb871806d6f1b))
+* **popup:** toggle by visibility and dismiss only on outside click ([03c9f71](https://github.com/halifox/maccy_for_windows/commit/03c9f713267e3b61dfd52d2d0260b6e499395798))
+* **preview:** keep Ctrl+Space from typing or clicking buttons ([c80cc0f](https://github.com/halifox/maccy_for_windows/commit/c80cc0fc6f3fe8b6cf671eade2c0a03480a6292a))
+* **preview:** run PreviewWindow on the UI thread (C-02) ([f540a8e](https://github.com/halifox/maccy_for_windows/commit/f540a8ece1933a1a7fb13133e77f7b55a7f6e689))
+* **preview:** stop preview worker before owner destroy (C-01, M-17) ([42f295e](https://github.com/halifox/maccy_for_windows/commit/42f295ed6107e0e756544b3fd721d0b1841c57ee))
+* **settings:** unify ignore policy and fix loadingList stuck (P3) ([0ba494e](https://github.com/halifox/maccy_for_windows/commit/0ba494eac9fdd062dc4798ebd1dfda19988e7a51))
+* **tray:** handle NOTIFYICON_VERSION_4 callback packing (L-13) ([7ece806](https://github.com/halifox/maccy_for_windows/commit/7ece806fdd0464f8103381ef86d29e05fe95b5a9))
+* **ui:** address remaining low audit debt (P7) ([206da19](https://github.com/halifox/maccy_for_windows/commit/206da19780d2837170ca4dad6ee8abf905f72cdb))
+* **ui:** ignore async callbacks after shutdown (H-05) ([54897b6](https://github.com/halifox/maccy_for_windows/commit/54897b629d8d7823b351c826fb1acdad5d7c7f08))
+
+
+### Performance Improvements
+
+* **storage:** async hot writes and bound regex search (P5) ([5203881](https://github.com/halifox/maccy_for_windows/commit/5203881a6619a864565b7494c55a8c850d0d701d))
+
 ## [1.4.1](https://github.com/halifox/maccy_for_windows/compare/v1.4.0...v1.4.1) (2026-11-03)
 
 
