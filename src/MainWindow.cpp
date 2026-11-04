@@ -1102,32 +1102,10 @@ void MainWindow::LoadImageThumbnails() {
                             bitmap->handle == nullptr) {
                             return;
                         }
-                        // Rematerialize on the UI thread so GDI ownership matches (M-08).
-                        const int bitmap_width = bitmap->width;
-                        const int bitmap_height = bitmap->height;
-                        const HBITMAP source = bitmap->Release();
-                        const HBITMAP ui_copy = static_cast<HBITMAP>(::CopyImage(
-                            source,
-                            IMAGE_BITMAP,
-                            0,
-                            0,
-                            LR_CREATEDIBSECTION
-                        ));
-                        ::DeleteObject(source);
-                        if (ui_copy == nullptr) {
-                            return;
-                        }
-                        PreviewBitmap ui_bitmap(ui_copy, bitmap_width, bitmap_height);
-                        m_historyRenderer.SetImageThumbnail(result_id, std::move(ui_bitmap));
+                        // Decoder already returns a DIB section. Keep it off this thread
+                        // so a finished image does not stall scrolling.
+                        m_historyRenderer.SetImageThumbnail(result_id, std::move(*bitmap));
                         m_historyListControls.UpdateItemHeight(result_id);
-                        for (CListBox *list : {
-                                 &m_historyListControls.HistoryListWindow(),
-                                 &m_historyListControls.PinsListWindow()
-                             }) {
-                            if (list->m_hWnd != nullptr) {
-                                list->Invalidate(FALSE);
-                            }
-                        }
                     }
                 );
             });
@@ -2407,7 +2385,8 @@ LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM wParam, LPARAM lParam, BOOL& han
 
 LRESULT MainWindow::OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    if (!m_historyRenderer.ApplyLoadedIcons() || !m_popupVisible) {
+    if (!m_historyRenderer.ApplyLoadedIcons() || !m_popupVisible ||
+        m_historyListControls.DeferListRefresh()) {
         return 0;
     }
     m_historyListControls.HistoryListWindow().Invalidate(FALSE);

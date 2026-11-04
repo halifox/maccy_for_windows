@@ -39,6 +39,7 @@ public:
     int RowHeightPixels(const CListBox &list, int row) const noexcept;
     int TotalHeightPixels(const CListBox &list) const noexcept;
     void UpdateItemHeight(sqlite3_int64 item_id) noexcept;
+    bool DeferListRefresh() noexcept;
     void UpdateAllItemHeights() noexcept;
     void SetPendingMeasureItems(HWND list, std::vector<int> item_indices);
     void ResetScrollPositions() noexcept;
@@ -89,6 +90,10 @@ private:
     LRESULT OnHistoryListButtonUp(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnHistoryListScroll(UINT message, WPARAM wParam, LPARAM lParam, BOOL &handled);
     LRESULT OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOOL &handled);
+    void ScrollWheel(CListBox &list, int delta);
+    int WheelPageRows(const CListBox &list) const;
+    void FinishWheelGesture();
+    void InvalidateLists();
     LRESULT OnHistoryListSelectionChanged(WORD, WORD id, HWND, BOOL &handled);
     LRESULT OnMeasureItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL &handled);
@@ -104,5 +109,8 @@ private:
     PasteCallback m_pasteItem;
     SelectionCallback m_selectionChanged;
     int m_imageMaxHeight = 0;
+    int m_wheelRemainder = 0;
+    bool m_wheelGesture = false;
+    bool m_refreshAfterWheel = false;
     std::unordered_map<HWND, std::vector<int>> m_pendingMeasureItems;
 };
