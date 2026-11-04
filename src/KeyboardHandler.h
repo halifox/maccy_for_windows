@@ -41,6 +41,7 @@ public:
     bool HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items);
     bool HandlePopupShortcut(WPARAM key, const std::vector<ClipboardItem>& items);
     bool OnChar(WPARAM character);
+    bool ShouldIgnoreShortcutChar(WPARAM character) const;
 
     // Navigation
     void SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,

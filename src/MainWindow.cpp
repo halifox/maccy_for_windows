@@ -335,6 +335,15 @@ LRESULT MainWindow::OnSearchControlKeyDown(UINT message, WPARAM key, LPARAM, BOO
     return 0;
 }
 
+LRESULT MainWindow::OnSearchControlChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
+    if (m_keyboardHandler.ShouldIgnoreShortcutChar(character)) {
+        handled = TRUE;
+        return 0;
+    }
+    handled = FALSE;
+    return 0;
+}
+
 LRESULT MainWindow::OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled) {
     m_keyboardHandler.SetImeComposing(true);
     handled = FALSE;
@@ -389,6 +398,10 @@ LRESULT MainWindow::OnMenuButtonKeyDown(UINT message, WPARAM key, LPARAM, BOOL& 
 }
 
 LRESULT MainWindow::OnMenuButtonChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
+    if (m_keyboardHandler.ShouldIgnoreShortcutChar(character)) {
+        handled = TRUE;
+        return 0;
+    }
     if (character >= 0x20 && character != 0x7f) {
         m_keyboardHandler.TypeToSearch(character, m_search);
         handled = TRUE;

@@ -376,6 +376,10 @@ LRESULT HistoryListControls::OnHistoryListChar(
     LPARAM,
     BOOL &handled
 ) {
+    if (IsConfigured() && m_keyboardHandler->ShouldIgnoreShortcutChar(character)) {
+        handled = TRUE;
+        return 0;
+    }
     if (IsConfigured() && character >= 0x20 && character != 0x7f) {
         m_keyboardHandler->TypeToSearch(character, m_search);
         handled = TRUE;

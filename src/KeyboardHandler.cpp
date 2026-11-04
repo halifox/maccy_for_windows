@@ -663,8 +663,32 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
     return false;
 }
 
+bool KeyboardHandler::ShouldIgnoreShortcutChar(WPARAM character) const {
+    const auto chord_down = [&](const HotKeyConfig &hotkey) {
+        if (!IsHotKeyPressed(hotkey, hotkey.virtual_key)) {
+            return false;
+        }
+        if (hotkey.virtual_key == VK_SPACE) {
+            return character == L' ';
+        }
+        if (hotkey.virtual_key >= 'A' && hotkey.virtual_key <= 'Z') {
+            const wchar_t upper = static_cast<wchar_t>(towupper(static_cast<wint_t>(character)));
+            return upper == static_cast<wchar_t>(hotkey.virtual_key);
+        }
+        if (hotkey.virtual_key >= '0' && hotkey.virtual_key <= '9') {
+            return character == static_cast<wchar_t>(hotkey.virtual_key);
+        }
+        return (hotkey.modifiers & (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN)) != 0;
+    };
+    // TranslateMessage already queued WM_CHAR before the keydown was eaten.
+    // Ctrl+Space stays a space, so the search box would insert it after preview opens.
+    return chord_down(m_settings.preview_hotkey) || chord_down(m_settings.pin_hotkey) ||
+        chord_down(m_settings.delete_hotkey);
+}
+
 bool KeyboardHandler::OnChar(WPARAM character) {
-    return m_settings.show_search && character >= 0x20 && character != 0x7f;
+    return m_settings.show_search && character >= 0x20 && character != 0x7f &&
+        !ShouldIgnoreShortcutChar(character);
 }
 
 void KeyboardHandler::SetCallbacks(Callbacks callbacks) {

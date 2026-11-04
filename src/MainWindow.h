@@ -102,6 +102,7 @@ public:
     ALT_MSG_MAP(kSearchControlMessageMap)
         MESSAGE_HANDLER(WM_KEYDOWN, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_SYSKEYDOWN, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_CHAR, OnSearchControlChar)
         MESSAGE_HANDLER(WM_KEYUP, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_SYSKEYUP, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_IME_STARTCOMPOSITION, OnSearchControlImeStart)
@@ -286,6 +287,7 @@ private:
     // Search and menu controls route input through WTL alternate message maps;
     // history lists use the dedicated HistoryListControls message map.
     LRESULT OnSearchControlKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlChar(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlFocusChanged(UINT, WPARAM, LPARAM, BOOL& handled);

@@ -58,6 +58,10 @@ std::wstring FormatApplication(std::wstring_view application) {
 
 } // namespace
 
+PreviewWindow::PreviewWindow()
+    : m_pinButton(this, 1),
+      m_deleteButton(this, 1) {}
+
 bool PreviewWindow::Initialize(HWND owner) {
     return Create(owner) != nullptr;
 }
@@ -209,8 +213,11 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_image = GetDlgItem(IDC_PREVIEW_IMAGE);
     m_text = GetDlgItem(IDC_PREVIEW_TEXT);
     m_status = GetDlgItem(IDC_PREVIEW_STATUS);
-    m_pinButton = GetDlgItem(IDC_PREVIEW_PIN);
-    m_deleteButton = GetDlgItem(IDC_PREVIEW_DELETE);
+    m_pinButton.SubclassWindow(GetDlgItem(IDC_PREVIEW_PIN));
+    m_deleteButton.SubclassWindow(GetDlgItem(IDC_PREVIEW_DELETE));
+    // Mouse clicks still notify. Keyboard focus would turn Ctrl+Space into a button click.
+    m_pinButton.ModifyStyle(WS_TABSTOP, 0);
+    m_deleteButton.ModifyStyle(WS_TABSTOP, 0);
     m_deleteButton.SetWindowText(Localization::Text(IDS_PREVIEW_DELETE).c_str());
     const UINT dpi = UiFont::DpiForWindow(m_hWnd);
     UpdateFont(dpi);
@@ -337,13 +344,39 @@ LRESULT PreviewWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_pinButton.SetFont(default_font, FALSE);
     m_deleteButton.SetFont(default_font, FALSE);
     m_font.DeleteObject();
+    if (m_pinButton.m_hWnd != nullptr) {
+        m_pinButton.UnsubclassWindow();
+    }
+    if (m_deleteButton.m_hWnd != nullptr) {
+        m_deleteButton.UnsubclassWindow();
+    }
     m_image.m_hWnd = nullptr;
     m_text.m_hWnd = nullptr;
     m_status.m_hWnd = nullptr;
-    m_pinButton.m_hWnd = nullptr;
-    m_deleteButton.m_hWnd = nullptr;
     m_itemId = 0;
     m_hWnd = nullptr;
+    return 0;
+}
+
+LRESULT PreviewWindow::OnActionButtonDialogCode(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    return DLGC_STATIC;
+}
+
+LRESULT PreviewWindow::OnActionButtonFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    const HWND text = m_text.m_hWnd;
+    const HWND target = text != nullptr && ::IsWindowVisible(text)
+        ? text
+        : ::GetWindow(m_hWnd, GW_OWNER);
+    if (target != nullptr && ::IsWindow(target)) {
+        ::SetFocus(target);
+    }
+    return 0;
+}
+
+LRESULT PreviewWindow::OnActionButtonKey(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
     return 0;
 }
 
