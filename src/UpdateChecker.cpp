@@ -247,17 +247,9 @@ bool UpdateChecker::Start(UpdateCheckMode mode) {
         if (m_stopping || m_checking) {
             return false;
         }
-    }
-
-    // A completed worker remains joinable until the next request or shutdown.
-    if (m_worker.joinable()) {
-        m_worker.join();
-    }
-
-    {
-        std::lock_guard lock(m_mutex);
-        if (m_stopping || m_checking) {
-            return false;
+        // Reap a finished worker; never join while m_checking (L-05).
+        if (m_worker.joinable()) {
+            m_worker.join();
         }
         m_checking = true;
     }

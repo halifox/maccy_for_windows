@@ -6,6 +6,13 @@
 
 class PasteController {
 public:
+    enum class PasteResult {
+        Failed,
+        FocusOnly,
+        Sent,
+        Deferred
+    };
+
     PasteController() = default;
 
     PasteController(const PasteController &) = delete;
@@ -16,11 +23,12 @@ public:
     // Captures an external paste target. Own/owned windows and null are ignored
     // so a previous good target is preserved across popup activation churn.
     void CaptureTargetWindow(HWND candidate = nullptr);
-    void RestoreTargetFocusAndPaste(HWND target, HWND target_focus, bool paste);
+    PasteResult RestoreTargetFocusAndPaste(HWND target, HWND target_focus, bool paste);
 
     void StartPasteTimer(HWND target, HWND focus);
     void OnPasteTimer();
     void StopPasteTimer();
+    bool IsPastePending() const noexcept;
 
     HWND GetTargetWindow() const noexcept { return m_targetWindow; }
     HWND GetTargetFocusWindow() const noexcept { return m_targetFocusWindow; }

@@ -51,7 +51,7 @@ private:
 
     // Ignore rules
     bool ShouldIgnoreApplication(std::wstring_view application) const;
-    bool ShouldIgnoreFormat(std::wstring_view format) const;
+    bool ShouldIgnoreFormat(UINT format, std::wstring_view name) const;
     bool ShouldIgnoreText(std::wstring_view text) const;
 
     // Clipboard data extraction
@@ -68,7 +68,8 @@ private:
     HWND m_owner = nullptr;
 
     bool m_clipboardListenerAdded = false;
-    std::optional<std::wstring> m_expectedClipboardFingerprint;
+    // Suppress the WM_CLIPBOARDUPDATE echo from our own SetClipboardData writes.
+    std::optional<DWORD> m_selfWriteSequence;
 
     std::vector<std::wstring> m_ignoredApps;
     std::vector<std::wstring> m_ignoredFormats;

@@ -246,7 +246,7 @@ Database::Database(const std::filesystem::path &path)
         Exec("PRAGMA journal_mode = WAL;");
         Exec("PRAGMA synchronous = NORMAL;");
         Exec("PRAGMA temp_store = MEMORY;");
-        Exec("PRAGMA busy_timeout = 1000;");
+        Exec("PRAGMA busy_timeout = 5000;");
         Exec(
             "CREATE TABLE IF NOT EXISTS app_state ("
             "key TEXT PRIMARY KEY,"
@@ -598,7 +598,8 @@ void Database::ForEachSearchDocument(
 ) const {
     Statement statement(
         m_db,
-        "SELECT item_id, body, paths FROM history_search_documents ORDER BY item_id DESC;"
+        "SELECT item_id, substr(body, 1, 65536), substr(paths, 1, 65536) "
+        "FROM history_search_documents ORDER BY item_id DESC;"
     );
     while (true) {
         if (is_cancelled && is_cancelled()) {
@@ -744,24 +745,8 @@ void Database::SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned)
         if (result != SQLITE_ROW && result != SQLITE_DONE) {
             throw MakeSqliteError(m_db, "Unable to find clipboard history");
         }
-        bool formats_present = false;
         if (existing) {
             item_id = sqlite3_column_int64(find.get(), 0);
-            Statement format_check(
-                m_db,
-                "SELECT 1 FROM clipboard_formats WHERE item_id = ?1 LIMIT 1;"
-            );
-            CheckSqliteResult(
-                m_db,
-                sqlite3_bind_int64(format_check.get(), 1, item_id),
-                "Unable to bind clipboard format item id"
-            );
-            const int format_result = sqlite3_step(format_check.get());
-            if (format_result == SQLITE_ROW) {
-                formats_present = true;
-            } else if (format_result != SQLITE_DONE) {
-                throw MakeSqliteError(m_db, "Unable to inspect clipboard formats");
-            }
             Statement update(
                 m_db,
                 "UPDATE history_items SET "
@@ -803,10 +788,8 @@ void Database::SaveClipboard(const ClipboardSnapshot &capture, int max_unpinned)
             item_id = sqlite3_last_insert_rowid(m_db);
         }
 
-        if (!existing || !formats_present) {
-            ReplaceFormats(item_id, capture.data);
-            ReplaceSearchIndex(item_id, search.body, search.paths);
-        }
+        ReplaceFormats(item_id, capture.data);
+        ReplaceSearchIndex(item_id, search.body, search.paths);
         transaction.Commit();
     }
     TrimUnpinned(bounded_size);
@@ -877,9 +860,10 @@ std::vector<ClipboardItem> Database::SearchHistory(
         return {};
     }
 
+    // Truncate preview for list/search metadata to cut memory and regex cost (M-10).
     Statement statement(
         m_db,
-        "SELECT id, title, preview, application, COALESCE(pin, ''), pinned, "
+        "SELECT id, title, substr(preview, 1, 4096), application, COALESCE(pin, ''), pinned, "
         "first_copied_at, copied_at, copy_count, has_text, has_image, has_files "
         "FROM history_items ORDER BY id DESC;"
     );
@@ -923,7 +907,7 @@ std::vector<ClipboardItem> Database::SearchHistory(
         if (!regex) {
             return false;
         }
-        return std::regex_search(text.begin(), text.end(), *regex);
+        return ClipboardRules::RegexSearchBounded(*regex, text);
     };
 
     const auto itemIndexForId = [&all](sqlite3_int64 id) -> std::optional<size_t> {

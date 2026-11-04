@@ -3,11 +3,18 @@
 #include "PlatformConfig.h"
 #include "Constants.h"
 
+#include <atomic>
+#include <condition_variable>
+#include <deque>
 #include <list>
+#include <mutex>
 #include <optional>
 #include <regex>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "Win32Resources.h"
@@ -40,6 +47,7 @@ public:
     void SetImageThumbnail(sqlite3_int64 id, PreviewBitmap thumbnail);
     const PreviewBitmap* ImageThumbnail(sqlite3_int64 id) const noexcept;
     void ClearImageThumbnails() noexcept;
+    bool ApplyLoadedIcons();
     // Drawing operations
     void DrawHistoryItem(DRAWITEMSTRUCT* draw,
                          const std::vector<ClipboardItem>& items,
@@ -77,9 +85,29 @@ private:
     HistoryItemLayout LayoutHistoryItem(const RECT& row, const ClipboardItem& item,
                                         bool has_color_swatch, UINT dpi) const;
 
+    struct FittedLine {
+        std::wstring text;
+        std::vector<std::pair<size_t, size_t>> ranges;
+        int width = -1;
+        std::wstring query;
+    };
+    struct IconJob {
+        std::wstring key;
+        std::wstring path;
+    };
+    struct IconResult {
+        std::wstring key;
+        UniqueIcon icon;
+    };
+
     // Drawing helpers
-    void DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_view text,
+    void DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 item_id, std::wstring_view text,
                                 bool selected, std::wstring_view searchQuery);
+    const FittedLine &FittedLineFor(sqlite3_int64 item_id, std::wstring_view text, int width,
+                                    std::wstring_view search_query, HDC dc);
+    void QueueIcon(std::wstring key, std::wstring path);
+    void IconThreadMain(std::stop_token stop_token);
+    static UniqueIcon LoadShellIcon(const std::wstring &path);
     std::vector<std::pair<size_t, size_t>> HighlightRanges(std::wstring_view text,
                                                             std::wstring_view searchQuery);
     void PrepareHighlightPattern(std::wstring_view searchQuery);
@@ -94,6 +122,7 @@ private:
     };
 
     AppSettings& m_settings;
+    HWND m_owner = nullptr;
 
     CFont m_normalFont;
     CFont m_smallFont;
@@ -103,6 +132,15 @@ private:
 
     std::unordered_map<std::wstring, IconCacheEntry> m_iconCache;
     std::list<std::wstring> m_iconLru;
+    std::unordered_set<std::wstring> m_iconQueued;
+    std::mutex m_iconMutex;
+    std::condition_variable m_iconCv;
+    std::deque<IconJob> m_iconJobs;
+    std::mutex m_iconResultMutex;
+    std::deque<IconResult> m_iconResults;
+    std::atomic<bool> m_iconPosted{false};
+    std::jthread m_iconThread;
+    std::unordered_map<sqlite3_int64, FittedLine> m_fittedLines;
     std::unordered_map<sqlite3_int64, PreviewBitmap> m_imageThumbnails;
     std::vector<int> m_unpinnedShortcutNumbers;
     std::wstring m_highlightQuery;

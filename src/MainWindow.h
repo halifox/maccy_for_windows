@@ -24,6 +24,7 @@
 #include "KeyboardHandler.h"
 #include "PasteController.h"
 #include "PreviewWorker.h"
+#include "PreviewWindow.h"
 #include "ThumbnailWorker.h"
 #include "PreviewDecoder.h"
 #include "SearchHeaderLayout.h"
@@ -62,9 +63,8 @@ public:
         MESSAGE_HANDLER(WM_ERASEBKGND, OnEraseBackground)
         MESSAGE_HANDLER(WM_CTLCOLOREDIT, OnSearchEditColor)
         MESSAGE_HANDLER(WM_DRAWITEM, OnDrawItem)
-        MESSAGE_HANDLER(WM_ACTIVATE, OnActivate)
-        MESSAGE_HANDLER(AppConstants::kPopupActivationMessage, OnPopupActivation)
-        MESSAGE_HANDLER(AppConstants::kConfirmPopupDismissMessage, OnConfirmPopupDismiss)
+        MESSAGE_HANDLER(AppConstants::kPopupDismissMessage, OnPopupDismiss)
+        MESSAGE_HANDLER(AppConstants::kHistoryIconMessage, OnHistoryIcons)
         MESSAGE_HANDLER(WM_CLOSE, OnClose)
         MESSAGE_HANDLER(WM_TIMER, OnTimer)
         MESSAGE_HANDLER(WM_HOTKEY, OnHotKey)
@@ -102,6 +102,7 @@ public:
     ALT_MSG_MAP(kSearchControlMessageMap)
         MESSAGE_HANDLER(WM_KEYDOWN, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_SYSKEYDOWN, OnSearchControlKeyDown)
+        MESSAGE_HANDLER(WM_CHAR, OnSearchControlChar)
         MESSAGE_HANDLER(WM_KEYUP, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_SYSKEYUP, OnSearchControlKeyDown)
         MESSAGE_HANDLER(WM_IME_STARTCOMPOSITION, OnSearchControlImeStart)
@@ -175,13 +176,16 @@ private:
     void ApplyHistoryVisibility();
     void SetHistorySearchVisible(bool visible);
 
-    // Preview window
+    // Preview window (HWND owned by UI thread; payload loaded by PreviewWorker)
+    bool EnsurePreviewWindow();
+    void RepositionPreviewWindow();
     void SchedulePreviewForItem(sqlite3_int64 item_id);
     void ShowPreviewForItem(sqlite3_int64 item_id);
     void ShowPreviewForCandidate();
     void ShowPreviewForSelection();
     void HidePreview();
     void TogglePreview();
+    bool IsPreviewVisible() const noexcept;
 
     // Actions
     void ShowMainWindow(PopupPosition popup_position);
@@ -200,12 +204,19 @@ private:
     void ScheduleSearchFromCurrentEdit();
     void SaveWindowGeometry(bool resized = false);
     void HideMainWindow();
+    void DismissPopup();
     int SelectedHistoryIndex() const;
     bool IsOurWindow(HWND window) const;
-    void BeginPopupDismissGuard();
-    void EndPopupDismissGuard();
-    void HandlePopupActivation(HWND activating_window);
-    void ConfirmPopupDismiss();
+    bool GetTrayIconRect(RECT &rect) const;
+    bool IsTrayPoint(POINT screen_point, int dip_pad) const;
+    bool IsPointInPopupUi(POINT screen_point) const;
+    bool ConsumeDuplicateTrayOpen(WPARAM click_anchor);
+    void TogglePopup(PopupPosition popup_position);
+    void FocusPopupForTyping();
+    void InstallPopupDismissHooks();
+    void UninstallPopupDismissHooks();
+    static LRESULT CALLBACK PopupMouseHookProc(int code, WPARAM wParam, LPARAM lParam);
+    static DWORD WINAPI PopupMouseHookThread(LPVOID parameter);
 
     // Tray icon
     void UpdateTrayIcon();
@@ -215,6 +226,9 @@ private:
     // Settings
     std::uint32_t ApplySettings(const AppSettings &settings, std::uint32_t requestedUpdates);
     void PersistSettings();
+    void SetIgnorePolicy(bool ignore_events, bool ignore_only_next);
+    void ToggleIgnoreEvents();
+    void SyncOpenSettingsWindow();
     void RequestUiUpdate(std::uint32_t updateMask);
     void ApplyPendingState();
     void OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates);
@@ -238,9 +252,8 @@ private:
     LRESULT OnEraseBackground(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnSearchEditColor(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled);
-    LRESULT OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&);
-    LRESULT OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
-    LRESULT OnConfirmPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnClose(UINT, WPARAM, LPARAM, BOOL&);
     LRESULT OnCommand(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled);
     LRESULT OnSearchChanged(WORD, WORD, HWND, BOOL& handled);
@@ -274,6 +287,7 @@ private:
     // Search and menu controls route input through WTL alternate message maps;
     // history lists use the dedicated HistoryListControls message map.
     LRESULT OnSearchControlKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
+    LRESULT OnSearchControlChar(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlImeEnd(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnSearchControlFocusChanged(UINT, WPARAM, LPARAM, BOOL& handled);
@@ -281,18 +295,6 @@ private:
     LRESULT OnMenuButtonMouseMove(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnMenuButtonKeyDown(UINT, WPARAM, LPARAM, BOOL& handled);
     LRESULT OnMenuButtonChar(UINT, WPARAM, LPARAM, BOOL& handled);
-
-    // Callback handlers for KeyboardHandler
-    static void OnPreviewCallback(void* context, sqlite3_int64 itemId, bool keyboard);
-    static void OnPasteCallback(void* context, int index);
-    static void OnScheduleSearchCallback(void* context);
-    static void OnTogglePinCallback(void* context);
-    static void OnDeleteItemCallback(void* context);
-    static void OnTogglePreviewCallback(void* context);
-    static void OnClearHistoryCallback(void* context, bool all);
-    static void OnOpenSettingsCallback(void* context);
-    static void OnExitCallback(void* context);
-    static void OnHideWindowCallback(void* context);
 
     StorageWorker &m_storage;
     ThumbnailWorker &m_thumbnailWorker;
@@ -325,7 +327,18 @@ private:
     sqlite3_int64 m_previewItemId = 0;
     bool m_previewSuppressed = false;
     bool m_popupVisible = false;
-    bool m_suppressPopupDismiss = false;
+    // Outside click on the tray icon's padding. NIN_SELECT for that same
+    // gesture must not reopen the popup the hook just closed.
+    DWORD m_outsideDismissTick = 0;
+    POINT m_outsideDismissPoint{};
+    mutable RECT m_cachedTrayRect{};
+    mutable bool m_hasCachedTrayRect = false;
+    // Click-outside hook runs on its own thread so a slow paint cannot stall the cursor.
+    HANDLE m_dismissHookThread = nullptr;
+    DWORD m_dismissHookThreadId = 0;
+    HANDLE m_dismissHookReady = nullptr;
+    static HHOOK s_popupMouseHook;
+    static MainWindow* s_dismissHookOwner;
     bool m_searchClearPressed = false;
     PopupPosition m_activePopupPosition = PopupPosition::Cursor;
     bool m_loadingList = false;
@@ -348,6 +361,7 @@ private:
     int m_footerSeparatorY = -1;
 
     // Preview state
+    PreviewWindow m_previewWindow;
     std::wstring m_previewTip;
     std::uint64_t m_previewGeneration = 0;
     bool m_pasteInProgress = false;

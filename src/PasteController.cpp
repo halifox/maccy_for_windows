@@ -12,7 +12,14 @@ bool IsControlOnlyDown() {
     return IsKeyDown(VK_CONTROL) && !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT);
 }
 
-void SendControlVPaste() {
+bool SendInputs(INPUT *inputs, UINT count) {
+    if (inputs == nullptr || count == 0) {
+        return false;
+    }
+    return ::SendInput(count, inputs, sizeof(INPUT)) == count;
+}
+
+bool SendControlVPaste() {
     INPUT inputs[4]{};
     inputs[0].type = INPUT_KEYBOARD;
     inputs[0].ki.wVk = VK_CONTROL;
@@ -24,17 +31,17 @@ void SendControlVPaste() {
     inputs[3].type = INPUT_KEYBOARD;
     inputs[3].ki.wVk = VK_CONTROL;
     inputs[3].ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+    return SendInputs(inputs, ARRAYSIZE(inputs));
 }
 
-void SendPasteWithHeldControl() {
+bool SendPasteWithHeldControl() {
     INPUT inputs[2]{};
     inputs[0].type = INPUT_KEYBOARD;
     inputs[0].ki.wVk = L'V';
     inputs[1].type = INPUT_KEYBOARD;
     inputs[1].ki.wVk = L'V';
     inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+    return SendInputs(inputs, ARRAYSIZE(inputs));
 }
 
 } // namespace
@@ -76,9 +83,13 @@ void PasteController::CaptureTargetWindow(HWND candidate) {
     }
 }
 
-void PasteController::RestoreTargetFocusAndPaste(HWND target, HWND target_focus, bool paste) {
+PasteController::PasteResult PasteController::RestoreTargetFocusAndPaste(
+    HWND target,
+    HWND target_focus,
+    bool paste
+) {
     if (!::IsWindow(target)) {
-        return;
+        return PasteResult::Failed;
     }
     if (::IsIconic(target)) {
         ::ShowWindow(target, SW_RESTORE);
@@ -96,25 +107,25 @@ void PasteController::RestoreTargetFocusAndPaste(HWND target, HWND target_focus,
     }
     SetForegroundWindow(target);
     if (!paste) {
-        return;
+        return PasteResult::FocusOnly;
     }
     const HWND active_window = GetForegroundWindow();
     if (active_window != target && GetAncestor(active_window, GA_ROOT) != target) {
-        return;
+        return PasteResult::Failed;
     }
     if (PasteModifiersDown()) {
         if (IsControlOnlyDown()) {
-            SendPasteWithHeldControl();
-        } else {
-            StartPasteTimer(target, target_focus);
+            return SendPasteWithHeldControl() ? PasteResult::Sent : PasteResult::Failed;
         }
-        return;
+        StartPasteTimer(target, target_focus);
+        return PasteResult::Deferred;
     }
-    SendControlVPaste();
+    return SendControlVPaste() ? PasteResult::Sent : PasteResult::Failed;
 }
 
 bool PasteController::PasteModifiersDown() {
-    return IsKeyDown(VK_CONTROL) || IsKeyDown(VK_MENU) || IsKeyDown(VK_SHIFT);
+    // Only Alt blocks an immediate Ctrl+V; Shift alone used to force a 3s wait (M-24).
+    return IsKeyDown(VK_MENU);
 }
 
 void PasteController::StartPasteTimer(HWND target, HWND focus) {
@@ -127,9 +138,27 @@ void PasteController::StartPasteTimer(HWND target, HWND focus) {
 void PasteController::OnPasteTimer() {
     const HWND target = m_pendingPasteTarget;
     const HWND focus = m_pendingPasteFocus;
-    if (GetForegroundWindow() != target || GetTickCount64() > m_pendingPasteDeadline) {
+    const bool timed_out = GetTickCount64() > m_pendingPasteDeadline;
+    if (!::IsWindow(target) || timed_out) {
         StopPasteTimer();
-    } else if (!PasteModifiersDown()) {
+        if (!::IsWindow(target)) {
+            return;
+        }
+        // Timed out waiting for Alt — restore focus and force Ctrl+V once (M-13).
+        RestoreTargetFocusAndPaste(target, focus, false);
+        if (IsControlOnlyDown()) {
+            SendPasteWithHeldControl();
+        } else {
+            SendControlVPaste();
+        }
+        return;
+    }
+    if (GetForegroundWindow() != target &&
+        GetAncestor(GetForegroundWindow(), GA_ROOT) != target) {
+        StopPasteTimer();
+        return;
+    }
+    if (!PasteModifiersDown()) {
         StopPasteTimer();
         RestoreTargetFocusAndPaste(target, focus, true);
     }
@@ -142,4 +171,8 @@ void PasteController::StopPasteTimer() {
     m_pendingPasteTarget = nullptr;
     m_pendingPasteFocus = nullptr;
     m_pendingPasteDeadline = 0;
+}
+
+bool PasteController::IsPastePending() const noexcept {
+    return m_pendingPasteTarget != nullptr;
 }

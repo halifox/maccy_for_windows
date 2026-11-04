@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <regex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -62,8 +63,43 @@ bool CheckPinKeys() {
     const auto available = PinKeyPolicy::Available(pins, settings);
     return !PinKeyPolicy::IsValid(L"b", pins, settings, 0) &&
         PinKeyPolicy::IsValid(L"b", pins, settings, 1) &&
-        PinKeyPolicy::Next(pins, settings) == L"c" &&
+        PinKeyPolicy::Next(pins, settings) == L"0" &&
+        PinKeyPolicy::IsValid(L"9", pins, settings, 0) &&
         std::find(available.begin(), available.end(), L'p') == available.end();
+}
+
+bool CheckStripMarkup() {
+    const std::wstring html =
+        L"Version:1.0\r\n\r\n"
+        L"<html><script>ignore()</script><body>A&nbsp;&amp;&#65;&#x42;<style>x{}</style></body></html>";
+    const std::wstring rtf = L"{\\rtf1\\ansi{\\b hi}\\par\\u65 ?\\'42}";
+    return ClipboardRules::StripHtml(html).find(L"A &AB") != std::wstring::npos &&
+        ClipboardRules::StripHtml(html).find(L"ignore") == std::wstring::npos &&
+        ClipboardRules::StripRtf(rtf).find(L"hi") != std::wstring::npos &&
+        ClipboardRules::StripRtf(rtf).find(L"A") != std::wstring::npos;
+}
+
+bool CheckRegexBoundAndIgnoreAliases() {
+    try {
+        const std::wregex expression(L"secret");
+        std::wstring haystack(ClipboardRules::Limits::kMaximumRegexHaystackCharacters + 8, L'x');
+        haystack.replace(0, 6, L"secret");
+        if (!ClipboardRules::RegexSearchBounded(expression, haystack)) {
+            return false;
+        }
+        haystack.assign(ClipboardRules::Limits::kMaximumRegexHaystackCharacters + 8, L'x');
+        haystack.replace(ClipboardRules::Limits::kMaximumRegexHaystackCharacters + 1, 6, L"secret");
+        if (ClipboardRules::RegexSearchBounded(expression, haystack)) {
+            return false;
+        }
+    } catch (const std::regex_error &) {
+        return false;
+    }
+    return ClipboardRules::MatchesIgnoredFormatName(
+               L"Clipboard Viewer Ignore",
+               L"CF_CLIPBOARD_VIEWER_IGNORE"
+           ) &&
+        ClipboardRules::IsClipboardViewerIgnoreFormat(0, L"CF_CLIPBOARD_VIEWER_IGNORE");
 }
 
 } // namespace
@@ -73,5 +109,7 @@ int main() {
     if (!CheckSearchParts()) return 2;
     if (!CheckPinKeys()) return 3;
     if (!CheckBoundedDecoding()) return 4;
+    if (!CheckStripMarkup()) return 5;
+    if (!CheckRegexBoundAndIgnoreAliases()) return 6;
     return 0;
 }

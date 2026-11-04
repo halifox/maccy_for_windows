@@ -2,9 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cwctype>
 #include <cstring>
 #include <limits>
+#include <regex>
+#include <string>
 
 #include <shellapi.h>
 #include <shlobj.h>
@@ -21,9 +24,22 @@ struct SearchAccumulator {
 
 } // namespace
 
+std::wstring_view BoundedRegexHaystack(std::wstring_view text) {
+    if (text.size() > Limits::kMaximumRegexHaystackCharacters) {
+        return text.substr(0, Limits::kMaximumRegexHaystackCharacters);
+    }
+    return text;
+}
+
+bool RegexSearchBounded(const std::wregex &expression, std::wstring_view text) {
+    const std::wstring_view haystack = BoundedRegexHaystack(text);
+    return std::regex_search(haystack.begin(), haystack.end(), expression);
+}
+
 const std::vector<std::wstring> &DefaultIgnoredFormats() {
+    // Registered name is "Clipboard Viewer Ignore"; keep the CF_* alias for older DBs.
     static const std::vector<std::wstring> values = {
-        L"CF_CLIPBOARD_VIEWER_IGNORE",
+        L"Clipboard Viewer Ignore",
     };
     return values;
 }
@@ -161,6 +177,24 @@ std::wstring FormatName(UINT format) {
         return std::wstring(name.data(), static_cast<size_t>(length));
     }
     return L"FORMAT_" + std::to_wstring(format);
+}
+
+bool IsClipboardViewerIgnoreFormat(UINT format, std::wstring_view name) {
+    static const UINT registered = ::RegisterClipboardFormatW(L"Clipboard Viewer Ignore");
+    if (registered != 0 && format == registered) {
+        return true;
+    }
+    return EqualInsensitive(name, L"Clipboard Viewer Ignore") ||
+        EqualInsensitive(name, L"CF_CLIPBOARD_VIEWER_IGNORE");
+}
+
+bool MatchesIgnoredFormatName(std::wstring_view actual, std::wstring_view configured) {
+    if (EqualInsensitive(actual, configured)) {
+        return true;
+    }
+    // Alias CF_CLIPBOARD_VIEWER_IGNORE <-> Clipboard Viewer Ignore (M-26).
+    return IsClipboardViewerIgnoreFormat(0, actual) &&
+        IsClipboardViewerIgnoreFormat(0, configured);
 }
 
 bool IsUnicodeTextFormat(const ClipboardFormatData &data) {
@@ -343,6 +377,30 @@ std::wstring StripHtml(std::wstring value) {
         value.erase(0, header_end + 4);
     }
 
+    // Drop script/style blocks before tag stripping (L-17).
+    {
+        std::wstring lower = Lower(value);
+        for (const std::wstring_view block : {L"script", L"style"}) {
+            const std::wstring open = L"<" + std::wstring(block);
+            const std::wstring close = L"</" + std::wstring(block) + L">";
+            for (;;) {
+                const size_t start = lower.find(open);
+                if (start == std::wstring::npos) {
+                    break;
+                }
+                const size_t end = lower.find(close, start);
+                if (end == std::wstring::npos) {
+                    value.erase(start);
+                    lower.erase(start);
+                    break;
+                }
+                const size_t span = end + close.size() - start;
+                value.erase(start, span);
+                lower.erase(start, span);
+            }
+        }
+    }
+
     std::wstring result;
     result.reserve(value.size());
     bool in_tag = false;
@@ -350,7 +408,9 @@ std::wstring StripHtml(std::wstring value) {
         const wchar_t character = value[index];
         if (character == L'<') {
             in_tag = true;
-            result.push_back(L' ');
+            if (!result.empty() && result.back() != L' ') {
+                result.push_back(L' ');
+            }
             continue;
         }
         if (in_tag) {
@@ -363,15 +423,40 @@ std::wstring StripHtml(std::wstring value) {
             const size_t end = value.find(L';', index + 1);
             if (end != std::wstring::npos && end - index <= 16) {
                 const std::wstring_view entity(value.data() + index + 1, end - index - 1);
-                if (entity == L"nbsp") result += L' ';
-                else if (entity == L"amp") result += L'&';
-                else if (entity == L"lt") result += L'<';
-                else if (entity == L"gt") result += L'>';
-                else if (entity == L"quot") result += L'\"';
-                else result.append(value, index, end - index + 1);
+                if (entity == L"nbsp") {
+                    result += L' ';
+                } else if (entity == L"amp") {
+                    result += L'&';
+                } else if (entity == L"lt") {
+                    result += L'<';
+                } else if (entity == L"gt") {
+                    result += L'>';
+                } else if (entity == L"quot") {
+                    result += L'\"';
+                } else if (entity == L"apos") {
+                    result += L'\'';
+                } else if (!entity.empty() && entity.front() == L'#' ) {
+                    unsigned long code = 0;
+                    if (entity.size() >= 2 && (entity[1] == L'x' || entity[1] == L'X')) {
+                        code = std::wcstoul(std::wstring(entity.substr(2)).c_str(), nullptr, 16);
+                    } else {
+                        code = std::wcstoul(std::wstring(entity.substr(1)).c_str(), nullptr, 10);
+                    }
+                    if (code > 0 && code <= 0x10FFFF) {
+                        result.push_back(static_cast<wchar_t>(code));
+                    }
+                } else {
+                    result.append(value, index, end - index + 1);
+                }
                 index = end;
                 continue;
             }
+        }
+        if (std::iswspace(character)) {
+            if (!result.empty() && result.back() != L' ' && result.back() != L'\n') {
+                result.push_back(character == L'\n' || character == L'\r' ? L'\n' : L' ');
+            }
+            continue;
         }
         result.push_back(character);
     }
@@ -394,7 +479,49 @@ std::wstring StripRtf(std::wstring_view value) {
             break;
         }
         if (value[index] == L'\'') {
-            index = std::min(index + 3, value.size());
+            // \'hh hex byte
+            if (index + 2 < value.size()) {
+                const std::wstring hex(value.substr(index + 1, 2));
+                const unsigned long code = std::wcstoul(hex.c_str(), nullptr, 16);
+                if (code <= 0xFF) {
+                    result.push_back(static_cast<wchar_t>(code));
+                }
+                index += 3;
+            } else {
+                index = value.size();
+            }
+            continue;
+        }
+        if (value[index] == L'u') {
+            // \uN unicode codepoint (optional trailing space / ANSI fallback char)
+            ++index;
+            bool negative = false;
+            if (index < value.size() && value[index] == L'-') {
+                negative = true;
+                ++index;
+            }
+            long code = 0;
+            const size_t digit_begin = index;
+            while (index < value.size() && std::iswdigit(value[index])) {
+                code = code * 10 + (value[index] - L'0');
+                ++index;
+            }
+            if (index > digit_begin) {
+                if (negative) {
+                    code = -code;
+                }
+                // RTF \u uses signed 16-bit values.
+                const auto unicode = static_cast<std::uint16_t>(static_cast<std::int16_t>(code));
+                if (unicode != 0) {
+                    result.push_back(static_cast<wchar_t>(unicode));
+                }
+                if (index < value.size() && value[index] == L' ') {
+                    ++index;
+                } else if (index < value.size() && value[index] != L'\\' &&
+                           value[index] != L'{' && value[index] != L'}') {
+                    ++index; // skip ANSI fallback
+                }
+            }
             continue;
         }
         const size_t word_begin = index;
@@ -402,8 +529,8 @@ std::wstring StripRtf(std::wstring_view value) {
             ++index;
         }
         const std::wstring_view word(value.data() + word_begin, index - word_begin);
-        if (word == L"par" || word == L"line") {
-            result.push_back(L'\n');
+        if (word == L"par" || word == L"line" || word == L"tab") {
+            result.push_back(word == L"tab" ? L'\t' : L'\n');
         }
         if (index < value.size() && (value[index] == L'-' || std::iswdigit(value[index]))) {
             ++index;

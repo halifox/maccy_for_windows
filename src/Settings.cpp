@@ -297,11 +297,12 @@ void AppSettings::Save(const Database &database) const {
 
         WriteInt(database, L"appearance.windowX", popup_x);
         WriteInt(database, L"appearance.windowY", popup_y);
-    transaction.Commit();
 
+    // Apply registry before committing DB so a registry failure leaves DB unchanged (M-09).
     if (!SetLaunchAtLogin(launch_at_login)) {
         throw std::runtime_error("Unable to update launch-at-login setting");
     }
+    transaction.Commit();
 }
 
 std::wstring HotKeyToText(const HotKeyConfig &hotkey) {

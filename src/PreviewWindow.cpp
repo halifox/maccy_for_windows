@@ -1,7 +1,6 @@
 #include "PreviewWindow.h"
 #include "AutoSizeText.h"
 #include "ClipboardRules.h"
-#include "Constants.h"
 #include "GdiScope.h"
 #include "Localization.h"
 #include "UiFont.h"
@@ -58,6 +57,10 @@ std::wstring FormatApplication(std::wstring_view application) {
 }
 
 } // namespace
+
+PreviewWindow::PreviewWindow()
+    : m_pinButton(this, 1),
+      m_deleteButton(this, 1) {}
 
 bool PreviewWindow::Initialize(HWND owner) {
     return Create(owner) != nullptr;
@@ -128,6 +131,62 @@ void PreviewWindow::SetItem(const ClipboardItem &item, std::wstring text, Previe
     m_image.InvalidateRect(nullptr, TRUE);
 }
 
+void PreviewWindow::PositionNextToOwner(HWND owner, bool show) {
+    if (owner == nullptr || m_hWnd == nullptr || !::IsWindow(m_hWnd)) {
+        return;
+    }
+
+    RECT main_rect{};
+    RECT preview_rect{};
+    if (!::GetWindowRect(owner, &main_rect) ||
+        !::GetWindowRect(m_hWnd, &preview_rect)) {
+        return;
+    }
+
+    const int width = preview_rect.right - preview_rect.left;
+    const int height = preview_rect.bottom - preview_rect.top;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    HMONITOR monitor = ::MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info{sizeof(monitor_info)};
+    if (monitor == nullptr || !::GetMonitorInfoW(monitor, &monitor_info)) {
+        return;
+    }
+
+    const RECT &work_area = monitor_info.rcWork;
+    constexpr int gap = 0;
+    int x = main_rect.right + gap;
+    int y = main_rect.top;
+    const bool fits_right = main_rect.right + gap + width <= work_area.right;
+    const bool fits_left = main_rect.left - gap - width >= work_area.left;
+    if (fits_right) {
+        x = main_rect.right + gap;
+    } else if (fits_left) {
+        x = main_rect.left - width - gap;
+    } else {
+        const bool fits_above = main_rect.top - gap - height >= work_area.top;
+        const bool fits_below = main_rect.bottom + gap + height <= work_area.bottom;
+        x = std::clamp(
+            static_cast<int>(main_rect.left),
+            static_cast<int>(work_area.left),
+            std::max<int>(work_area.left, work_area.right - width)
+        );
+        if (fits_above) {
+            y = main_rect.top - height - gap;
+        } else if (fits_below) {
+            y = main_rect.bottom + gap;
+        }
+    }
+    const int max_x = std::max<int>(work_area.left, work_area.right - width);
+    const int max_y = std::max<int>(work_area.top, work_area.bottom - height);
+    x = std::clamp(x, static_cast<int>(work_area.left), max_x);
+    y = std::clamp(y, static_cast<int>(work_area.top), max_y);
+
+    const UINT flags = SWP_NOSIZE | SWP_NOACTIVATE | (show ? SWP_SHOWWINDOW : 0);
+    ::SetWindowPos(m_hWnd, HWND_TOPMOST, x, y, 0, 0, flags);
+}
+
 void PreviewWindow::Hide() {
     if (m_hWnd != nullptr) {
         ClearBitmap();
@@ -154,8 +213,11 @@ LRESULT PreviewWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_image = GetDlgItem(IDC_PREVIEW_IMAGE);
     m_text = GetDlgItem(IDC_PREVIEW_TEXT);
     m_status = GetDlgItem(IDC_PREVIEW_STATUS);
-    m_pinButton = GetDlgItem(IDC_PREVIEW_PIN);
-    m_deleteButton = GetDlgItem(IDC_PREVIEW_DELETE);
+    m_pinButton.SubclassWindow(GetDlgItem(IDC_PREVIEW_PIN));
+    m_deleteButton.SubclassWindow(GetDlgItem(IDC_PREVIEW_DELETE));
+    // Mouse clicks still notify. Keyboard focus would turn Ctrl+Space into a button click.
+    m_pinButton.ModifyStyle(WS_TABSTOP, 0);
+    m_deleteButton.ModifyStyle(WS_TABSTOP, 0);
     m_deleteButton.SetWindowText(Localization::Text(IDS_PREVIEW_DELETE).c_str());
     const UINT dpi = UiFont::DpiForWindow(m_hWnd);
     UpdateFont(dpi);
@@ -185,20 +247,6 @@ LRESULT PreviewWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM, BOOL &handled) 
     UpdateFont(HIWORD(wParam));
     InvalidateRect(nullptr, TRUE);
     UpdateWindow();
-    return 0;
-}
-
-LRESULT PreviewWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL &handled) {
-    if (LOWORD(wParam) != WA_INACTIVE) {
-        handled = FALSE;
-        return 0;
-    }
-
-    handled = TRUE;
-    CWindow owner(::GetWindow(m_hWnd, GW_OWNER));
-    if (owner.IsWindow()) {
-        owner.PostMessage(AppConstants::kPopupActivationMessage, wParam, lParam);
-    }
     return 0;
 }
 
@@ -296,13 +344,39 @@ LRESULT PreviewWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL &handled) {
     m_pinButton.SetFont(default_font, FALSE);
     m_deleteButton.SetFont(default_font, FALSE);
     m_font.DeleteObject();
+    if (m_pinButton.m_hWnd != nullptr) {
+        m_pinButton.UnsubclassWindow();
+    }
+    if (m_deleteButton.m_hWnd != nullptr) {
+        m_deleteButton.UnsubclassWindow();
+    }
     m_image.m_hWnd = nullptr;
     m_text.m_hWnd = nullptr;
     m_status.m_hWnd = nullptr;
-    m_pinButton.m_hWnd = nullptr;
-    m_deleteButton.m_hWnd = nullptr;
     m_itemId = 0;
     m_hWnd = nullptr;
+    return 0;
+}
+
+LRESULT PreviewWindow::OnActionButtonDialogCode(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    return DLGC_STATIC;
+}
+
+LRESULT PreviewWindow::OnActionButtonFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
+    const HWND text = m_text.m_hWnd;
+    const HWND target = text != nullptr && ::IsWindowVisible(text)
+        ? text
+        : ::GetWindow(m_hWnd, GW_OWNER);
+    if (target != nullptr && ::IsWindow(target)) {
+        ::SetFocus(target);
+    }
+    return 0;
+}
+
+LRESULT PreviewWindow::OnActionButtonKey(UINT, WPARAM, LPARAM, BOOL &handled) {
+    handled = TRUE;
     return 0;
 }
 

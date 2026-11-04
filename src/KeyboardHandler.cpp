@@ -5,9 +5,19 @@
 #include <algorithm>
 #include <array>
 #include <imm.h>
+#include <utility>
 #include <windowsx.h>
 
 KeyboardHandler* KeyboardHandler::s_hookOwner = nullptr;
+std::atomic<bool> KeyboardHandler::s_hotkeyCaptureActive{false};
+
+void KeyboardHandler::SetHotkeyCaptureActive(bool active) noexcept {
+    s_hotkeyCaptureActive.store(active, std::memory_order_release);
+}
+
+bool KeyboardHandler::IsHotkeyCaptureActive() noexcept {
+    return s_hotkeyCaptureActive.load(std::memory_order_acquire);
+}
 
 KeyboardHandler::KeyboardHandler(AppSettings& settings)
     : m_settings(settings) {}
@@ -42,12 +52,16 @@ void KeyboardHandler::Shutdown() {
     m_capturedModifiers = 0;
     m_capturedKeyReleased = false;
     m_pendingWinKey = 0;
+    m_pendingWinScan = 0;
+    m_pendingWinFlags = 0;
     m_winKeyPassedThrough = false;
     m_suppressingWinKey = false;
     m_hotkeyRegistered = false;
+    SetHotkeyCaptureActive(false);
+    m_callbacks = {};
 }
 
-bool KeyboardHandler::RegisterGlobalHotKey(UINT) {
+bool KeyboardHandler::InstallOpenHotkeyHook(UINT) {
     if (s_hookOwner != nullptr && s_hookOwner != this) {
         return false;
     }
@@ -61,7 +75,7 @@ bool KeyboardHandler::RegisterGlobalHotKey(UINT) {
     return m_hotkeyRegistered;
 }
 
-void KeyboardHandler::UnregisterGlobalHotKey(UINT) {
+void KeyboardHandler::UninstallOpenHotkeyHook(UINT) {
     if (m_keyboardHook != nullptr) {
         UnhookWindowsHookEx(m_keyboardHook);
         m_keyboardHook = nullptr;
@@ -82,16 +96,16 @@ void KeyboardHandler::UnregisterGlobalHotKey(UINT) {
 }
 
 LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message, LPARAM data) {
-    if (code < 0 || s_hookOwner == nullptr) {
-        return CallNextHookEx(nullptr, code, message, data);
-    }
-
     KeyboardHandler* const handler = s_hookOwner;
+    const HHOOK hook = handler != nullptr ? handler->m_keyboardHook : nullptr;
+    if (code < 0 || handler == nullptr) {
+        return CallNextHookEx(hook, code, message, data);
+    }
     const auto* const key = reinterpret_cast<const KBDLLHOOKSTRUCT*>(data);
     const bool keyDown = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
     const bool keyUp = message == WM_KEYUP || message == WM_SYSKEYUP;
     if ((key->flags & LLKHF_INJECTED) != 0) {
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     const bool isWinKey = key->vkCode == VK_LWIN || key->vkCode == VK_RWIN;
@@ -100,11 +114,8 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         key->vkCode == VK_RCONTROL || key->vkCode == VK_MENU || key->vkCode == VK_LMENU ||
         key->vkCode == VK_RMENU;
     const HWND focusedWindow = GetFocus();
-    const int focusedControlId = focusedWindow != nullptr ? GetDlgCtrlID(focusedWindow) : 0;
-    const bool isHotkeyCaptureControl = focusedControlId == IDC_G_OPEN_HOTKEY ||
-        focusedControlId == IDC_G_PIN_HOTKEY || focusedControlId == IDC_G_DELETE_HOTKEY ||
-        focusedControlId == IDC_G_PREVIEW_HOTKEY;
-    const bool capturingHotkey = isHotkeyCaptureControl && IsWindowVisible(focusedWindow);
+    // Prefer an explicit capture flag from the settings hotkey edit (M-15).
+    const bool capturingHotkey = IsHotkeyCaptureActive();
 
     if (handler->m_suppressingCaptureKey == key->vkCode && (keyDown || keyUp)) {
         if (keyUp) {
@@ -132,10 +143,11 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         if (handler->m_pendingWinKey != 0 || (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
             (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) modifiers |= MOD_WIN;
         if (modifiers == 0 && key->vkCode != VK_BACK) {
-            return CallNextHookEx(nullptr, code, message, data);
+            return CallNextHookEx(hook, code, message, data);
         }
         handler->m_suppressingCaptureKey = key->vkCode;
-        handler->m_captureTargetWindow = focusedWindow;
+        handler->m_captureTargetWindow =
+            focusedWindow != nullptr ? focusedWindow : GetForegroundWindow();
         handler->m_capturedKey = key->vkCode;
         handler->m_capturedModifiers = modifiers;
         handler->m_capturedKeyReleased = false;
@@ -172,22 +184,26 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
 
     if (isWinKey) {
         if ((configuredModifiers & MOD_WIN) == 0 && !capturingHotkey) {
-            return CallNextHookEx(nullptr, code, message, data);
+            return CallNextHookEx(hook, code, message, data);
         }
         if (keyDown) {
             if (handler->m_suppressingWinKey || handler->m_pendingWinKey == key->vkCode) {
                 return 1;
             }
             if (handler->m_winKeyPassedThrough) {
-                return CallNextHookEx(nullptr, code, message, data);
+                return CallNextHookEx(hook, code, message, data);
             }
             handler->m_pendingWinKey = key->vkCode;
+            handler->m_pendingWinScan = key->scanCode;
+            handler->m_pendingWinFlags = key->flags;
             return 1;
         }
         if (keyUp) {
             if (handler->m_suppressingWinKey) {
                 handler->m_suppressingWinKey = false;
                 handler->m_pendingWinKey = 0;
+                handler->m_pendingWinScan = 0;
+                handler->m_pendingWinFlags = 0;
                 if (handler->m_capturedKeyReleased) {
                     if (IsWindow(handler->m_captureTargetWindow)) {
                         PostMessageW(handler->m_captureTargetWindow, AppConstants::kCaptureHotkeyMessage,
@@ -201,37 +217,46 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
                 return 1;
             }
             if (handler->m_pendingWinKey == key->vkCode) {
-                // Delay the Windows key-down until we know this is not the configured chord.
+                // Replay the delayed Win-down with original scan/extended flags (H-07).
                 INPUT replay{};
                 replay.type = INPUT_KEYBOARD;
                 replay.ki.wVk = static_cast<WORD>(key->vkCode);
+                replay.ki.wScan = static_cast<WORD>(handler->m_pendingWinScan);
+                if ((handler->m_pendingWinFlags & LLKHF_EXTENDED) != 0) {
+                    replay.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+                }
                 SendInput(1, &replay, sizeof(replay));
                 handler->m_pendingWinKey = 0;
-                return CallNextHookEx(nullptr, code, message, data);
+                handler->m_pendingWinScan = 0;
+                handler->m_pendingWinFlags = 0;
+                return CallNextHookEx(hook, code, message, data);
             }
             if (handler->m_winKeyPassedThrough) {
                 handler->m_winKeyPassedThrough = false;
             }
         }
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     if (handler->m_winKeyPassedThrough) {
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
     if (handler->m_pendingWinKey != 0 && isModifierKey) {
-        return CallNextHookEx(nullptr, code, message, data);
+        return CallNextHookEx(hook, code, message, data);
     }
 
-    if (!capturingHotkey && keyDown && handler->m_pendingWinKey != 0 &&
+    if (!capturingHotkey && !handler->m_suppressingOpenKey && keyDown &&
+        handler->m_pendingWinKey != 0 &&
         key->vkCode == handler->m_settings.open_hotkey.virtual_key) {
         UINT pressed = 0;
         if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) pressed |= MOD_ALT;
         if ((GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0) pressed |= MOD_CONTROL;
         if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) pressed |= MOD_SHIFT;
         pressed |= MOD_WIN;
-        if (pressed == configuredModifiers) {
+        if (pressed == configuredModifiers && handler->m_owner.m_hWnd != nullptr) {
+            // Toggle on key-down. m_suppressingOpenKey swallows auto-repeat until
+            // this V is released, so a second press while Win is held toggles again.
             handler->m_suppressingOpenKey = true;
             handler->m_suppressingWinKey = true;
             PostMessageW(handler->m_owner.m_hWnd, AppConstants::kOpenHotkeyMessage, 0,
@@ -245,12 +270,18 @@ LRESULT CALLBACK KeyboardHandler::LowLevelKeyboardProc(int code, WPARAM message,
         INPUT replay{};
         replay.type = INPUT_KEYBOARD;
         replay.ki.wVk = static_cast<WORD>(handler->m_pendingWinKey);
+        replay.ki.wScan = static_cast<WORD>(handler->m_pendingWinScan);
+        if ((handler->m_pendingWinFlags & LLKHF_EXTENDED) != 0) {
+            replay.ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+        }
         SendInput(1, &replay, sizeof(replay));
         handler->m_pendingWinKey = 0;
+        handler->m_pendingWinScan = 0;
+        handler->m_pendingWinFlags = 0;
         handler->m_winKeyPassedThrough = true;
     }
 
-    return CallNextHookEx(nullptr, code, message, data);
+    return CallNextHookEx(hook, code, message, data);
 }
 
 bool KeyboardHandler::IsComposing(CWindow window) const {
@@ -414,8 +445,8 @@ void KeyboardHandler::OnHistoryMouseMove(CListBox window, POINT point,
     if (index == m_hoveredItemIndex && item_id == m_hoveredItemId) {
         if (m_activeFooter >= 0 || m_activeItemIndex != index) {
             SetActiveHistoryItem(index, items, historyList, pinsList, false);
-            if (m_previewCallback && m_callbackContext) {
-                m_previewCallback(m_callbackContext, item_id, false);
+            if (m_callbacks.preview) {
+                m_callbacks.preview(item_id, false);
             }
         }
         return;
@@ -429,9 +460,9 @@ void KeyboardHandler::OnHistoryMouseMove(CListBox window, POINT point,
     InvalidateHistoryItem(previous_index, items, historyList, pinsList);
     InvalidateHistoryItem(index, items, historyList, pinsList);
 
-    if (m_previewCallback && m_callbackContext) {
-        m_previewCallback(m_callbackContext, item_id, false);
-    }
+    if (m_callbacks.preview) {
+                m_callbacks.preview(item_id, false);
+            }
 }
 
 void KeyboardHandler::OnHistoryMouseLeave() {
@@ -485,33 +516,43 @@ void KeyboardHandler::NavigateHistoryFromSearch(bool forward,
         SetActiveFooter(target - count, items);
     } else {
         SetActiveHistoryItem(target, items, historyList, pinsList);
-        if (m_previewCallback && m_callbackContext) {
-            m_previewCallback(m_callbackContext, m_activeItemId, true);
-        }
+        if (m_callbacks.preview) {
+                m_callbacks.preview(m_activeItemId, true);
+            }
     }
 }
 
 bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items) {
-    if (m_searchCallback && search.m_hWnd != nullptr &&
+    if (m_callbacks.search && search.m_hWnd != nullptr &&
         (key == VK_RETURN || key == VK_UP || key == VK_DOWN || key == VK_PRIOR || key == VK_NEXT ||
          (GetKeyState(VK_CONTROL) & 0x8000) || (GetKeyState(VK_MENU) & 0x8000))) {
-        m_searchCallback(m_callbackContext);
+        m_callbacks.search();
     }
 
     if (HandlePopupShortcut(key, items)) return true;
 
     const bool ctrl = (::GetKeyState(VK_CONTROL) & 0x8000) != 0;
     if (key == VK_ESCAPE) {
-        if (m_hideWindowCallback && m_callbackContext) {
-            m_hideWindowCallback(m_callbackContext);
+        if (m_callbacks.hide_window) {
+            m_callbacks.hide_window();
         }
         return true;
     }
     if (key == VK_RETURN) {
-        if (m_activeFooter >= 0) {
-            // Handle footer button
-        } else if (m_pasteCallback && m_callbackContext) {
-            m_pasteCallback(m_callbackContext, m_activeItemIndex);
+        if (m_activeFooter >= 0 &&
+            m_activeFooter < static_cast<int>(m_footerButtons.size())) {
+            CButton &button = m_footerButtons[static_cast<size_t>(m_activeFooter)];
+            if (button.m_hWnd != nullptr && m_owner.m_hWnd != nullptr) {
+                const int control_id = button.GetDlgCtrlID();
+                ::SendMessageW(
+                    m_owner.m_hWnd,
+                    WM_COMMAND,
+                    MAKEWPARAM(static_cast<WORD>(control_id), BN_CLICKED),
+                    reinterpret_cast<LPARAM>(button.m_hWnd)
+                );
+            }
+        } else if (m_callbacks.paste) {
+            m_callbacks.paste(m_activeItemIndex);
         }
         return true;
     }
@@ -528,8 +569,8 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std:
         if (!items.empty()) {
             const int target = (key == VK_HOME || key == VK_PRIOR) ? 0 : static_cast<int>(items.size()) - 1;
             SetActiveHistoryItem(target, items, m_historyList, m_pinsList);
-            if (m_previewCallback && m_callbackContext) {
-                m_previewCallback(m_callbackContext, m_activeItemId, true);
+            if (m_callbacks.preview) {
+                m_callbacks.preview(m_activeItemId, true);
             }
         }
         return true;
@@ -545,20 +586,20 @@ bool KeyboardHandler::HandlePopupKey(WPARAM key, const CEdit& search, const std:
 
 bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<ClipboardItem>& items) {
     if (IsHotKeyPressed(m_settings.pin_hotkey, key)) {
-        if (m_togglePinCallback && m_callbackContext) {
-            m_togglePinCallback(m_callbackContext);
+        if (m_callbacks.toggle_pin) {
+            m_callbacks.toggle_pin();
         }
         return true;
     }
     if (IsHotKeyPressed(m_settings.delete_hotkey, key)) {
-        if (m_deleteItemCallback && m_callbackContext) {
-            m_deleteItemCallback(m_callbackContext);
+        if (m_callbacks.delete_item) {
+            m_callbacks.delete_item();
         }
         return true;
     }
     if (IsHotKeyPressed(m_settings.preview_hotkey, key)) {
-        if (m_togglePreviewCallback && m_callbackContext) {
-            m_togglePreviewCallback(m_callbackContext);
+        if (m_callbacks.toggle_preview) {
+            m_callbacks.toggle_preview();
         }
         return true;
     }
@@ -568,20 +609,20 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
     const bool shift = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
 
     if (ctrl && alt && key == VK_BACK) {
-        if (m_clearHistoryCallback && m_callbackContext) {
-            m_clearHistoryCallback(m_callbackContext, shift);
+        if (m_callbacks.clear_history) {
+            m_callbacks.clear_history(shift);
         }
         return true;
     }
     if (ctrl && !alt && key == VK_OEM_COMMA) {
-        if (m_openSettingsCallback && m_callbackContext) {
-            m_openSettingsCallback(m_callbackContext);
+        if (m_callbacks.open_settings) {
+            m_callbacks.open_settings();
         }
         return true;
     }
     if (ctrl && !alt && key == 'Q') {
-        if (m_exitCallback && m_callbackContext) {
-            m_exitCallback(m_callbackContext);
+        if (m_callbacks.exit) {
+            m_callbacks.exit();
         }
         return true;
     }
@@ -593,15 +634,27 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
 
     if ((ctrl != alt) && !(GetKeyState(VK_LWIN) & 0x8000) && !(GetKeyState(VK_RWIN) & 0x8000)) {
         int number = 0;
+        WPARAM digit_key = key;
+        if (key >= VK_NUMPAD0 && key <= VK_NUMPAD9) {
+            digit_key = static_cast<WPARAM>('0' + (key - VK_NUMPAD0));
+        }
         for (size_t i = 0; i < items.size(); ++i) {
             const auto& item = items[i];
-            const bool matches = item.pinned
-                ? item.pin.size() == 1 && towupper(item.pin[0]) == key
-                : (++number <= 9 && key == static_cast<WPARAM>('0' + number));
+            bool matches = false;
+            if (item.pinned) {
+                if (item.pin.size() == 1) {
+                    const wchar_t pin = static_cast<wchar_t>(towupper(item.pin[0]));
+                    // Digit pins must accept both main-row and numpad keys (L-16 + L-21).
+                    matches = pin == static_cast<wchar_t>(key) ||
+                        (pin >= L'0' && pin <= L'9' && pin == static_cast<wchar_t>(digit_key));
+                }
+            } else {
+                matches = (++number <= 9 && digit_key == static_cast<WPARAM>('0' + number));
+            }
             if (matches) {
                 SetActiveHistoryItem(static_cast<int>(i), items, m_historyList, m_pinsList);
-                if (m_pasteCallback && m_callbackContext) {
-                    m_pasteCallback(m_callbackContext, static_cast<int>(i));
+                if (m_callbacks.paste) {
+                    m_callbacks.paste(static_cast<int>(i));
                 }
                 return true;
             }
@@ -610,30 +663,34 @@ bool KeyboardHandler::HandlePopupShortcut(WPARAM key, const std::vector<Clipboar
     return false;
 }
 
-bool KeyboardHandler::OnChar(WPARAM character) {
-    return m_settings.show_search && character >= 0x20 && character != 0x7f;
+bool KeyboardHandler::ShouldIgnoreShortcutChar(WPARAM character) const {
+    const auto chord_down = [&](const HotKeyConfig &hotkey) {
+        if (!IsHotKeyPressed(hotkey, hotkey.virtual_key)) {
+            return false;
+        }
+        if (hotkey.virtual_key == VK_SPACE) {
+            return character == L' ';
+        }
+        if (hotkey.virtual_key >= 'A' && hotkey.virtual_key <= 'Z') {
+            const wchar_t upper = static_cast<wchar_t>(towupper(static_cast<wint_t>(character)));
+            return upper == static_cast<wchar_t>(hotkey.virtual_key);
+        }
+        if (hotkey.virtual_key >= '0' && hotkey.virtual_key <= '9') {
+            return character == static_cast<wchar_t>(hotkey.virtual_key);
+        }
+        return (hotkey.modifiers & (MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_WIN)) != 0;
+    };
+    // TranslateMessage already queued WM_CHAR before the keydown was eaten.
+    // Ctrl+Space stays a space, so the search box would insert it after preview opens.
+    return chord_down(m_settings.preview_hotkey) || chord_down(m_settings.pin_hotkey) ||
+        chord_down(m_settings.delete_hotkey);
 }
 
-void KeyboardHandler::SetCallbacks(void* context,
-                                  PreviewCallback previewCb,
-                                  PasteCallback pasteCb,
-                                  SearchCallback searchCb,
-                                  TogglePinCallback togglePinCb,
-                                  DeleteItemCallback deleteItemCb,
-                                  TogglePreviewCallback togglePreviewCb,
-                                  ClearHistoryCallback clearHistoryCb,
-                                  OpenSettingsCallback openSettingsCb,
-                                  ExitCallback exitCb,
-                                  HideWindowCallback hideWindowCb) {
-    m_callbackContext = context;
-    m_previewCallback = previewCb;
-    m_pasteCallback = pasteCb;
-    m_searchCallback = searchCb;
-    m_togglePinCallback = togglePinCb;
-    m_deleteItemCallback = deleteItemCb;
-    m_togglePreviewCallback = togglePreviewCb;
-    m_clearHistoryCallback = clearHistoryCb;
-    m_openSettingsCallback = openSettingsCb;
-    m_exitCallback = exitCb;
-    m_hideWindowCallback = hideWindowCb;
+bool KeyboardHandler::OnChar(WPARAM character) {
+    return m_settings.show_search && character >= 0x20 && character != 0x7f &&
+        !ShouldIgnoreShortcutChar(character);
+}
+
+void KeyboardHandler::SetCallbacks(Callbacks callbacks) {
+    m_callbacks = std::move(callbacks);
 }

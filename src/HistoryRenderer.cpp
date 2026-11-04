@@ -90,6 +90,12 @@ HistoryRenderer::~HistoryRenderer() {
 }
 
 bool HistoryRenderer::Initialize(CWindow owner) {
+    m_owner = owner.m_hWnd;
+    if (!m_iconThread.joinable()) {
+        m_iconThread = std::jthread([this](std::stop_token stop_token) {
+            IconThreadMain(stop_token);
+        });
+    }
     return UpdateFonts(UiFont::DpiForWindow(owner.m_hWnd));
 }
 
@@ -119,10 +125,23 @@ bool HistoryRenderer::UpdateFonts(UINT dpi) {
     m_boldFont.Attach(boldFont.Detach());
     m_italicFont.Attach(italicFont.Detach());
     m_underlineFont.Attach(underlineFont.Detach());
+    m_fittedLines.clear();
     return true;
 }
 
 void HistoryRenderer::Shutdown() {
+    if (m_iconThread.joinable()) {
+        m_iconThread.request_stop();
+        m_iconCv.notify_all();
+        m_iconThread.join();
+    }
+    {
+        std::lock_guard lock(m_iconResultMutex);
+        m_iconResults.clear();
+    }
+    m_iconPosted.store(false);
+    m_owner = nullptr;
+
     m_normalFont.DeleteObject();
     m_smallFont.DeleteObject();
     m_boldFont.DeleteObject();
@@ -131,6 +150,8 @@ void HistoryRenderer::Shutdown() {
 
     m_iconCache.clear();
     m_iconLru.clear();
+    m_iconQueued.clear();
+    m_fittedLines.clear();
     m_imageThumbnails.clear();
     m_unpinnedShortcutNumbers.clear();
     m_highlightQuery.clear();
@@ -139,6 +160,7 @@ void HistoryRenderer::Shutdown() {
 }
 
 void HistoryRenderer::PrepareHistory(const std::vector<ClipboardItem> &items) {
+    m_fittedLines.clear();
     m_unpinnedShortcutNumbers.assign(items.size(), 0);
     int number = 0;
     for (size_t index = 0; index < items.size(); ++index) {
@@ -296,7 +318,8 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
         if (!m_highlightRegex) {
             return;
         }
-        const std::wstring value(text);
+        const std::wstring_view haystack = ClipboardRules::BoundedRegexHaystack(text);
+        const std::wstring value(haystack);
         for (std::wsregex_iterator it(value.begin(), value.end(), *m_highlightRegex), end;
              it != end; ++it) {
             const auto match = *it;
@@ -351,14 +374,21 @@ std::vector<std::pair<size_t, size_t>> HistoryRenderer::HighlightRanges(
     return ranges;
 }
 
-void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_view text,
-                                            bool selected, std::wstring_view searchQuery) {
-    ScopedDcState dc_state(dc);
-    IntersectClipRect(dc, rect.left, rect.top, rect.right, rect.bottom);
-    const auto originalRanges = HighlightRanges(text, searchQuery);
+const HistoryRenderer::FittedLine &HistoryRenderer::FittedLineFor(
+    sqlite3_int64 item_id,
+    std::wstring_view text,
+    int width,
+    std::wstring_view search_query,
+    HDC dc
+) {
+    FittedLine &slot = m_fittedLines[item_id];
+    if (slot.width == width && slot.query == search_query) {
+        return slot;
+    }
+
+    const auto original_ranges = HighlightRanges(text, search_query);
     const auto measure = [&](std::wstring_view value) {
         SIZE size{};
-        // Use the bold font for fitting so highlighted text also fits.
         ScopedGdiObjectSelection font_selection(
             dc,
             m_boldFont != nullptr ? m_boldFont : GetStockObject(DEFAULT_GUI_FONT)
@@ -367,28 +397,59 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_vie
         return size.cx;
     };
     std::wstring display(text);
-    size_t prefix = text.size(), suffix = 0;
-    if (measure(text) > rect.right - rect.left) {
-        size_t low = 0, high = text.size();
+    size_t prefix = text.size();
+    size_t suffix = 0;
+    if (width > 0 && measure(text) > width) {
+        size_t low = 0;
+        size_t high = text.size();
         while (low < high) {
             const size_t length = (low + high + 1) / 2;
-            const auto candidate = std::wstring(text.substr(0, (length + 1) / 2)) + L"…" + std::wstring(text.substr(text.size() - length / 2));
-            if (measure(candidate) <= rect.right - rect.left) low = length; else high = length - 1;
+            const std::wstring candidate = std::wstring(text.substr(0, (length + 1) / 2)) + L"…" +
+                std::wstring(text.substr(text.size() - length / 2));
+            if (measure(candidate) <= width) {
+                low = length;
+            } else {
+                high = length - 1;
+            }
         }
-        prefix = (low + 1) / 2; suffix = low / 2;
-        if (prefix && text[prefix - 1] >= 0xd800 && text[prefix - 1] <= 0xdbff) --prefix;
-        if (suffix && text[text.size() - suffix] >= 0xdc00 && text[text.size() - suffix] <= 0xdfff) --suffix;
+        prefix = (low + 1) / 2;
+        suffix = low / 2;
+        if (prefix != 0 && text[prefix - 1] >= 0xd800 && text[prefix - 1] <= 0xdbff) {
+            --prefix;
+        }
+        if (suffix != 0 && text[text.size() - suffix] >= 0xdc00 && text[text.size() - suffix] <= 0xdfff) {
+            --suffix;
+        }
         display = std::wstring(text.substr(0, prefix)) + L"…" + std::wstring(text.substr(text.size() - suffix));
     }
-    std::vector<std::pair<size_t, size_t>> ranges;
-    for (const auto& [start, end] : originalRanges) {
-        if (start < prefix) ranges.emplace_back(start, std::min(end, prefix));
-        if (suffix && end > text.size() - suffix) {
+    slot.ranges.clear();
+    for (const auto &[start, end] : original_ranges) {
+        if (start < prefix) {
+            slot.ranges.emplace_back(start, std::min(end, prefix));
+        }
+        if (suffix != 0 && end > text.size() - suffix) {
             const size_t from = std::max(start, text.size() - suffix);
-            ranges.emplace_back(prefix + 1 + from - (text.size() - suffix), prefix + 1 + end - (text.size() - suffix));
+            slot.ranges.emplace_back(
+                prefix + 1 + from - (text.size() - suffix),
+                prefix + 1 + end - (text.size() - suffix)
+            );
         }
     }
-    text = display;
+    slot.text = std::move(display);
+    slot.width = width;
+    slot.query.assign(search_query);
+    return slot;
+}
+
+void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, sqlite3_int64 item_id,
+                                            std::wstring_view text,
+                                            bool selected, std::wstring_view searchQuery) {
+    ScopedDcState dc_state(dc);
+    IntersectClipRect(dc, rect.left, rect.top, rect.right, rect.bottom);
+    const int width = std::max(0L, rect.right - rect.left);
+    const FittedLine &fitted = FittedLineFor(item_id, text, width, searchQuery, dc);
+    text = fitted.text;
+    const auto &ranges = fitted.ranges;
     ScopedGdiObjectSelection normal_font_selection(
         dc,
         m_normalFont != nullptr ? m_normalFont : GetStockObject(DEFAULT_GUI_FONT)
@@ -450,6 +511,89 @@ void HistoryRenderer::DrawTextWithHighlights(HDC dc, RECT rect, std::wstring_vie
     SetBkMode(dc, old_bk_mode);
 }
 
+UniqueIcon HistoryRenderer::LoadShellIcon(const std::wstring &path) {
+    SHFILEINFOW info{};
+    if (SHGetFileInfoW(path.c_str(), 0, &info, sizeof(info), SHGFI_ICON | SHGFI_LARGEICON) == 0) {
+        SHGetFileInfoW(
+            path.c_str(),
+            FILE_ATTRIBUTE_NORMAL,
+            &info,
+            sizeof(info),
+            SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES
+        );
+    }
+    return UniqueIcon(info.hIcon);
+}
+
+void HistoryRenderer::QueueIcon(std::wstring key, std::wstring path) {
+    if (key.empty() || m_iconQueued.contains(key) || m_iconCache.contains(key)) {
+        return;
+    }
+    m_iconQueued.insert(key);
+    {
+        std::lock_guard lock(m_iconMutex);
+        m_iconJobs.push_back(IconJob{std::move(key), std::move(path)});
+    }
+    m_iconCv.notify_one();
+}
+
+void HistoryRenderer::IconThreadMain(std::stop_token stop_token) {
+    const HRESULT com = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    const bool uninitialize = SUCCEEDED(com);
+    std::stop_callback wake(stop_token, [this] { m_iconCv.notify_all(); });
+    while (!stop_token.stop_requested()) {
+        IconJob job;
+        {
+            std::unique_lock lock(m_iconMutex);
+            m_iconCv.wait(lock, [&] {
+                return stop_token.stop_requested() || !m_iconJobs.empty();
+            });
+            if (stop_token.stop_requested() || m_iconJobs.empty()) {
+                break;
+            }
+            job = std::move(m_iconJobs.front());
+            m_iconJobs.pop_front();
+        }
+        IconResult result{std::move(job.key), LoadShellIcon(job.path)};
+        {
+            std::lock_guard lock(m_iconResultMutex);
+            m_iconResults.push_back(std::move(result));
+        }
+        if (!m_iconPosted.exchange(true) && m_owner != nullptr) {
+            ::PostMessageW(m_owner, AppConstants::kHistoryIconMessage, 0, 0);
+        }
+    }
+    if (uninitialize) {
+        ::CoUninitialize();
+    }
+}
+
+bool HistoryRenderer::ApplyLoadedIcons() {
+    m_iconPosted.store(false);
+    std::deque<IconResult> loaded;
+    {
+        std::lock_guard lock(m_iconResultMutex);
+        loaded.swap(m_iconResults);
+    }
+    if (loaded.empty()) {
+        return false;
+    }
+    for (IconResult &result : loaded) {
+        m_iconQueued.erase(result.key);
+        if (m_iconCache.contains(result.key)) {
+            continue;
+        }
+        if (m_iconCache.size() >= 64) {
+            const std::wstring evicted_key = m_iconLru.back();
+            m_iconLru.pop_back();
+            m_iconCache.erase(evicted_key);
+        }
+        m_iconLru.push_front(result.key);
+        m_iconCache.emplace(result.key, IconCacheEntry{std::move(result.icon), m_iconLru.begin()});
+    }
+    return true;
+}
+
 HICON HistoryRenderer::IconForPath(std::wstring_view path) {
     if (path.empty()) {
         return nullptr;
@@ -459,30 +603,8 @@ HICON HistoryRenderer::IconForPath(std::wstring_view path) {
         m_iconLru.splice(m_iconLru.begin(), m_iconLru, found->second.lru);
         return found->second.icon.Get();
     }
-    SHFILEINFOW info{};
-    if (SHGetFileInfoW(
-        path.data(),
-        0,
-        &info,
-        sizeof(info),
-        SHGFI_ICON | SHGFI_LARGEICON
-    ) == 0) {
-        SHGetFileInfoW(path.data(), FILE_ATTRIBUTE_NORMAL, &info, sizeof(info),
-            SHGFI_ICON | SHGFI_LARGEICON | SHGFI_USEFILEATTRIBUTES);
-    }
-    UniqueIcon icon(info.hIcon);
-    if (m_iconCache.size() >= 32) {
-        const std::wstring evicted_key = m_iconLru.back();
-        m_iconLru.pop_back();
-        const auto evicted = m_iconCache.find(evicted_key);
-        if (evicted != m_iconCache.end()) {
-            m_iconCache.erase(evicted);
-        }
-    }
-    m_iconLru.push_front(key);
-    const HICON result = icon.Get();
-    m_iconCache.emplace(key, IconCacheEntry{std::move(icon), m_iconLru.begin()});
-    return result;
+    QueueIcon(key, std::wstring(path));
+    return nullptr;
 }
 
 void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
@@ -570,10 +692,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
             if (memory.CreateCompatibleDC(draw->hDC)) {
                 ScopedGdiObjectSelection bitmap(memory.m_hDC, thumbnail->second.handle);
                 if (bitmap.IsSelected()) {
-                    ScopedDcState thumbnail_dc_state(draw->hDC);
-                    ::SetStretchBltMode(draw->hDC, HALFTONE);
-                    ::SetBrushOrgEx(draw->hDC, 0, 0, nullptr);
-                    ::StretchBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, width, height, SRCCOPY);
+                    ::BitBlt(draw->hDC, x, y, width, height, memory.m_hDC, 0, 0, SRCCOPY);
                 }
             }
         } else {
@@ -608,7 +727,7 @@ void HistoryRenderer::DrawHistoryItem(DRAWITEMSTRUCT* draw,
     SetTextColor(draw->hDC, GetSysColor(selected ? COLOR_HIGHLIGHTTEXT : COLOR_GRAYTEXT));
     DrawTextW(draw->hDC, shortcut.c_str(), -1, &keyRect, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.right = layout.content.right;
-    DrawTextWithHighlights(draw->hDC, text_rect, text, selected, searchQuery);
+    DrawTextWithHighlights(draw->hDC, text_rect, item.id, text, selected, searchQuery);
 }
 
 void HistoryRenderer::DrawMenuButton(DRAWITEMSTRUCT* draw,

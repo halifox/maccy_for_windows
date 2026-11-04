@@ -64,7 +64,12 @@ void ApplicationController::Shutdown() noexcept {
     m_shutdown = true;
 
     StopUpdateChecks();
+    // Drain posted worker callbacks on the UI thread before HWND teardown (L-02 / H-05).
+    m_previewWorker.DrainUiCallbacks();
+    m_thumbnailWorker.DrainUiCallbacks();
+    m_storage.DrainUiCallbacks();
     m_previewWorker.SetUiWindow(nullptr);
+    m_previewWorker.Stop();
     m_thumbnailWorker.SetUiWindow(nullptr);
     m_thumbnailWorker.Stop();
     m_clipboard.Shutdown();
@@ -80,6 +85,9 @@ void ApplicationController::SaveCapturedClipboard(ClipboardSnapshot capture) {
         std::move(capture),
         m_settings.history_size,
         [this](bool success, std::string error) {
+            if (m_shutdown) {
+                return;
+            }
             if (!success) {
                 ::OutputDebugStringA(error.c_str());
                 ::OutputDebugStringA("\n");

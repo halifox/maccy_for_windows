@@ -2,6 +2,7 @@
 #include "AutoSizeText.h"
 #include "Constants.h"
 #include "ClipboardRules.h"
+#include "KeyboardHandler.h"
 #include "Localization.h"
 
 #include <windows.h>
@@ -539,12 +540,14 @@ LRESULT HotkeyCaptureEdit::OnCaptureHotkey(UINT, WPARAM virtual_key, LPARAM modi
 }
 
 LRESULT HotkeyCaptureEdit::OnSetFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    KeyboardHandler::SetHotkeyCaptureActive(true);
     SetWindowText(Localization::Text(IDS_HOTKEY_PRESS).c_str());
     handled = FALSE;
     return 0;
 }
 
 LRESULT HotkeyCaptureEdit::OnKillFocus(UINT, WPARAM, LPARAM, BOOL &handled) {
+    KeyboardHandler::SetHotkeyCaptureActive(false);
     UpdateText();
     handled = FALSE;
     return 0;
@@ -700,6 +703,7 @@ void SettingsWindow::LocalizeControls() {
     SetLocalizedText(m_pages[kPagePins]->Window(), IDC_P_LIST_HINT, IDS_P_LIST_HINT);
     SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_IGNORE_EVENTS, IDS_X_PAUSE);
     SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_DESCRIPTION, IDS_X_PAUSE_DESCRIPTION);
+    SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_IGNORE_NEXT, IDS_X_IGNORE_NEXT);
     SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_CLEAR_ON_QUIT, IDS_X_CLEAR_ON_QUIT);
     SetLocalizedText(m_pages[kPageAdvanced]->Window(), IDC_X_CLEAR_CLIPBOARD, IDS_X_CLEAR_CLIPBOARD);
     SetLocalizedText(
@@ -1013,7 +1017,6 @@ void SettingsWindow::LoadAdvancedControls() {
     auto &page = *m_pages[kPageAdvanced];
     page.LoadSettings(m_settings);
     page.ExchangeSettings(DDX_LOAD);
-    m_xIgnoreNext.EnableWindow(m_settings.ignore_events);
 }
 
 void SettingsWindow::LoadControlsFromSettings() {
@@ -1451,9 +1454,6 @@ LRESULT SettingsWindow::OnSettingChanged(WORD, WORD id, HWND, BOOL &handled) {
     }
     if (id == kAOpenPreview) {
         m_aPreviewDelay.EnableWindow(IsChecked(m_aOpenPreview));
-    }
-    if (id == kXIgnoreEvents) {
-        m_xIgnoreNext.EnableWindow(IsChecked(m_xIgnoreEvents));
     }
     SaveCurrentPage();
     return 0;

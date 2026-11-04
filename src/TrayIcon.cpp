@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -186,13 +187,29 @@ UniqueIcon CreateIconFromPngResource(int resource_id) noexcept {
         return {};
     }
 
+    const int mask_bytes_per_row = ((static_cast<int>(width) + 31) / 32) * 4;
+    std::vector<BYTE> mask_bits(
+        static_cast<size_t>(mask_bytes_per_row) * height,
+        0xFF
+    );
+    const auto *source = static_cast<const BYTE *>(pixels);
+    for (UINT y = 0; y < height; ++y) {
+        BYTE *row = mask_bits.data() + static_cast<size_t>(y) * mask_bytes_per_row;
+        const BYTE *source_row = source + static_cast<size_t>(y) * stride;
+        for (UINT x = 0; x < width; ++x) {
+            if (source_row[x * 4 + 3] >= 128) {
+                row[x / 8] &= static_cast<BYTE>(~(0x80 >> (x % 8)));
+            }
+        }
+    }
+
     CBitmap mask_bitmap;
     mask_bitmap.Attach(CreateBitmap(
         static_cast<int>(width),
         static_cast<int>(height),
         1,
         1,
-        nullptr
+        mask_bits.data()
     ));
     if (mask_bitmap.IsNull()) {
         return {};
@@ -258,6 +275,9 @@ bool TrayIcon::Add(HWND owner, UINT icon_id, UINT callback_message,
     if (!::Shell_NotifyIconW(NIM_ADD, &data)) {
         return false;
     }
+
+    data.uVersion = NOTIFYICON_VERSION_4;
+    ::Shell_NotifyIconW(NIM_SETVERSION, &data);
 
     m_data = data;
     m_icon = std::move(icon);

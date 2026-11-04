@@ -9,6 +9,7 @@
 
 #include <shellapi.h>
 #include <shellscalingapi.h>
+#include <imm.h>
 #include <atltypes.h>
 
 #include <algorithm>
@@ -86,12 +87,57 @@ bool IsShiftKey(WPARAM key) {
     return key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT;
 }
 
+bool ForceForeground(HWND window) {
+    if (window == nullptr) {
+        return false;
+    }
+    if (::GetForegroundWindow() == window) {
+        return true;
+    }
+    const HWND previous = ::GetForegroundWindow();
+    const DWORD previous_thread = previous != nullptr
+        ? ::GetWindowThreadProcessId(previous, nullptr)
+        : 0;
+    const DWORD current_thread = ::GetCurrentThreadId();
+    const bool attached = previous_thread != 0 && previous_thread != current_thread &&
+        ::AttachThreadInput(current_thread, previous_thread, TRUE) != FALSE;
+    ::SetForegroundWindow(window);
+    ::BringWindowToTop(window);
+    const bool foreground = ::GetForegroundWindow() == window;
+    if (attached) {
+        ::AttachThreadInput(current_thread, previous_thread, FALSE);
+    }
+    if (!foreground && previous != nullptr && ::IsWindow(previous) &&
+        ::GetForegroundWindow() != previous) {
+        ::SetForegroundWindow(previous);
+    }
+    return foreground;
+}
+
 bool HasPendingKeyboardInput(HWND window) {
     if (window == nullptr || !::IsWindow(window)) {
         return false;
     }
+    // Treat active IME composition as pending input (L-14).
+    if (const HIMC context = ::ImmGetContext(window); context != nullptr) {
+        const LONG composing =
+            ::ImmGetCompositionStringW(context, GCS_COMPSTR, nullptr, 0);
+        ::ImmReleaseContext(window, context);
+        if (composing > 0) {
+            return true;
+        }
+    }
     MSG message{};
-    return ::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE;
+    if (::PeekMessageW(&message, window, WM_KEYFIRST, WM_KEYLAST, PM_NOREMOVE) != FALSE) {
+        return true;
+    }
+    return ::PeekMessageW(
+               &message,
+               window,
+               WM_IME_STARTCOMPOSITION,
+               WM_IME_KEYLAST,
+               PM_NOREMOVE
+           ) != FALSE;
 }
 
 // Resolve paste action based on modifier keys
@@ -118,6 +164,37 @@ std::pair<bool, bool> ResolvePasteAction(bool paste_default, bool plain_default,
     }
 
     return {paste, plain};
+}
+
+constexpr int kTrayHitPadDip = 12;
+constexpr int kTrayReshowPadDip = 40;
+constexpr DWORD kTrayReshowWindowMs = 300;
+
+int ScaleDip(HWND window, int dip) {
+    const UINT dpi = window != nullptr ? UiFont::DpiForWindow(window) : USER_DEFAULT_SCREEN_DPI;
+    return ::MulDiv(dip, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+}
+
+bool PointInInflatedRect(RECT rect, POINT point, int pad) {
+    ::InflateRect(&rect, pad, pad);
+    return ::PtInRect(&rect, point) != FALSE;
+}
+
+// The overflow flyout is not covered by Shell_NotifyIconGetRect until it is
+// open, and the reported rect can be the chevron instead of the icon.
+bool IsOverflowTrayWindow(HWND window) {
+    HWND current = window;
+    for (int depth = 0; depth < 8 && current != nullptr; ++depth) {
+        wchar_t name[80];
+        const int length = ::GetClassNameW(current, name, 80);
+        if (length > 0 &&
+            (::lstrcmpW(name, L"NotifyIconOverflowWindow") == 0 ||
+             ::lstrcmpW(name, L"TopLevelWindowForOverflowXamlIsland") == 0)) {
+            return true;
+        }
+        current = ::GetParent(current);
+    }
+    return false;
 }
 
 } // namespace
@@ -258,6 +335,15 @@ LRESULT MainWindow::OnSearchControlKeyDown(UINT message, WPARAM key, LPARAM, BOO
     return 0;
 }
 
+LRESULT MainWindow::OnSearchControlChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
+    if (m_keyboardHandler.ShouldIgnoreShortcutChar(character)) {
+        handled = TRUE;
+        return 0;
+    }
+    handled = FALSE;
+    return 0;
+}
+
 LRESULT MainWindow::OnSearchControlImeStart(UINT, WPARAM, LPARAM, BOOL& handled) {
     m_keyboardHandler.SetImeComposing(true);
     handled = FALSE;
@@ -312,6 +398,10 @@ LRESULT MainWindow::OnMenuButtonKeyDown(UINT message, WPARAM key, LPARAM, BOOL& 
 }
 
 LRESULT MainWindow::OnMenuButtonChar(UINT, WPARAM character, LPARAM, BOOL& handled) {
+    if (m_keyboardHandler.ShouldIgnoreShortcutChar(character)) {
+        handled = TRUE;
+        return 0;
+    }
     if (character >= 0x20 && character != 0x7f) {
         m_keyboardHandler.TypeToSearch(character, m_search);
         handled = TRUE;
@@ -424,7 +514,7 @@ bool MainWindow::BindControls() {
         },
         [this](int index) { PasteItem(index); },
         [this](sqlite3_int64 item_id) {
-            if (m_previewWorker.IsVisible()) {
+            if (IsPreviewVisible()) {
                 ShowPreviewForItem(item_id);
             } else {
                 SchedulePreviewForItem(item_id);
@@ -593,50 +683,175 @@ bool MainWindow::IsOurWindow(HWND window) const {
     if (window == nullptr) return false;
     return window == m_hWnd || window == m_search.m_hWnd ||
         window == m_historyListControls.HistoryListWindow().m_hWnd ||
-        ::IsChild(m_hWnd, window) || m_previewWorker.ContainsWindow(window) ||
+        ::IsChild(m_hWnd, window) ||
+        (m_previewWindow.m_hWnd != nullptr &&
+         (window == m_previewWindow.m_hWnd ||
+          ::GetAncestor(window, GA_ROOT) == m_previewWindow.m_hWnd)) ||
         (m_settingsWindow != nullptr && window == m_settingsWindow->Window());
 }
 
-void MainWindow::BeginPopupDismissGuard() {
-    m_suppressPopupDismiss = true;
-    SetTimer(AppConstants::Timer::kPopupDismissGuard, AppConstants::Popup::kDismissGuardMs, nullptr);
+MainWindow* MainWindow::s_dismissHookOwner = nullptr;
+HHOOK MainWindow::s_popupMouseHook = nullptr;
+
+bool MainWindow::GetTrayIconRect(RECT &rect) const {
+    RECT current{};
+    if (m_trayIcon.IsAdded() && m_trayIcon.GetRect(current) &&
+        current.right > current.left && current.bottom > current.top) {
+        m_cachedTrayRect = current;
+        m_hasCachedTrayRect = true;
+    }
+    if (!m_hasCachedTrayRect) {
+        return false;
+    }
+    rect = m_cachedTrayRect;
+    return true;
 }
 
-void MainWindow::EndPopupDismissGuard() {
-    if (m_hWnd != nullptr) {
-        KillTimer(AppConstants::Timer::kPopupDismissGuard);
+bool MainWindow::IsTrayPoint(POINT screen_point, int dip_pad) const {
+    RECT tray{};
+    if (!GetTrayIconRect(tray)) {
+        return false;
     }
-    m_suppressPopupDismiss = false;
+    return PointInInflatedRect(tray, screen_point, ScaleDip(m_hWnd, dip_pad));
 }
 
-void MainWindow::HandlePopupActivation(HWND activating_window) {
-    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_suppressPopupDismiss) {
-        return;
+bool MainWindow::IsPointInPopupUi(POINT screen_point) const {
+    // WH_MOUSE_LL points are physical pixels. WindowFromPhysicalPoint matches
+    // them; WindowFromPoint does not once a monitor is not at system DPI.
+    const HWND hit = ::WindowFromPhysicalPoint(screen_point);
+    if (IsOurWindow(hit) || IsOverflowTrayWindow(hit)) {
+        return true;
     }
-    // Focus moved within our UI (search/list/preview) — keep the popup.
-    if (IsOurWindow(activating_window)) {
-        return;
-    }
-    // Clear handoff to another window: hide immediately (product rule = lose focus → dismiss).
-    if (activating_window != nullptr) {
-        HideMainWindow();
-        return;
-    }
-    // WA_INACTIVE with null hwnd is common for click-away and for FG settle noise.
-    // Defer and dismiss unless we still own the foreground.
-    PostMessage(AppConstants::kConfirmPopupDismissMessage, 0, 0);
+    return IsTrayPoint(screen_point, kTrayHitPadDip);
 }
 
-void MainWindow::ConfirmPopupDismiss() {
-    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing ||
-        m_suppressPopupDismiss) {
+bool MainWindow::ConsumeDuplicateTrayOpen(WPARAM click_anchor) {
+    const POINT anchor{GET_X_LPARAM(click_anchor), GET_Y_LPARAM(click_anchor)};
+    const bool same_gesture = m_outsideDismissTick != 0 && !m_popupVisible &&
+        ::GetTickCount() - m_outsideDismissTick <= kTrayReshowWindowMs &&
+        IsTrayPoint(m_outsideDismissPoint, kTrayReshowPadDip) &&
+        IsTrayPoint(anchor, kTrayReshowPadDip);
+    m_outsideDismissTick = 0;
+    return same_gesture;
+}
+
+void MainWindow::FocusPopupForTyping() {
+    if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
+        SetHistorySearchVisible(true);
+        m_search.SetFocus();
+        m_search.SetSel(0, -1);
+    } else {
+        SetFocus();
+    }
+}
+
+void MainWindow::TogglePopup(PopupPosition popup_position) {
+    if (m_popupVisible) {
+        DismissPopup();
         return;
     }
-    if (IsOurWindow(GetForegroundWindow())) {
+    ShowMainWindow(popup_position);
+}
+
+void MainWindow::InstallPopupDismissHooks() {
+    if (m_dismissHookThread != nullptr) {
         return;
     }
-    HideMainWindow();
+    if (s_dismissHookOwner != nullptr && s_dismissHookOwner != this) {
+        return;
+    }
+    s_dismissHookOwner = this;
+    m_dismissHookReady = ::CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (m_dismissHookReady == nullptr) {
+        s_dismissHookOwner = nullptr;
+        return;
+    }
+    m_dismissHookThread = ::CreateThread(nullptr, 0, PopupMouseHookThread, this, 0, nullptr);
+    if (m_dismissHookThread == nullptr) {
+        ::CloseHandle(m_dismissHookReady);
+        m_dismissHookReady = nullptr;
+        s_dismissHookOwner = nullptr;
+        return;
+    }
+    ::WaitForSingleObject(m_dismissHookReady, 3000);
+    ::CloseHandle(m_dismissHookReady);
+    m_dismissHookReady = nullptr;
+    if (s_popupMouseHook == nullptr) {
+        ::WaitForSingleObject(m_dismissHookThread, 1000);
+        ::CloseHandle(m_dismissHookThread);
+        m_dismissHookThread = nullptr;
+        m_dismissHookThreadId = 0;
+        if (s_dismissHookOwner == this) {
+            s_dismissHookOwner = nullptr;
+        }
+    }
+}
+
+void MainWindow::UninstallPopupDismissHooks() {
+    const DWORD thread_id = m_dismissHookThreadId;
+    const HANDLE thread = m_dismissHookThread;
+    m_dismissHookThread = nullptr;
+    m_dismissHookThreadId = 0;
+    if (thread_id != 0) {
+        ::PostThreadMessageW(thread_id, WM_QUIT, 0, 0);
+    }
+    if (thread != nullptr) {
+        ::WaitForSingleObject(thread, 3000);
+        ::CloseHandle(thread);
+    }
+    s_popupMouseHook = nullptr;
+    if (s_dismissHookOwner == this) {
+        s_dismissHookOwner = nullptr;
+    }
+}
+
+DWORD WINAPI MainWindow::PopupMouseHookThread(LPVOID parameter) {
+    auto *window = static_cast<MainWindow *>(parameter);
+    MSG pending{};
+    ::PeekMessageW(&pending, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+    window->m_dismissHookThreadId = ::GetCurrentThreadId();
+    s_popupMouseHook = ::SetWindowsHookExW(
+        WH_MOUSE_LL,
+        PopupMouseHookProc,
+        ::GetModuleHandleW(nullptr),
+        0
+    );
+    if (window->m_dismissHookReady != nullptr) {
+        ::SetEvent(window->m_dismissHookReady);
+    }
+    if (s_popupMouseHook == nullptr) {
+        return 0;
+    }
+    MSG message{};
+    while (::GetMessageW(&message, nullptr, 0, 0) > 0) {
+        ::TranslateMessage(&message);
+        ::DispatchMessageW(&message);
+    }
+    ::UnhookWindowsHookEx(s_popupMouseHook);
+    s_popupMouseHook = nullptr;
+    return 0;
+}
+
+LRESULT CALLBACK MainWindow::PopupMouseHookProc(int code, WPARAM wParam, LPARAM lParam) {
+    if (code == HC_ACTION) {
+        const bool button_down =
+            wParam == WM_LBUTTONDOWN || wParam == WM_RBUTTONDOWN ||
+            wParam == WM_MBUTTONDOWN || wParam == WM_NCLBUTTONDOWN ||
+            wParam == WM_NCRBUTTONDOWN || wParam == WM_NCMBUTTONDOWN;
+        if (button_down) {
+            MainWindow *owner = s_dismissHookOwner;
+            const auto *info = reinterpret_cast<const MSLLHOOKSTRUCT *>(lParam);
+            if (owner != nullptr && owner->m_hWnd != nullptr && info != nullptr) {
+                ::PostMessageW(
+                    owner->m_hWnd,
+                    AppConstants::kPopupDismissMessage,
+                    static_cast<WPARAM>(static_cast<LONG_PTR>(info->pt.x)),
+                    static_cast<LPARAM>(info->pt.y)
+                );
+            }
+        }
+    }
+    return ::CallNextHookEx(s_popupMouseHook, code, wParam, lParam);
 }
 
 int MainWindow::PopupWidth(UINT dpi) const {
@@ -806,9 +1021,13 @@ void MainWindow::RefreshHistory(std::wstring_view query) {
         [this, owned_query](std::uint64_t result_generation,
                             std::vector<ClipboardItem> items,
                             std::string error) mutable {
-            if (result_generation != m_historyGeneration ||
-                m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
+            // Only the latest generation owns m_loadingList; stale results must not clear it.
+            if (result_generation != m_historyGeneration) {
+                return;
+            }
+            if (m_exiting || m_hWnd == nullptr || !IsWindow() || m_search.m_hWnd == nullptr ||
                 owned_query != ReadWindowText(m_search)) {
+                m_loadingList = false;
                 return;
             }
             if (!error.empty()) {
@@ -867,7 +1086,7 @@ void MainWindow::LoadImageThumbnails() {
             [this, id, request, generation](std::optional<ClipboardItem> loaded, std::string) {
                 const auto current = [this, id, request, generation]() {
                     const auto it = m_thumbnailRequests.find(id);
-                    return generation == m_thumbnailGeneration &&
+                    return !m_exiting && generation == m_thumbnailGeneration &&
                         it != m_thumbnailRequests.end() && it->second == request &&
                         m_hWnd != nullptr && IsWindow();
                 };
@@ -889,21 +1108,17 @@ void MainWindow::LoadImageThumbnails() {
                     [this, id, request](sqlite3_int64 result_id, std::uint64_t result_generation,
                                         std::optional<PreviewBitmap> bitmap) {
                         const auto it = m_thumbnailRequests.find(result_id);
-                        if (result_id != id || result_generation != m_thumbnailGeneration ||
+                        if (m_exiting || result_id != id ||
+                            result_generation != m_thumbnailGeneration ||
                             it == m_thumbnailRequests.end() || it->second != request ||
-                            m_hWnd == nullptr || !IsWindow() || !bitmap.has_value()) {
+                            m_hWnd == nullptr || !IsWindow() || !bitmap.has_value() ||
+                            bitmap->handle == nullptr) {
                             return;
                         }
+                        // Decoder already returns a DIB section. Keep it off this thread
+                        // so a finished image does not stall scrolling.
                         m_historyRenderer.SetImageThumbnail(result_id, std::move(*bitmap));
                         m_historyListControls.UpdateItemHeight(result_id);
-                        for (CListBox *list : {
-                                 &m_historyListControls.HistoryListWindow(),
-                                 &m_historyListControls.PinsListWindow()
-                             }) {
-                            if (list->m_hWnd != nullptr) {
-                                list->Invalidate(FALSE);
-                            }
-                        }
                     }
                 );
             });
@@ -922,7 +1137,7 @@ void MainWindow::ApplyHistoryItems(
         const sqlite3_int64 previous = sameQuery && !m_resetHistoryListOnOpen
             ? m_keyboardHandler.GetActiveItemId() : 0;
         const int previousIndex = m_keyboardHandler.GetActiveItemIndex();
-        const bool previewOpen = m_previewWorker.IsVisible();
+        const bool previewOpen = IsPreviewVisible();
         const std::wstring ownedQuery = query;
         m_items = std::move(items);
         m_historyRenderer.PrepareHistory(m_items);
@@ -1034,7 +1249,7 @@ void MainWindow::ApplyHistoryItems(
 }
 
 void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id) {
-    const bool preview_requested = m_previewWorker.IsVisible() || m_previewCandidateId != 0;
+    const bool preview_requested = IsPreviewVisible() || m_previewCandidateId != 0;
     KillTimer(AppConstants::Timer::kPreview);
     if (!m_popupVisible || m_previewSuppressed || item_id == 0) {
         m_previewCandidateId = 0;
@@ -1053,20 +1268,47 @@ void MainWindow::SchedulePreviewForItem(sqlite3_int64 item_id) {
     ::SetTimer(m_hWnd, AppConstants::Timer::kPreview, static_cast<UINT>(m_settings.preview_delay), nullptr);
 }
 
+bool MainWindow::EnsurePreviewWindow() {
+    if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
+        return true;
+    }
+    return m_previewWindow.Initialize(m_hWnd);
+}
+
+bool MainWindow::IsPreviewVisible() const noexcept {
+    return m_previewWindow.IsVisible();
+}
+
+void MainWindow::RepositionPreviewWindow() {
+    if (IsPreviewVisible()) {
+        m_previewWindow.PositionNextToOwner(m_hWnd, false);
+    }
+}
+
 void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
     if (item_id <= 0) {
         HidePreview();
         return;
     }
+    if (!EnsurePreviewWindow()) {
+        HidePreview();
+        return;
+    }
     KillTimer(AppConstants::Timer::kPreview);
     const std::uint64_t generation = ++m_previewGeneration;
-    const bool preview_was_visible = m_previewWorker.IsVisible();
+    const bool preview_was_visible = IsPreviewVisible();
     m_previewCandidateId = item_id;
+    UINT maximum_width = 0;
+    UINT maximum_height = 0;
+    m_previewWindow.GetImageSize(maximum_width, maximum_height);
     if (!m_previewWorker.Request(
             item_id,
             generation,
+            maximum_width,
+            maximum_height,
             [this](std::shared_ptr<PreviewResult> result) {
-                if (result == nullptr || result->generation != m_previewGeneration ||
+                if (m_exiting || result == nullptr ||
+                    result->generation != m_previewGeneration ||
                     result->item_id != m_keyboardHandler.GetActiveItemId() ||
                     !m_popupVisible || m_previewSuppressed) {
                     return;
@@ -1081,10 +1323,20 @@ void MainWindow::ShowPreviewForItem(sqlite3_int64 item_id) {
                     HidePreview();
                     return;
                 }
-                if (!result->displayed) {
+                if (!result->displayed || !result->item.has_value()) {
                     HidePreview();
                     return;
                 }
+                if (!EnsurePreviewWindow()) {
+                    HidePreview();
+                    return;
+                }
+                m_previewWindow.SetItem(
+                    *result->item,
+                    std::move(result->text),
+                    std::move(result->bitmap)
+                );
+                m_previewWindow.PositionNextToOwner(m_hWnd, true);
                 m_previewItemId = result->item_id;
                 m_previewCandidateId = 0;
             }
@@ -1123,11 +1375,11 @@ void MainWindow::HidePreview() {
     ++m_previewGeneration;
     m_previewCandidateId = 0;
     m_previewItemId = 0;
-    m_previewWorker.Hide();
+    m_previewWindow.Hide();
 }
 
 void MainWindow::TogglePreview() {
-    if (m_previewWorker.IsVisible()) {
+    if (IsPreviewVisible()) {
         m_previewSuppressed = true;
         HidePreview();
     } else {
@@ -1141,8 +1393,22 @@ void MainWindow::PasteItem(int index) {
         index < 0 || static_cast<size_t>(index) >= m_items.size()) {
         return;
     }
-    const HWND target = m_pasteController.GetTargetWindow();
-    const HWND target_focus = m_pasteController.GetTargetFocusWindow();
+    HWND target = m_pasteController.GetTargetWindow();
+    HWND target_focus = m_pasteController.GetTargetFocusWindow();
+    if (!::IsWindow(target)) {
+        m_pasteController.CaptureTargetWindow();
+        target = m_pasteController.GetTargetWindow();
+        target_focus = m_pasteController.GetTargetFocusWindow();
+    }
+    if (!::IsWindow(target)) {
+        ShowRuntimeError(
+            m_hWnd,
+            {},
+            IDS_MAIN_PASTE_ERROR_TITLE,
+            IDS_MAIN_PASTE_ERROR
+        );
+        return;
+    }
     const sqlite3_int64 id = m_items[static_cast<size_t>(index)].id;
     const auto [paste, plain] = ResolvePasteAction(
         m_settings.paste_by_default,
@@ -1160,27 +1426,13 @@ void MainWindow::PasteItem(int index) {
                 std::optional<ClipboardItem> item,
                 std::string error
             ) mutable {
-                m_pasteInProgress = false;
+                if (m_exiting || m_hWnd == nullptr || !IsWindow()) {
+                    m_pasteInProgress = false;
+                    return;
+                }
                 bool success = error.empty() && item.has_value();
-                if (!success && error.empty()) {
-                    error.clear();
-                }
-                if (success && !m_applicationController.WriteClipboardItem(*item, plain)) {
-                    success = false;
-                    error.clear();
-                }
-                if (success) {
-                    try {
-                        m_storage.MarkCopied(id);
-                    } catch (const std::exception &exception) {
-                        success = false;
-                        error = exception.what();
-                    } catch (...) {
-                        success = false;
-                        error.clear();
-                    }
-                }
                 if (!success) {
+                    m_pasteInProgress = false;
                     ShowRuntimeError(
                         m_hWnd,
                         error,
@@ -1189,8 +1441,81 @@ void MainWindow::PasteItem(int index) {
                     );
                     return;
                 }
+                try {
+                    m_storage.MarkCopied(id);
+                } catch (const std::exception &exception) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        exception.what(),
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    return;
+                } catch (...) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    return;
+                }
+
+                // Focus the target before mutating the clipboard (H-09), then paste.
                 HideMainWindow();
-                m_pasteController.RestoreTargetFocusAndPaste(target, target_focus, paste);
+                const auto focus_result = m_pasteController.RestoreTargetFocusAndPaste(
+                    target,
+                    target_focus,
+                    false
+                );
+                if (paste && focus_result == PasteController::PasteResult::Failed) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                if (!m_applicationController.WriteClipboardItem(*item, plain)) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                if (!paste) {
+                    m_pasteInProgress = false;
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                const auto paste_result = m_pasteController.RestoreTargetFocusAndPaste(
+                    target,
+                    target_focus,
+                    true
+                );
+                if (paste_result == PasteController::PasteResult::Failed) {
+                    m_pasteInProgress = false;
+                    ShowRuntimeError(
+                        m_hWnd,
+                        {},
+                        IDS_MAIN_PASTE_ERROR_TITLE,
+                        IDS_MAIN_PASTE_ERROR
+                    );
+                    RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+                    return;
+                }
+                if (paste_result != PasteController::PasteResult::Deferred) {
+                    m_pasteInProgress = false;
+                }
                 RequestUiUpdate(AppConstants::UiUpdate::kHistory);
             }
         );
@@ -1482,6 +1807,11 @@ void MainWindow::ExitApplication(ExitReason reason) {
     if (m_settingsWindow != nullptr) {
         m_settingsWindow->DestroyForOwner();
     }
+    // Drop async UI work, destroy preview HWND, then destroy the owner (H-05 / C-01).
+    if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
+        m_previewWindow.DestroyWindow();
+    }
+    m_applicationController.Shutdown();
     DestroyWindow();
 }
 
@@ -1530,11 +1860,30 @@ void MainWindow::HideMainWindow() {
     if (!m_popupVisible) {
         return;
     }
-    EndPopupDismissGuard();
+    UninstallPopupDismissHooks();
     SaveWindowGeometry();
     m_popupVisible = false;
     HidePreview();
     ShowWindow(SW_HIDE);
+}
+
+void MainWindow::DismissPopup() {
+    if (!m_popupVisible) {
+        return;
+    }
+    // Hiding a topmost popup lets Windows activate that thread's previous
+    // window, which can be an older one than the window in front when we opened.
+    const HWND target = m_pasteController.GetTargetWindow();
+    const HWND focus = m_pasteController.GetTargetFocusWindow();
+    const bool restore = ::IsWindow(target) != FALSE;
+    if (restore) {
+        m_pasteController.RestoreTargetFocusAndPaste(target, focus, false);
+    }
+    HideMainWindow();
+    if (restore && ::GetForegroundWindow() != target &&
+        ::GetAncestor(::GetForegroundWindow(), GA_ROOT) != target) {
+        m_pasteController.RestoreTargetFocusAndPaste(target, focus, false);
+    }
 }
 
 int MainWindow::SelectedHistoryIndex() const {
@@ -1674,8 +2023,8 @@ std::uint32_t MainWindow::ApplySettings(
     }
     if (!m_isolated && (!SameHotKey(previous.open_hotkey, m_settings.open_hotkey) ||
         previous.show_in_status_bar != m_settings.show_in_status_bar)) {
-        m_keyboardHandler.UnregisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
-        m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
+        m_keyboardHandler.UninstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup);
+        m_keyboardHandler.InstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup);
     }
 
     const bool historyChanged =
@@ -1718,7 +2067,28 @@ std::uint32_t MainWindow::ApplySettings(
 }
 
 void MainWindow::PersistSettings() {
-    m_storage.SaveSettings(m_settings);
+    m_storage.SaveSettingsAsync(m_settings);
+}
+
+void MainWindow::SyncOpenSettingsWindow() {
+    if (m_settingsWindow != nullptr &&
+        m_settingsWindow->m_hWnd != nullptr &&
+        m_settingsWindow->IsWindow()) {
+        m_settingsWindow->SetSettingsSnapshot(m_settings);
+    }
+}
+
+void MainWindow::SetIgnorePolicy(bool ignore_events, bool ignore_only_next) {
+    m_settings.ignore_events = ignore_events;
+    m_settings.ignore_only_next_event = ignore_only_next;
+    PersistSettings();
+    SyncOpenSettingsWindow();
+    RequestUiUpdate(AppConstants::UiUpdate::kFooter | AppConstants::UiUpdate::kTray);
+}
+
+void MainWindow::ToggleIgnoreEvents() {
+    const bool ignore = !m_settings.ignore_events;
+    SetIgnorePolicy(ignore, ignore ? m_settings.ignore_only_next_event : false);
 }
 
 void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t requestedUpdates) {
@@ -1731,60 +2101,6 @@ void MainWindow::OnSettingsChanged(const AppSettings &settings, std::uint32_t re
         }
     }
     RequestUiUpdate(updates);
-}
-
-// Callback implementations for KeyboardHandler
-void MainWindow::OnPreviewCallback(void* context, sqlite3_int64 itemId, bool) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->SchedulePreviewForItem(itemId);
-}
-
-void MainWindow::OnPasteCallback(void* context, int index) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->PasteItem(index);
-}
-
-void MainWindow::OnScheduleSearchCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    const auto query = ReadWindowText(window->m_search);
-    if (query != window->m_searchQuery) {
-        window->RequestUiUpdate(AppConstants::UiUpdate::kHistory);
-    }
-}
-
-void MainWindow::OnTogglePinCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->ToggleSelectedPin();
-}
-
-void MainWindow::OnDeleteItemCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->DeleteSelectedItem();
-}
-
-void MainWindow::OnTogglePreviewCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->TogglePreview();
-}
-
-void MainWindow::OnClearHistoryCallback(void* context, bool all) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->ClearHistory(all);
-}
-
-void MainWindow::OnOpenSettingsCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->OpenSettings();
-}
-
-void MainWindow::OnExitCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->ExitApplication();
-}
-
-void MainWindow::OnHideWindowCallback(void* context) {
-    auto* window = static_cast<MainWindow*>(context);
-    window->HideMainWindow();
 }
 
 // Message handlers
@@ -1823,22 +2139,35 @@ bool MainWindow::InitializeHistoryControls() {
         m_historyListControls.PinsListWindow(),
         FooterButtons()
     );
-    m_keyboardHandler.SetCallbacks(
-        this,
-        OnPreviewCallback,
-        OnPasteCallback,
-        OnScheduleSearchCallback,
-        OnTogglePinCallback,
-        OnDeleteItemCallback,
-        OnTogglePreviewCallback,
-        OnClearHistoryCallback,
-        OnOpenSettingsCallback,
-        OnExitCallback,
-        OnHideWindowCallback
-    );
+    m_keyboardHandler.SetCallbacks({
+        .preview = [this](sqlite3_int64 item_id, bool) {
+            SchedulePreviewForItem(item_id);
+        },
+        .paste = [this](int index) { PasteItem(index); },
+        .search = [this]() {
+            const auto query = ReadWindowText(m_search);
+            if (query != m_searchQuery) {
+                RequestUiUpdate(AppConstants::UiUpdate::kHistory);
+            }
+        },
+        .toggle_pin = [this]() { ToggleSelectedPin(); },
+        .delete_item = [this]() { DeleteSelectedItem(); },
+        .toggle_preview = [this]() { TogglePreview(); },
+        .clear_history = [this](bool all) { ClearHistory(all); },
+        .open_settings = [this]() { OpenSettings(); },
+        .exit = [this]() { ExitApplication(); },
+        .hide_window = [this]() { DismissPopup(); },
+    });
 
     if (!m_isolated) {
-        m_keyboardHandler.RegisterGlobalHotKey(AppConstants::HotKey::kOpenPopup);
+        if (!m_keyboardHandler.InstallOpenHotkeyHook(AppConstants::HotKey::kOpenPopup)) {
+            ::MessageBoxW(
+                m_hWnd,
+                Localization::Text(IDS_MAIN_HOTKEY_HOOK_ERROR).c_str(),
+                Localization::Text(IDS_MAIN_INIT_CONTROL_ERROR).c_str(),
+                MB_OK | MB_ICONWARNING
+            );
+        }
     }
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout |
                     AppConstants::UiUpdate::kTray);
@@ -1860,9 +2189,7 @@ LRESULT MainWindow::OnInitDialog(UINT, WPARAM, LPARAM, BOOL& handled) {
 LRESULT MainWindow::OnSize(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     LayoutHistoryControls();
-    if (m_previewWorker.IsVisible()) {
-        m_previewWorker.Reposition();
-    }
+    RepositionPreviewWindow();
     return 0;
 }
 
@@ -1886,18 +2213,14 @@ LRESULT MainWindow::OnDpiChanged(UINT, WPARAM wParam, LPARAM lParam, BOOL& handl
 
 LRESULT MainWindow::OnMove(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    if (m_previewWorker.IsVisible()) {
-        m_previewWorker.Reposition();
-    }
+    RepositionPreviewWindow();
     return 0;
 }
 
 LRESULT MainWindow::OnExitSizeMove(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
     SaveWindowGeometry(true);
-    if (m_previewWorker.IsVisible()) {
-        m_previewWorker.Reposition();
-    }
+    RepositionPreviewWindow();
     return 0;
 }
 
@@ -1940,10 +2263,11 @@ LRESULT MainWindow::OnNcHitTest(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
         return HTCLIENT;
     }
 
-    const bool left = point.x < rect.left + kResizeBorder;
-    const bool right = point.x >= rect.right - kResizeBorder;
-    const bool top = point.y < rect.top + kResizeBorder;
-    const bool bottom = point.y >= rect.bottom - kResizeBorder;
+    const int resize_border = MulDiv(kResizeBorder, UiFont::DpiForWindow(m_hWnd), 96);
+    const bool left = point.x < rect.left + resize_border;
+    const bool right = point.x >= rect.right - resize_border;
+    const bool top = point.y < rect.top + resize_border;
+    const bool bottom = point.y >= rect.bottom - resize_border;
 
     handled = TRUE;
     if (top && left) return HTTOPLEFT;
@@ -2042,24 +2366,44 @@ LRESULT MainWindow::OnDrawItem(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
     return 0;
 }
 
-LRESULT MainWindow::OnActivate(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
-    if (LOWORD(wParam) == WA_INACTIVE) {
-        HandlePopupActivation(reinterpret_cast<HWND>(lParam));
+LRESULT MainWindow::OnPopupDismiss(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
+    handled = TRUE;
+    if (!m_popupVisible || m_modalShowing || m_exiting || m_trayMenuShowing) {
+        return 0;
+    }
+    const POINT point{
+        static_cast<LONG>(static_cast<LONG_PTR>(wParam)),
+        static_cast<LONG>(static_cast<LONG_PTR>(lParam))
+    };
+    if (IsPointInPopupUi(point)) {
+        return 0;
+    }
+    // Padding around the icon can miss Shell_NotifyIconGetRect and still activate it.
+    if (IsTrayPoint(point, kTrayReshowPadDip)) {
+        m_outsideDismissPoint = point;
+        m_outsideDismissTick = ::GetTickCount();
+    } else {
+        m_outsideDismissTick = 0;
+    }
+    // A click that already activated another window should keep that window.
+    // Otherwise Windows would surface an older window from the same thread.
+    const HWND foreground = ::GetForegroundWindow();
+    if (foreground == nullptr || foreground == m_hWnd || IsOurWindow(foreground)) {
+        DismissPopup();
+    } else {
+        HideMainWindow();
     }
     return 0;
 }
 
-LRESULT MainWindow::OnPopupActivation(UINT, WPARAM wParam, LPARAM lParam, BOOL& handled) {
+LRESULT MainWindow::OnHistoryIcons(UINT, WPARAM, LPARAM, BOOL& handled) {
     handled = TRUE;
-    if (LOWORD(wParam) == WA_INACTIVE) {
-        HandlePopupActivation(reinterpret_cast<HWND>(lParam));
+    if (!m_historyRenderer.ApplyLoadedIcons() || !m_popupVisible ||
+        m_historyListControls.DeferListRefresh()) {
+        return 0;
     }
-    return 0;
-}
-
-LRESULT MainWindow::OnConfirmPopupDismiss(UINT, WPARAM, LPARAM, BOOL& handled) {
-    handled = TRUE;
-    ConfirmPopupDismiss();
+    m_historyListControls.HistoryListWindow().Invalidate(FALSE);
+    m_historyListControls.PinsListWindow().Invalidate(FALSE);
     return 0;
 }
 
@@ -2067,7 +2411,7 @@ LRESULT MainWindow::OnClose(UINT, WPARAM, LPARAM, BOOL&) {
     if (m_exiting) {
         DestroyWindow();
     } else {
-        HideMainWindow();
+        DismissPopup();
     }
     return 0;
 }
@@ -2144,7 +2488,7 @@ LRESULT MainWindow::OnExitButton(WORD, WORD, HWND, BOOL& handled) {
 
 LRESULT MainWindow::OnTrayShowCommand(WORD, WORD, HWND, BOOL& handled) {
     handled = TRUE;
-    ShowMainWindow(PopupPosition::StatusItem);
+    TogglePopup(PopupPosition::StatusItem);
     return 0;
 }
 
@@ -2162,12 +2506,7 @@ LRESULT MainWindow::OnTrayClearCommand(WORD, WORD, HWND, BOOL& handled) {
 
 LRESULT MainWindow::OnTrayIgnoreCommand(WORD, WORD, HWND, BOOL& handled) {
     handled = TRUE;
-    m_settings.ignore_events = !m_settings.ignore_events;
-    if (!m_settings.ignore_events) {
-        m_settings.ignore_only_next_event = false;
-    }
-    PersistSettings();
-    RequestUiUpdate(AppConstants::UiUpdate::kFooter);
+    ToggleIgnoreEvents();
     return 0;
 }
 
@@ -2181,13 +2520,9 @@ LRESULT MainWindow::OnTimer(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
     if (wParam == AppConstants::Timer::kPaste) {
         handled = TRUE;
         m_pasteController.OnPasteTimer();
-        return 0;
-    }
-    if (wParam == AppConstants::Timer::kPopupDismissGuard) {
-        handled = TRUE;
-        EndPopupDismissGuard();
-        // Focus may have left during the guard; dismiss once settle is done.
-        ConfirmPopupDismiss();
+        if (!m_pasteController.IsPastePending()) {
+            m_pasteInProgress = false;
+        }
         return 0;
     }
     if (wParam == AppConstants::Timer::kSearchResultCommit) {
@@ -2216,20 +2551,19 @@ LRESULT MainWindow::OnHotKey(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
         return 0;
     }
     handled = TRUE;
-    if (m_popupVisible) {
-        HideMainWindow();
-    } else {
-        ShowMainWindow();
-    }
+    TogglePopup(m_settings.popup_position);
     return 0;
 }
 
 LRESULT MainWindow::OnOpenHotkeyMessage(UINT, WPARAM, LPARAM lParam, BOOL& handled) {
-    // Capture the foreground from chord-match time before show steals focus.
-    if (lParam != 0) {
+    handled = TRUE;
+    // A second press only hides. Recapturing here would replace the window
+    // that was in front when we opened.
+    if (!m_popupVisible && lParam != 0) {
         m_pasteController.CaptureTargetWindow(reinterpret_cast<HWND>(lParam));
     }
-    return OnHotKey(0, AppConstants::HotKey::kOpenPopup, 0, handled);
+    TogglePopup(m_settings.popup_position);
+    return 0;
 }
 
 LRESULT MainWindow::OnKeyDown(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
@@ -2264,21 +2598,28 @@ LRESULT MainWindow::OnImeEnd(UINT, WPARAM, LPARAM, BOOL& handled) {
 }
 
 LRESULT MainWindow::OnTrayIcon(UINT, WPARAM wParam, LPARAM lParam, BOOL&) {
-    if (wParam != kTrayIconId) {
+    // NOTIFYICON_VERSION_4 packs icon id in HIWORD(lParam) and the event in
+    // LOWORD(lParam); pre-v4 used wParam=id and lParam=mouse message (L-13).
+    const UINT event = LOWORD(lParam);
+    const UINT icon_id = HIWORD(lParam) != 0
+        ? HIWORD(lParam)
+        : static_cast<UINT>(wParam);
+    if (icon_id != kTrayIconId && wParam != kTrayIconId) {
         return 0;
     }
-    switch (static_cast<UINT>(lParam)) {
-    case WM_LBUTTONUP:
-    case WM_LBUTTONDBLCLK:
-        if (GetKeyState(VK_MENU) & 0x8000) {
-            m_settings.ignore_events = !m_settings.ignore_events;
-            m_settings.ignore_only_next_event = false;
-            PersistSettings();
+    switch (event) {
+    case NIN_SELECT:
+    case NIN_KEYSELECT:
+        // VERSION_4 also posts WM_LBUTTONUP / WM_LBUTTONDBLCLK for the same
+        // click. Handling those as well toggles twice (show then hide).
+        if ((::GetKeyState(VK_MENU) & 0x8000) != 0) {
+            ToggleIgnoreEvents();
+        } else if (event == NIN_SELECT && ConsumeDuplicateTrayOpen(wParam)) {
+            // The outside-click hook already closed this gesture.
         } else {
-            ShowMainWindow(PopupPosition::StatusItem);
+            TogglePopup(PopupPosition::StatusItem);
         }
         break;
-    case WM_RBUTTONUP:
     case WM_CONTEXTMENU:
         m_pasteController.CaptureTargetWindow();
         ShowTrayMenu();
@@ -2298,7 +2639,13 @@ LRESULT MainWindow::OnUiUpdate(UINT, WPARAM wParam, LPARAM, BOOL& handled) {
 
 LRESULT MainWindow::OnClipboardUpdate(UINT, WPARAM, LPARAM, BOOL &handled) {
     handled = TRUE;
+    const bool previous_ignore_events = m_settings.ignore_events;
+    const bool previous_ignore_only = m_settings.ignore_only_next_event;
     m_applicationController.HandleClipboardUpdate();
+    if (previous_ignore_events != m_settings.ignore_events ||
+        previous_ignore_only != m_settings.ignore_only_next_event) {
+        SyncOpenSettingsWindow();
+    }
     return 0;
 }
 
@@ -2330,12 +2677,16 @@ LRESULT MainWindow::OnUpdateCheckerResult(UINT, WPARAM, LPARAM, BOOL &handled) {
 
 LRESULT MainWindow::OnDestroy(UINT, WPARAM, LPARAM, BOOL&) {
     m_popupVisible = false;
-    EndPopupDismissGuard();
+    m_outsideDismissTick = 0;
+    UninstallPopupDismissHooks();
     m_applicationController.StopUpdateChecks();
     KillTimer(AppConstants::Timer::kSearchResultCommit);
     m_deferredHistoryResult.reset();
     KillTimer(AppConstants::Timer::kPreview);
     m_pasteController.StopPasteTimer();
+    if (m_previewWindow.m_hWnd != nullptr && ::IsWindow(m_previewWindow.m_hWnd)) {
+        m_previewWindow.DestroyWindow();
+    }
     m_historyListControls.Shutdown();
     m_keyboardHandler.Shutdown();
     m_applicationController.Shutdown();
@@ -2373,6 +2724,7 @@ void MainWindow::ShowMainWindow() {
 }
 
 void MainWindow::ShowMainWindow(PopupPosition popup_position) {
+    m_outsideDismissTick = 0;
     m_activePopupPosition = popup_position;
     m_resetHistoryListOnOpen = true;
     m_keyboardHandler.ClearHistoryHover();
@@ -2384,33 +2736,16 @@ void MainWindow::ShowMainWindow(PopupPosition popup_position) {
     RequestUiUpdate(AppConstants::UiUpdate::kHistory | AppConstants::UiUpdate::kLayout);
     PositionPopup(popup_position);
 
-    BeginPopupDismissGuard();
     m_popupVisible = true;
     ShowWindow(SW_SHOW);
     ApplyPendingState();
     m_historyListControls.ResetScrollPositions();
-
-    const HWND foreground = GetForegroundWindow();
-    const DWORD foregroundThread = foreground != nullptr
-        ? GetWindowThreadProcessId(foreground, nullptr)
-        : 0;
-    const DWORD currentThread = GetCurrentThreadId();
-    const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
-        AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
-    SetForegroundWindow(m_hWnd);
-    if (m_settings.show_search && m_settings.search_visibility == SearchVisibility::Always) {
-        SetHistorySearchVisible(true);
-        m_search.SetFocus();
-        m_search.SetSel(0, -1);
-    } else {
-        SetFocus();
-    }
-    if (attached) {
-        AttachThreadInput(currentThread, foregroundThread, FALSE);
-    }
-    if (GetForegroundWindow() != m_hWnd) {
-        SetForegroundWindow(m_hWnd);
-    }
+    ForceForeground(m_hWnd);
+    FocusPopupForTyping();
+    // The opening click's button-down already passed the hook chain (tray
+    // notify runs after that down). Listen immediately so a desktop click
+    // does not have to wait out the button release.
+    InstallPopupDismissHooks();
 
     UpdateWindow();
     m_keyboardHandler.UpdateHistoryHoverFromCursor(

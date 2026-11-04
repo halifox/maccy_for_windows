@@ -28,7 +28,13 @@ constexpr wchar_t kCanIncludeInClipboardHistory[] = L"CanIncludeInClipboardHisto
 
 class ClipboardGuard {
 public:
-    explicit ClipboardGuard(HWND owner) : m_open(::OpenClipboard(owner) != FALSE) {}
+    explicit ClipboardGuard(HWND owner) {
+        if (::OpenClipboard(owner) != FALSE) {
+            m_open = true;
+            return;
+        }
+        m_open = ::OpenClipboard(nullptr) != FALSE;
+    }
 
     ~ClipboardGuard() {
         if (m_open) {
@@ -84,12 +90,15 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
 
     BITMAP source{};
     if (::GetObjectW(bitmap, sizeof(source), &source) != sizeof(source) ||
-        source.bmWidth <= 0 || source.bmHeight <= 0) {
+        source.bmWidth <= 0 || source.bmHeight == 0) {
         return std::nullopt;
     }
 
+    // Top-down DIBs report a negative bmHeight; size math needs the absolute value (M-19).
+    const LONG absolute_height =
+        source.bmHeight < 0 ? -source.bmHeight : source.bmHeight;
     const std::uint64_t width = static_cast<std::uint64_t>(source.bmWidth);
-    const std::uint64_t height = static_cast<std::uint64_t>(source.bmHeight);
+    const std::uint64_t height = static_cast<std::uint64_t>(absolute_height);
     const std::uint64_t pixel_count = width * height;
     const std::uint64_t pixel_bytes = width * sizeof(DWORD) * height;
     const std::uint64_t total_bytes = sizeof(BITMAPINFOHEADER) + pixel_bytes;
@@ -102,6 +111,12 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
         return std::nullopt;
     }
 
+    CWindowDC screen_dc(nullptr);
+    if (screen_dc.m_hDC == nullptr) {
+        return std::nullopt;
+    }
+
+    // Prefer GetDIBits conversion to 32bpp BI_RGB so palette/1-8bpp sources expand (L-09).
     BITMAPINFO info{};
     info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     info.bmiHeader.biWidth = static_cast<LONG>(width);
@@ -113,13 +128,8 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
 
     std::vector<unsigned char> result(static_cast<size_t>(total_bytes));
     std::memcpy(result.data(), &info.bmiHeader, sizeof(info.bmiHeader));
-
-    CWindowDC dc(nullptr);
-    if (dc.m_hDC == nullptr) {
-        return std::nullopt;
-    }
-    const int copied = ::GetDIBits(
-        dc.m_hDC,
+    int copied = ::GetDIBits(
+        screen_dc.m_hDC,
         bitmap,
         0,
         static_cast<UINT>(height),
@@ -127,35 +137,105 @@ std::optional<std::vector<unsigned char>> CaptureBitmapAsDib(HBITMAP bitmap) {
         &info,
         DIB_RGB_COLORS
     );
-    if (copied != static_cast<int>(height)) {
+    if (copied == static_cast<int>(height)) {
+        return result;
+    }
+
+    // Fallback: BitBlt through a 32bpp DIB section (handles odd device bitmaps).
+    void *bits = nullptr;
+    BITMAPINFO section_info{};
+    section_info.bmiHeader = info.bmiHeader;
+    const HBITMAP section = ::CreateDIBSection(
+        screen_dc.m_hDC,
+        &section_info,
+        DIB_RGB_COLORS,
+        &bits,
+        nullptr,
+        0
+    );
+    if (section == nullptr || bits == nullptr) {
+        if (section != nullptr) {
+            ::DeleteObject(section);
+        }
         return std::nullopt;
     }
+
+    HDC memory_dc = ::CreateCompatibleDC(screen_dc.m_hDC);
+    HDC source_dc = ::CreateCompatibleDC(screen_dc.m_hDC);
+    if (memory_dc == nullptr || source_dc == nullptr) {
+        if (memory_dc != nullptr) {
+            ::DeleteDC(memory_dc);
+        }
+        if (source_dc != nullptr) {
+            ::DeleteDC(source_dc);
+        }
+        ::DeleteObject(section);
+        return std::nullopt;
+    }
+
+    const HGDIOBJ previous_section = ::SelectObject(memory_dc, section);
+    const HGDIOBJ previous_source = ::SelectObject(source_dc, bitmap);
+    const BOOL blit_ok = ::BitBlt(
+        memory_dc,
+        0,
+        0,
+        static_cast<int>(width),
+        static_cast<int>(height),
+        source_dc,
+        0,
+        0,
+        SRCCOPY
+    );
+    ::SelectObject(memory_dc, previous_section);
+    ::SelectObject(source_dc, previous_source);
+    ::DeleteDC(memory_dc);
+    ::DeleteDC(source_dc);
+    if (blit_ok == FALSE) {
+        ::DeleteObject(section);
+        return std::nullopt;
+    }
+
+    std::memcpy(result.data() + sizeof(BITMAPINFOHEADER), bits, static_cast<size_t>(pixel_bytes));
+    ::DeleteObject(section);
     return result;
 }
 
 class ClipboardFingerprint {
 public:
+    void AddMeta(std::uint64_t format_count, std::uint64_t total_bytes) noexcept {
+        AddBytes(reinterpret_cast<const unsigned char *>(&format_count), sizeof(format_count));
+        AddBytes(reinterpret_cast<const unsigned char *>(&total_bytes), sizeof(total_bytes));
+    }
+
     void Add(const std::wstring& name, UINT format, const unsigned char* bytes, size_t count) noexcept {
         AddBytes(reinterpret_cast<const unsigned char*>(name.data()), name.size() * sizeof(wchar_t));
         AddBytes(reinterpret_cast<const unsigned char*>(&format), sizeof(format));
+        const std::uint64_t size = static_cast<std::uint64_t>(count);
+        AddBytes(reinterpret_cast<const unsigned char *>(&size), sizeof(size));
         AddBytes(bytes, count);
     }
 
     std::wstring Finish() const {
+        // Dual independent FNV-1a streams → 128-bit hex fingerprint (L-08).
         std::wstringstream stream;
-        stream << std::hex << std::setw(16) << std::setfill(L'0') << m_hash;
+        stream << std::hex << std::setfill(L'0')
+               << std::setw(16) << m_hash_a
+               << std::setw(16) << m_hash_b;
         return stream.str();
     }
 
 private:
     void AddBytes(const unsigned char* bytes, size_t count) noexcept {
         for (size_t index = 0; index < count; ++index) {
-            m_hash ^= bytes[index];
-            m_hash *= 1099511628211ULL;
+            m_hash_a ^= bytes[index];
+            m_hash_a *= 1099511628211ULL;
+            m_hash_b ^= static_cast<std::uint64_t>(bytes[index]) + 0x9e3779b97f4a7c15ULL;
+            m_hash_b *= 1099511628211ULL;
         }
     }
 
-    std::uint64_t m_hash = 1469598103934665603ULL;
+    std::uint64_t m_hash_a = 1469598103934665603ULL;
+    std::uint64_t m_hash_b = 0xcbf29ce484222325ULL;
 };
 
 bool IsRedundantBitmapFormat(UINT format, bool has_dib, bool has_dibv5) noexcept {
@@ -185,7 +265,7 @@ void ClipboardMonitor::Shutdown() {
         RemoveClipboardFormatListener(m_owner);
         m_clipboardListenerAdded = false;
     }
-    m_expectedClipboardFingerprint.reset();
+    m_selfWriteSequence.reset();
     m_owner = nullptr;
 }
 
@@ -205,7 +285,7 @@ void ClipboardMonitor::ReloadIgnoreLists(IgnoreLists ignored_lists) {
 bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) const {
     if (m_settings.ignore_all_apps_except_listed) {
         if (application.empty()) {
-            return true;
+            return false;
         }
         return std::none_of(
             m_ignoredApps.begin(),
@@ -224,19 +304,23 @@ bool ClipboardMonitor::ShouldIgnoreApplication(std::wstring_view application) co
     );
 }
 
-bool ClipboardMonitor::ShouldIgnoreFormat(std::wstring_view format) const {
+bool ClipboardMonitor::ShouldIgnoreFormat(UINT format, std::wstring_view name) const {
     return std::any_of(
         m_ignoredFormats.begin(),
         m_ignoredFormats.end(),
-        [&format](const std::wstring& configured) {
-            return ClipboardRules::EqualInsensitive(format, configured);
+        [format, name](const std::wstring &configured) {
+            if (ClipboardRules::IsClipboardViewerIgnoreFormat(format, name) &&
+                ClipboardRules::IsClipboardViewerIgnoreFormat(0, configured)) {
+                return true;
+            }
+            return ClipboardRules::MatchesIgnoredFormatName(name, configured);
         }
     );
 }
 
 bool ClipboardMonitor::ShouldIgnoreText(std::wstring_view text) const {
     for (const std::wregex& expression : m_ignoredRegexpPatterns) {
-        if (std::regex_search(text.begin(), text.end(), expression)) {
+        if (ClipboardRules::RegexSearchBounded(expression, text)) {
             return true;
         }
     }
@@ -349,18 +433,40 @@ std::wstring ClipboardMonitor::FilesPreview(HGLOBAL data) {
         std::wstring path(static_cast<size_t>(length) + 1, L'\0');
         DragQueryFileW(drop, index, path.data(), length + 1);
         path.resize(length);
+        constexpr size_t kStoredPreviewCharacters = 4096;
+        const size_t separator = result.empty() ? 0 : 2;
+        if (result.size() + separator + path.size() > kStoredPreviewCharacters) {
+            break;
+        }
         if (!result.empty()) {
             result += L"; ";
         }
         result += path;
     }
-    return result;
+    return ClipboardRules::StoredPreview(std::move(result));
 }
 
 std::wstring ClipboardMonitor::HashCapture(const std::vector<ClipboardFormatData>& data) {
+    std::vector<const ClipboardFormatData *> ordered;
+    ordered.reserve(data.size());
+    for (const ClipboardFormatData &item : data) {
+        ordered.push_back(&item);
+    }
+    std::sort(ordered.begin(), ordered.end(), [](const ClipboardFormatData *lhs, const ClipboardFormatData *rhs) {
+        if (lhs->format != rhs->format) {
+            return lhs->format < rhs->format;
+        }
+        return lhs->name < rhs->name;
+    });
+
     ClipboardFingerprint fingerprint;
-    for (const ClipboardFormatData& item : data) {
-        fingerprint.Add(item.name, item.format, item.bytes.data(), item.bytes.size());
+    std::uint64_t total_bytes = 0;
+    for (const ClipboardFormatData *item : ordered) {
+        total_bytes += item->bytes.size();
+    }
+    fingerprint.AddMeta(ordered.size(), total_bytes);
+    for (const ClipboardFormatData *item : ordered) {
+        fingerprint.Add(item->name, item->format, item->bytes.data(), item->bytes.size());
     }
     return fingerprint.Finish();
 }
@@ -376,57 +482,38 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
         return std::nullopt;
     }
 
-    std::wstring text;
-    std::vector<std::wstring> format_names;
-    for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
-        format_names.push_back(ClipboardRules::FormatName(format));
-    }
-    if (std::any_of(
-        format_names.begin(),
-        format_names.end(),
-        [this](const std::wstring& name) { return ShouldIgnoreFormat(name); }
-    )) {
-        return std::nullopt;
-    }
-
-    if (m_settings.save_text && IsClipboardFormatAvailable(CF_UNICODETEXT)) {
-        text = ExtractClipboardText();
-        if (text.empty() && IsClipboardFormatAvailable(CF_TEXT)) {
-            text = ExtractClipboardAnsiText();
-        }
-    } else if (IsClipboardFormatAvailable(CF_UNICODETEXT) ||
-               IsClipboardFormatAvailable(CF_TEXT)) {
-        // Regex ignore rules still apply when text storage is disabled.
-        text = IsClipboardFormatAvailable(CF_UNICODETEXT)
-            ? ExtractClipboardText()
-            : ExtractClipboardAnsiText();
-    }
-    if (!text.empty() && ShouldIgnoreText(text)) {
-        return std::nullopt;
-    }
-
     ClipboardSnapshot capture;
     capture.application = application;
     capture.has_text = false;
     capture.has_image = false;
     capture.has_files = false;
     std::wstring file_preview;
+    std::vector<ClipboardFormatData> ignore_probe;
     const bool has_dib = IsClipboardFormatAvailable(CF_DIB) != FALSE;
     const bool has_dibv5 = IsClipboardFormatAvailable(CF_DIBV5) != FALSE;
     for (UINT format = 0; (format = EnumClipboardFormats(format)) != 0;) {
         const std::wstring name = ClipboardRules::FormatName(format);
+        if (ShouldIgnoreFormat(format, name)) {
+            // Clipboard Viewer Ignore means "skip this entire update" by convention.
+            if (ClipboardRules::IsClipboardViewerIgnoreFormat(format, name)) {
+                return std::nullopt;
+            }
+            // Other ignored formats: omit that format only (M-20).
+            continue;
+        }
+
         const bool is_text = ClipboardRules::IsTextFormat(format, name);
         const bool is_image = ClipboardRules::IsImageFormat(format, name);
         const bool is_files = format == CF_HDROP;
         const bool enabled = (is_text && m_settings.save_text) ||
             (is_image && m_settings.save_images) ||
             (is_files && m_settings.save_files);
-        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
-            continue;
-        }
 
         ClipboardFormatData data;
         if (format == CF_BITMAP) {
+            if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
+                continue;
+            }
             const auto dib = CaptureBitmapAsDib(static_cast<HBITMAP>(GetClipboardData(format)));
             if (!dib.has_value()) {
                 continue;
@@ -452,6 +539,17 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
             data.format = format;
             data.bytes.assign(source, source + bytes);
         }
+
+        // Always probe text-like formats for regex ignore, even when save_text is off (M-25).
+        if (is_text || ClipboardRules::IsRichTextFormat(data) ||
+            ClipboardRules::IsUnicodeTextFormat(data) ||
+            ClipboardRules::IsAnsiTextFormat(data)) {
+            ignore_probe.push_back(data);
+        }
+
+        if (!enabled || IsRedundantBitmapFormat(format, has_dib, has_dibv5)) {
+            continue;
+        }
         if (is_text) {
             capture.has_text = true;
         }
@@ -464,6 +562,13 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
         }
         capture.data.push_back(std::move(data));
     }
+
+    const ClipboardRules::SearchParts ignore_parts =
+        ClipboardRules::SearchPartsFromFormats(ignore_probe);
+    if (!ignore_parts.body.empty() && ShouldIgnoreText(ignore_parts.body)) {
+        return std::nullopt;
+    }
+    const std::wstring text = ignore_parts.body;
 
     if (capture.data.empty()) {
         return std::nullopt;
@@ -488,28 +593,36 @@ std::optional<ClipboardSnapshot> ClipboardMonitor::CaptureClipboard() const {
 }
 
 void ClipboardMonitor::ReadClipboardAndSave() {
+    const DWORD sequence = ::GetClipboardSequenceNumber();
+    if (m_selfWriteSequence.has_value()) {
+        if (sequence == *m_selfWriteSequence) {
+            // Our own write's clipboard update — drop the echo (H-01 / H-08).
+            m_selfWriteSequence.reset();
+            return;
+        }
+        // Clipboard advanced past our write without an exact match observation.
+        m_selfWriteSequence.reset();
+    }
+
     std::optional<ClipboardSnapshot> capture;
+    bool opened = false;
     for (int attempt = 0; attempt < 10; ++attempt) {
         ClipboardGuard clipboard(m_owner);
         if (!clipboard.IsOpen()) {
             ::Sleep(10);
             continue;
         }
+        opened = true;
         capture = CaptureClipboard();
         break;
     }
-    if (!capture.has_value()) {
-        m_expectedClipboardFingerprint.reset();
+    // Keep going only when open succeeded; leave self-write state alone on busy
+    // open failures so a later update can still suppress an echo (H-02).
+    if (!opened) {
         return;
     }
-
-    if (m_expectedClipboardFingerprint.has_value()) {
-        const bool was_written_by_this_process =
-            capture->fingerprint == *m_expectedClipboardFingerprint;
-        m_expectedClipboardFingerprint.reset();
-        if (was_written_by_this_process) {
-            return;
-        }
+    if (!capture.has_value()) {
+        return;
     }
 
     if (m_saveCallback) {
@@ -535,7 +648,6 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     };
 
     std::vector<PendingFormat> pending;
-    ClipboardFingerprint fingerprint;
     bool has_text = false;
     for (const ClipboardFormatData& data : item.data) {
         const bool is_text = ClipboardRules::IsTextFormat(data.format, data.name);
@@ -564,7 +676,6 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
             std::memcpy(lock.Data(), data.bytes.data(), data.bytes.size());
         }
 
-        fingerprint.Add(data.name, format, data.bytes.data(), data.bytes.size());
         pending.push_back(PendingFormat{format, std::move(handle)});
         has_text = has_text || is_text;
     }
@@ -579,11 +690,14 @@ bool ClipboardMonitor::WriteClipboardItem(const ClipboardItem &item, bool remove
     }
     for (PendingFormat &format : pending) {
         if (::SetClipboardData(format.format, format.data.Get()) == nullptr) {
+            // Avoid leaving a partial clipboard after EmptyClipboard (H-03).
+            ::EmptyClipboard();
+            m_selfWriteSequence.reset();
             return false;
         }
         format.data.Release();
     }
-    m_expectedClipboardFingerprint = fingerprint.Finish();
+    m_selfWriteSequence = ::GetClipboardSequenceNumber();
     return true;
 }
 
@@ -592,16 +706,17 @@ bool ClipboardMonitor::ClearClipboard() {
     if (!clipboard.IsOpen() || ::EmptyClipboard() == FALSE) {
         return false;
     }
-    m_expectedClipboardFingerprint.reset();
+    m_selfWriteSequence.reset();
     return true;
 }
 
 void ClipboardMonitor::OnClipboardUpdate() {
+    // One-shot skip is independent of continuous pause (ignore_events).
+    if (m_settings.ignore_only_next_event) {
+        m_settings.ignore_only_next_event = false;
+        return;
+    }
     if (m_settings.ignore_events) {
-        if (m_settings.ignore_only_next_event) {
-            m_settings.ignore_events = false;
-            m_settings.ignore_only_next_event = false;
-        }
         return;
     }
     ReadClipboardAndSave();

@@ -40,6 +40,9 @@ public:
     void SetUiWindow(HWND window) noexcept;
     void Submit(Request request, ResultCallback callback);
     void DrainUiCallbacks();
+    bool IsAvailable() const noexcept {
+        return m_comAvailable.load(std::memory_order_acquire);
+    }
 
 private:
     struct Job {
@@ -56,6 +59,7 @@ private:
     std::condition_variable m_jobCondition;
     std::deque<Job> m_jobs;
     bool m_stopping = false;
+    std::atomic<bool> m_comAvailable{true};
 
     std::atomic<HWND> m_uiWindow{nullptr};
     std::mutex m_resultMutex;

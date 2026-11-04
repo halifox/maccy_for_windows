@@ -84,7 +84,154 @@ int HistoryListControls::TotalHeightPixels(const CListBox &list) const noexcept 
     return height;
 }
 
+bool HistoryListControls::DeferListRefresh() noexcept {
+    if (!m_wheelGesture) {
+        return false;
+    }
+    m_refreshAfterWheel = true;
+    return true;
+}
+
+void HistoryListControls::InvalidateLists() {
+    for (CListBox *list : {&m_historyList, &m_pinsList}) {
+        if (list->m_hWnd != nullptr) {
+            list->Invalidate(FALSE);
+        }
+    }
+}
+
+void HistoryListControls::FinishWheelGesture() {
+    m_wheelGesture = false;
+    if (!m_refreshAfterWheel) {
+        return;
+    }
+    m_refreshAfterWheel = false;
+    InvalidateLists();
+}
+
+int HistoryListControls::WheelPageRows(const CListBox &list) const {
+    RECT client{};
+    if (list.m_hWnd == nullptr || !list.GetClientRect(&client) || client.bottom <= 0) {
+        return 1;
+    }
+    const int count = list.GetCount();
+    int rows = 0;
+    int y = 0;
+    for (int row = list.GetTopIndex(); row < count && y < client.bottom; ++row) {
+        const int height = std::max(1, list.GetItemHeight(row));
+        if (y > 0 && y + height > client.bottom) {
+            break;
+        }
+        y += height;
+        ++rows;
+    }
+    return std::max(rows, 1);
+}
+
+int ItemSpanPixels(const CListBox &list, int from, int to) {
+    int pixels = 0;
+    const int start = std::min(from, to);
+    const int end = std::max(from, to);
+    for (int row = start; row < end; ++row) {
+        pixels += std::max(1, list.GetItemHeight(row));
+    }
+    return pixels;
+}
+
+int MaximumTopIndex(const CListBox &list) {
+    const int count = list.GetCount();
+    RECT client{};
+    if (count <= 0 || !list.GetClientRect(&client) || client.bottom <= 0) {
+        return 0;
+    }
+    // Largest top index whose rows through the last item still fit. Stopping on
+    // the row that overflows leaves the last item clipped at the bottom.
+    int used = 0;
+    for (int row = count - 1; row >= 0; --row) {
+        const int height = std::max(1, list.GetItemHeight(row));
+        if (used + height > client.bottom) {
+            return std::min(row + 1, count - 1);
+        }
+        used += height;
+    }
+    return 0;
+}
+
+void SyncVerticalScroll(const CListBox &list) {
+    if (list.m_hWnd == nullptr) {
+        return;
+    }
+    SCROLLINFO info{};
+    info.cbSize = sizeof(info);
+    info.fMask = SIF_POS;
+    info.nPos = list.GetTopIndex();
+    ::SetScrollInfo(list.m_hWnd, SB_VERT, &info, TRUE);
+}
+
+void HistoryListControls::ScrollWheel(CListBox &list, int delta) {
+    if (list.m_hWnd == nullptr || delta == 0) {
+        return;
+    }
+    m_wheelRemainder += delta;
+    UINT lines_per_notch = 3;
+    ::SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines_per_notch, 0);
+    if (lines_per_notch == 0) {
+        m_wheelRemainder = 0;
+        return;
+    }
+    const int notches = m_wheelRemainder / WHEEL_DELTA;
+    m_wheelRemainder -= notches * WHEEL_DELTA;
+    if (notches == 0 || list.GetCount() <= 0) {
+        return;
+    }
+
+    const int step = lines_per_notch == WHEEL_PAGESCROLL
+        ? WheelPageRows(list)
+        : static_cast<int>(lines_per_notch);
+    const int top = list.GetTopIndex();
+    int target = top - notches * std::max(step, 1);
+    const int maximum_top = MaximumTopIndex(list);
+    if (target < 0) {
+        target = 0;
+    } else if (target > maximum_top) {
+        target = maximum_top;
+    }
+    if (target == top) {
+        return;
+    }
+
+    const int pixels = ItemSpanPixels(list, top, target);
+    // Wheel up reveals earlier items, so the existing rows move downward.
+    const int dy = target > top ? -pixels : pixels;
+
+    // Keep the bits that are still on screen and paint only the new strip.
+    // The variable-height listbox otherwise repaints every row on each notch.
+    list.SetRedraw(FALSE);
+    list.SetTopIndex(target);
+    list.SetRedraw(TRUE);
+    list.ValidateRect(nullptr);
+    SyncVerticalScroll(list);
+
+    RECT client{};
+    list.GetClientRect(&client);
+    ::ScrollWindowEx(
+        list.m_hWnd,
+        0,
+        dy,
+        &client,
+        &client,
+        nullptr,
+        nullptr,
+        SW_INVALIDATE | SW_ERASE
+    );
+    list.UpdateWindow();
+}
+
 void HistoryListControls::UpdateItemHeight(sqlite3_int64 item_id) noexcept {
+    if (m_wheelGesture) {
+        m_refreshAfterWheel = true;
+        return;
+    }
     if (m_items == nullptr || item_id == 0) {
         return;
     }
@@ -98,8 +245,16 @@ void HistoryListControls::UpdateItemHeight(sqlite3_int64 item_id) noexcept {
     for (CListBox *list : {&m_historyList, &m_pinsList}) {
         for (int row = 0; row < list->GetCount(); ++row) {
             if (list->GetItemData(row) == static_cast<DWORD_PTR>(item_index)) {
-                list->SetItemHeight(row, static_cast<UINT>(RowHeightPixels(*list, row)));
-                list->Invalidate(FALSE);
+                // Image rows already reserve their height when the list is filled.
+                // SetItemHeight again makes a variable-height listbox shift its scroll offset.
+                const auto height = static_cast<UINT>(RowHeightPixels(*list, row));
+                if (list->GetItemHeight(row) != static_cast<int>(height)) {
+                    list->SetItemHeight(row, height);
+                }
+                RECT row_rect{};
+                if (list->GetItemRect(row, &row_rect) != LB_ERR) {
+                    list->InvalidateRect(&row_rect, FALSE);
+                }
                 break;
             }
         }
@@ -136,6 +291,11 @@ void HistoryListControls::SetImageMaxHeight(int image_max_height) noexcept {
 }
 
 void HistoryListControls::Shutdown() noexcept {
+    for (CListBox *list : {&m_historyList, &m_pinsList}) {
+        if (list->m_hWnd != nullptr) {
+            list->KillTimer(AppConstants::Timer::kHistoryHover);
+        }
+    }
     m_pendingMeasureItems.clear();
     m_keyboardHandler = nullptr;
     m_renderer = nullptr;
@@ -216,6 +376,10 @@ LRESULT HistoryListControls::OnHistoryListChar(
     LPARAM,
     BOOL &handled
 ) {
+    if (IsConfigured() && m_keyboardHandler->ShouldIgnoreShortcutChar(character)) {
+        handled = TRUE;
+        return 0;
+    }
     if (IsConfigured() && character >= 0x20 && character != 0x7f) {
         m_keyboardHandler->TypeToSearch(character, m_search);
         handled = TRUE;
@@ -256,7 +420,46 @@ LRESULT HistoryListControls::OnHistoryListScroll(
 ) {
     CContainedWindowT<CListBox> &listWindow =
         m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
+    if (message == WM_MOUSEWHEEL) {
+        m_wheelGesture = true;
+        int delta = GET_WHEEL_DELTA_WPARAM(wParam);
+        MSG pending{};
+        while (::PeekMessageW(
+            &pending,
+            listWindow.m_hWnd,
+            WM_MOUSEWHEEL,
+            WM_MOUSEWHEEL,
+            PM_REMOVE
+        )) {
+            delta += GET_WHEEL_DELTA_WPARAM(pending.wParam);
+        }
+        ScrollWheel(listWindow, delta);
+        if (IsConfigured()) {
+            listWindow.SetTimer(AppConstants::Timer::kHistoryHover, 50, nullptr);
+        }
+        handled = TRUE;
+        return 0;
+    }
     const LRESULT result = listWindow.DefWindowProc(message, wParam, lParam);
+    if (IsConfigured()) {
+        // The row under a stationary cursor changes while the list moves.
+        // Update it once the wheel settles instead of on every notch.
+        listWindow.SetTimer(AppConstants::Timer::kHistoryHover, 50, nullptr);
+    }
+    handled = TRUE;
+    return result;
+}
+
+LRESULT HistoryListControls::OnHistoryListTimer(UINT, WPARAM wParam, LPARAM, BOOL &handled) {
+    if (wParam != AppConstants::Timer::kHistoryHover) {
+        handled = FALSE;
+        return 0;
+    }
+    handled = TRUE;
+    CContainedWindowT<CListBox> &listWindow =
+        m_historyList.GetCurrentMessage() != nullptr ? m_historyList : m_pinsList;
+    listWindow.KillTimer(AppConstants::Timer::kHistoryHover);
+    FinishWheelGesture();
     if (IsConfigured()) {
         m_keyboardHandler->UpdateHistoryHoverFromCursor(
             *m_items,
@@ -265,8 +468,7 @@ LRESULT HistoryListControls::OnHistoryListScroll(
             *m_popupVisible
         );
     }
-    handled = TRUE;
-    return result;
+    return 0;
 }
 
 LRESULT HistoryListControls::OnHistoryListSelectionChanged(

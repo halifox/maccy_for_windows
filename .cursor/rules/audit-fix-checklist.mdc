@@ -1,0 +1,44 @@
+---
+description: 修复审计问题时同步更新 FIX_CHECKLIST，并回链 AUDIT_LOGIC_REPORT
+globs: FIX_CHECKLIST.md,AUDIT_LOGIC_REPORT.md,src/**/*
+alwaysApply: false
+---
+
+# 审计修复清单协议
+
+当用户或 Goal 要求修复 `AUDIT_LOGIC_REPORT.md` / `FIX_CHECKLIST.md` 中的问题时：
+
+## 单一真相源
+
+- **进度与状态**：只更新 `FIX_CHECKLIST.md`（`Status` / `Notes` / 进度摘要表）。
+- **问题详情**：只查阅 `AUDIT_LOGIC_REPORT.md#<ID>`（例如 `AUDIT_LOGIC_REPORT.md#C-01`）。不要凭记忆改需求。
+- **不要删除**清单行；不修则用 `deferred` 或 `wontfix` 并写 Notes。
+
+## 状态机
+
+允许值：`pending` | `in_progress` | `done` | `deferred` | `wontfix`
+
+1. 开始改某 ID → `in_progress`
+2. 代码修完且自检通过 → `done`，Notes 一句话（关键文件或行为）
+3. 有意延后 / 不修 → `deferred` / `wontfix` + 原因
+4. 每次批量改 Status 后，**重算** `FIX_CHECKLIST.md` 顶部「进度摘要」各列计数
+
+## 修复时
+
+- 先读审计条目的问题 / 影响 / 修复方向，再改代码。
+- 遵守 `AGENTS.md` 与 `WTL.md`：根因优先、KISS、不引入新 UI 框架。
+- 关联项在 Notes 标明（例如修 C-01 时处理了 M-17）。
+- Goal 若限定批次（如仅 P0），不要扩大范围到未点名的批次。
+
+## Git 提交（Conventional Commits）
+
+Goal / 用户要求按清单修复时：**每完成一条（或一组连带 ID）必须创建一次 commit**，不要攒大批量。
+
+- 格式：`<type>(<scope>): <description>`（Conventional Commits）
+- 常用：`fix(clipboard): ... (H-01)`；连带项在正文写 `Refs: C-01, M-17`
+- 清单状态更新应进入同一次 commit（或紧跟的 `docs(checklist): ...`）
+- 不修改 git config；不 `--no-verify`；不 force push；遵循用户 git 安全规则；Windows 用 PowerShell here-string 传 message
+
+## Goal 协作
+
+若当前是长期 Goal：每完成一个 ID（并 commit）或一批就更新清单并汇报 commit；全部非 pending/in_progress 后再结束 Goal。

@@ -5,7 +5,8 @@
 
 namespace {
 
-constexpr std::wstring_view kSupportedKeys = L"bcdefghijklmnoprstuxy";
+// Letters omit a/q/v/w/z (common app/edit shortcuts). Digits expand capacity (L-16).
+constexpr std::wstring_view kSupportedKeys = L"0123456789bcdefghijklmnoprstuxy";
 
 wchar_t NormalizeKey(wchar_t key) {
     return static_cast<wchar_t>(std::towlower(key));

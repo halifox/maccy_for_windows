@@ -14,7 +14,11 @@ namespace AppConstants {
     inline constexpr const wchar_t* kAppVersion = AppVersion::kString;
 
     // ========================================================================
-    // Windows 自定义消息常量
+    // Windows 自定义消息常量 (WM_APP + N)
+    // +1 tray, +2 ui update, +3 preview worker, +4 preview command,
+    // +5 storage worker, +6 update checker, +7 reserved,
+    // +8 installer shutdown, +9 open hotkey, +10 capture hotkey, +11 thumbnail worker.
+    // Do not renumber shipped IDs; use kCustomMessageBase for new messages.
     // ========================================================================
     constexpr UINT kTrayIconMessage = WM_APP + 1;
     constexpr UINT kUiUpdateMessage = WM_APP + 2;
@@ -29,8 +33,11 @@ namespace AppConstants {
 
     // 预留消息ID空间，便于未来扩展
     constexpr UINT kCustomMessageBase = WM_APP + 100;
-    constexpr UINT kPopupActivationMessage = kCustomMessageBase + 1;
-    constexpr UINT kConfirmPopupDismissMessage = kCustomMessageBase + 2;
+    // Posted by the click-outside mouse hook to hide on the UI thread.
+    // wParam/lParam are the physical screen point of the button down.
+    constexpr UINT kPopupDismissMessage = kCustomMessageBase + 2;
+    // Posted by the icon loader when a shell icon is ready to draw.
+    constexpr UINT kHistoryIconMessage = kCustomMessageBase + 4;
 
     // ========================================================================
     // 定时器ID
@@ -39,12 +46,7 @@ namespace AppConstants {
         constexpr UINT_PTR kSearchResultCommit = 1;
         constexpr UINT_PTR kPreview = 2;
         constexpr UINT_PTR kPaste = 3;
-        constexpr UINT_PTR kPopupDismissGuard = 4;
-    }
-
-    namespace Popup {
-        // Ignore transient WA_INACTIVE while ShowWindow/SetForegroundWindow settle.
-        constexpr UINT kDismissGuardMs = 250;
+        constexpr UINT_PTR kHistoryHover = 4;
     }
 
     // Bitmask carried by kUiUpdateMessage. Producers only describe what

@@ -4,10 +4,12 @@
 #include "Constants.h"
 
 #include <array>
+#include <atomic>
 #include <atlbase.h>
 #include <atlapp.h>
 #include <atlctrls.h>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -28,15 +30,18 @@ public:
                     const std::array<CButton, AppConstants::UI::kFooterButtonCount>& footerButtons);
     void Shutdown();
 
-    // Hotkey management
-    bool RegisterGlobalHotKey(UINT hotkeyId);
-    void UnregisterGlobalHotKey(UINT hotkeyId);
+    // Low-level keyboard hook for the open-popup chord (not RegisterHotKey).
+    bool InstallOpenHotkeyHook(UINT hotkeyId);
+    void UninstallOpenHotkeyHook(UINT hotkeyId);
     bool IsHotkeyRegistered() const { return m_hotkeyRegistered; }
+    static void SetHotkeyCaptureActive(bool active) noexcept;
+    static bool IsHotkeyCaptureActive() noexcept;
 
     // Input handling
     bool HandlePopupKey(WPARAM key, const CEdit& search, const std::vector<ClipboardItem>& items);
     bool HandlePopupShortcut(WPARAM key, const std::vector<ClipboardItem>& items);
     bool OnChar(WPARAM character);
+    bool ShouldIgnoreShortcutChar(WPARAM character) const;
 
     // Navigation
     void SetActiveHistoryItem(int index, const std::vector<ClipboardItem>& items,
@@ -85,29 +90,32 @@ public:
     void InvalidateHistoryItem(int index, const std::vector<ClipboardItem>& items,
                               CListBox historyList, CListBox pinsList);
 
-    // Callbacks
-    using PreviewCallback = void (*)(void* context, sqlite3_int64 itemId, bool keyboard);
-    using PasteCallback = void (*)(void* context, int index);
-    using SearchCallback = void (*)(void* context);
-    using TogglePinCallback = void (*)(void* context);
-    using DeleteItemCallback = void (*)(void* context);
-    using TogglePreviewCallback = void (*)(void* context);
-    using ClearHistoryCallback = void (*)(void* context, bool all);
-    using OpenSettingsCallback = void (*)(void* context);
-    using ExitCallback = void (*)(void* context);
-    using HideWindowCallback = void (*)(void* context);
+    // Owner actions (std::function — L-18; no void* trampolines).
+    using PreviewCallback = std::function<void(sqlite3_int64 itemId, bool keyboard)>;
+    using PasteCallback = std::function<void(int index)>;
+    using SearchCallback = std::function<void()>;
+    using TogglePinCallback = std::function<void()>;
+    using DeleteItemCallback = std::function<void()>;
+    using TogglePreviewCallback = std::function<void()>;
+    using ClearHistoryCallback = std::function<void(bool all)>;
+    using OpenSettingsCallback = std::function<void()>;
+    using ExitCallback = std::function<void()>;
+    using HideWindowCallback = std::function<void()>;
 
-    void SetCallbacks(void* context,
-                     PreviewCallback previewCb,
-                     PasteCallback pasteCb,
-                     SearchCallback searchCb,
-                     TogglePinCallback togglePinCb,
-                     DeleteItemCallback deleteItemCb,
-                     TogglePreviewCallback togglePreviewCb,
-                     ClearHistoryCallback clearHistoryCb,
-                     OpenSettingsCallback openSettingsCb,
-                     ExitCallback exitCb,
-                     HideWindowCallback hideWindowCb);
+    struct Callbacks {
+        PreviewCallback preview;
+        PasteCallback paste;
+        SearchCallback search;
+        TogglePinCallback toggle_pin;
+        DeleteItemCallback delete_item;
+        TogglePreviewCallback toggle_preview;
+        ClearHistoryCallback clear_history;
+        OpenSettingsCallback open_settings;
+        ExitCallback exit;
+        HideWindowCallback hide_window;
+    };
+
+    void SetCallbacks(Callbacks callbacks);
 
 private:
     // Helper methods
@@ -135,11 +143,14 @@ private:
     UINT m_capturedModifiers = 0;
     bool m_capturedKeyReleased = false;
     UINT m_pendingWinKey = 0;
+    DWORD m_pendingWinScan = 0;
+    DWORD m_pendingWinFlags = 0;
     bool m_winKeyPassedThrough = false;
     bool m_suppressingWinKey = false;
 
     static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM message, LPARAM data);
     static KeyboardHandler* s_hookOwner;
+    static std::atomic<bool> s_hotkeyCaptureActive;
     bool m_keyboardNavigating = false;
     bool m_imeComposing = false;
 
@@ -153,16 +164,5 @@ private:
 
     CListBox m_hoverList;
 
-    // Callbacks
-    void* m_callbackContext = nullptr;
-    PreviewCallback m_previewCallback = nullptr;
-    PasteCallback m_pasteCallback = nullptr;
-    SearchCallback m_searchCallback = nullptr;
-    TogglePinCallback m_togglePinCallback = nullptr;
-    DeleteItemCallback m_deleteItemCallback = nullptr;
-    TogglePreviewCallback m_togglePreviewCallback = nullptr;
-    ClearHistoryCallback m_clearHistoryCallback = nullptr;
-    OpenSettingsCallback m_openSettingsCallback = nullptr;
-    ExitCallback m_exitCallback = nullptr;
-    HideWindowCallback m_hideWindowCallback = nullptr;
+    Callbacks m_callbacks;
 };
